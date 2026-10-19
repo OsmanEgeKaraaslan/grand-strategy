@@ -1,0 +1,21 @@
+{
+  "version": "v5",
+  "truceRounds": 10,
+  "proposalExpiryRounds": 3,
+  "maxPeaceTerms": 10,
+  "militaryAccess": { "normalAlliance": true, "defensiveAlliance": false, "coBelligerents": true },
+  "warScore": {
+    "maxScore": 100,
+    "battleMinEnemyLosses": 200,
+    "battlePointsPerThousandLosses": 5,
+    "battleMaxPointsPerBattle": 10,
+    "battleCap": 40,
+    "siegePoints": 10,
+    "siegeCap": 30,
+    "occupationMaxPoints": 50
+  },
+  "tribute": { "rateBps": 1000, "rounds": 10 },
+  "populationTransfer": { "minPeople": 1000, "maxPeople": 2000, "maxShareBps": 2000, "minResidualPopulation": 1000 },
+  "reparations": { "maxMg": 1000000 },
+  "victory": { "maxRounds": 30, "provincePoints": 20, "pointsPerThousandPopulation": 1 }
+}

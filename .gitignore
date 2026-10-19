@@ -1,0 +1,38 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+# Private keys and keystores (none belong in this repository; tests generate keys in memory)
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+
+# Local tool downloads (portable Node.js used to build the frontend)
+.tools/
+
+# Build output, dependencies and caches
+node_modules/
+target/
+dist/
+coverage/
+*.tsbuildinfo
+.vite/
+.eslintcache
+
+# Local PostgreSQL data, dumps and backups (migrations are *.sql and stay tracked)
+pgdata/
+postgres-data/
+backups/
+*.dump
+*.backup
+*.bak
+*.sql.gz

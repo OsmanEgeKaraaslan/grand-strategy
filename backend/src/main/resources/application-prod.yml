@@ -1,0 +1,16 @@
+# Production (Supabase PostgreSQL). Every connection value must come from the environment:
+# DB_URL, DB_USERNAME and DB_PASSWORD have no defaults, so a missing value fails startup.
+# Use Supabase's direct or session-mode connection, not the transaction-mode pooler
+# (see docs/ARCHITECTURE.md §4.3).
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+logging:
+  structured:
+    format:
+      console: ecs
+
+# SUPABASE_URL and CORS_ALLOWED_ORIGINS (the deployed frontend origin) must be set.

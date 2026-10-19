@@ -1,0 +1,123 @@
+package com.reach.strategy.military.application;
+
+import java.time.Instant;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+
+import com.reach.strategy.military.api.ForceWithdrawal;
+import com.reach.strategy.military.api.Hostility;
+import com.reach.strategy.military.api.SiegeGate;
+import com.reach.strategy.military.domain.Battalion;
+import com.reach.strategy.military.domain.BattalionRepository;
+import com.reach.strategy.world.api.WorldApi;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Withdrawal of battalions that stand where their nation may no longer be (docs/DIPLOMACY.md §6.3):
+ * after a peace treaty former enemies have no right to each other's territory, and after an
+ * alliance ends neither does the former partner. Deterministic: battalions in id order, each to the
+ * nearest province its nation controls without enemy battalions (breadth-first over the borders,
+ * ties by province key), judged on positions before anyone withdraws — so an army's battalions,
+ * which always stand together, all reach the same province. Nobody is deleted, split or
+ * reinforced; cohorts and movement state are unchanged.
+ */
+@Service
+class WithdrawalService implements ForceWithdrawal {
+
+	private final WorldApi world;
+	private final BattalionRepository battalions;
+	private final List<Hostility> hostility;
+	private final List<SiegeGate> siegeGates;
+
+	WithdrawalService(WorldApi world, BattalionRepository battalions, List<Hostility> hostility,
+			List<SiegeGate> siegeGates) {
+		this.world = world;
+		this.battalions = battalions;
+		this.hostility = List.copyOf(hostility);
+		this.siegeGates = List.copyOf(siegeGates);
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.MANDATORY)
+	public List<Withdrawn> withdrawWithoutAccess(UUID gameId, int round, int turnNumber, Instant now) {
+		battalions.flush();
+		MilitaryService.State state = MilitaryService.State.load(world, List.of(), hostility, gameId);
+		Hostility.Relations relations = state.relations();
+		Map<UUID, WorldApi.ProvinceState> byId = state.snapshot()
+			.provinces()
+			.stream()
+			.collect(Collectors.toMap(WorldApi.ProvinceState::provinceStateId, p -> p));
+		List<Battalion> all = battalions.findByGameIdOrderById(gameId);
+		Map<UUID, Set<UUID>> nationsByProvince = new HashMap<>();
+		all.forEach(b -> nationsByProvince.computeIfAbsent(b.provinceStateId(), id -> new HashSet<>()).add(b.nationId()));
+
+		List<Withdrawn> withdrawn = new ArrayList<>();
+		List<Battalion> moved = new ArrayList<>();
+		for (Battalion battalion : all) {
+			WorldApi.ProvinceState here = byId.get(battalion.provinceStateId());
+			if (relations.mayEnter(battalion.nationId(), here.ownerNationId(), here.controllerNationId())) {
+				continue;
+			}
+			UUID nation = battalion.nationId();
+			Predicate<WorldApi.ProvinceState> noEnemies = p -> nationsByProvince
+				.getOrDefault(p.provinceStateId(), Set.of())
+				.stream()
+				.noneMatch(other -> relations.atWar(other, nation));
+			Optional<WorldApi.ProvinceState> target = nearest(state, here.provinceKey(),
+					p -> nation.equals(p.controllerNationId()) && noEnemies.test(p))
+				.or(() -> nearest(state, here.provinceKey(),
+						p -> relations.mayEnter(nation, p.ownerNationId(), p.controllerNationId()) && noEnemies.test(p)));
+			if (target.isEmpty()) {
+				// Unreachable on a connected map while the nation still holds a province: it stays put.
+				continue;
+			}
+			battalion.withdrawTo(target.get().provinceStateId());
+			moved.add(battalion);
+			withdrawn.add(new Withdrawn(battalion.id(), nation, here.provinceKey(), target.get().provinceKey()));
+		}
+		battalions.saveAllAndFlush(moved);
+		Set<UUID> everywhere = new HashSet<>(byId.keySet());
+		siegeGates.forEach(gate -> gate.presenceChanged(gameId, everywhere, round, turnNumber, now));
+		return withdrawn;
+	}
+
+	/** Breadth-first from {@code start} (excluded); within one distance the lowest province key wins. */
+	private static Optional<WorldApi.ProvinceState> nearest(MilitaryService.State state, String start,
+			Predicate<WorldApi.ProvinceState> wanted) {
+		Set<String> seen = new HashSet<>(Set.of(start));
+		Deque<String> frontier = new ArrayDeque<>(List.of(start));
+		while (!frontier.isEmpty()) {
+			List<String> next = new ArrayList<>();
+			for (String key : frontier) {
+				for (String neighbour : state.topology().neighbours(key)) {
+					if (seen.add(neighbour)) {
+						next.add(neighbour);
+					}
+				}
+			}
+			next.sort(String::compareTo);
+			for (String key : next) {
+				WorldApi.ProvinceState province = state.province(key);
+				if (wanted.test(province)) {
+					return Optional.of(province);
+				}
+			}
+			frontier = new ArrayDeque<>(next);
+		}
+		return Optional.empty();
+	}
+
+}

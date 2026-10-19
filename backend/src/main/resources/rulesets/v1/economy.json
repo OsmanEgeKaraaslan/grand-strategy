@@ -1,0 +1,12 @@
+{
+  "version": "v1",
+  "agricultureMgPerWorker": 1,
+  "workshopCapacity": 4000,
+  "maxWorkshopsPerCity": 6,
+  "startingTreasuryMg": 50000,
+  "startingCapitalWorkshops": 1,
+  "workshopTiers": {
+    "1": { "mgPerWorker": 3, "buildCostMg": 40000, "buildDurationRounds": 1, "constructible": true },
+    "2": { "mgPerWorker": 5, "buildCostMg": 100000, "buildDurationRounds": 1, "constructible": false }
+  }
+}

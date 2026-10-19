@@ -1,0 +1,233 @@
+import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../api/client'
+import { fakeApi, renderPage } from '../test/render'
+import {
+  OSTRA,
+  battalionDetailsFixture,
+  battalionFixture,
+  battleFixture,
+  economyFixture,
+  gameStateFixture,
+  mapFixture,
+  militaryFixture,
+} from '../test/fixtures'
+import { GamePage } from './GamePage'
+
+const me = { id: 'p1', displayName: 'Aldric', createdAt: '', updatedAt: '' }
+
+function renderGame(overrides = {}, state = gameStateFixture()) {
+  const api = fakeApi({
+    getMe: vi.fn().mockResolvedValue(me),
+    getGameState: vi.fn().mockResolvedValue(state),
+    getMap: vi.fn().mockResolvedValue(mapFixture),
+    getEconomy: vi.fn().mockResolvedValue(economyFixture()),
+    getMilitary: vi.fn().mockResolvedValue(militaryFixture()),
+    getBattalion: vi.fn().mockResolvedValue(battalionDetailsFixture()),
+    ...overrides,
+  })
+  return renderPage(<GamePage />, { route: '/games/g1/play', path: '/games/:gameId/play', api })
+}
+
+async function openProvince(name: RegExp) {
+  const map = await screen.findByRole('group', { name: /^Map of/ })
+  await waitFor(() => expect(within(map).getByRole('button', { name })).toBeInTheDocument())
+  await userEvent.click(within(map).getByRole('button', { name }))
+  return screen.getByRole('region', { name: name.source.replace(/[\^$]/g, '').split(',')[0] })
+}
+
+describe('Game military', () => {
+  it('marks friendly and hostile battalions on the map', async () => {
+    renderGame()
+
+    const map = await screen.findByRole('group', { name: /^Map of/ })
+    expect(await within(map).findByRole('button', { name: /^Elmsford.*2 of your battalions/ })).toBeInTheDocument()
+    expect(within(map).getByRole('button', { name: /^Sablewater.*1 enemy battalions/ })).toBeInTheDocument()
+  })
+
+  it('lists the battalions of a province with type, strength, owner and eligibility', async () => {
+    const military = militaryFixture({
+      battalions: [
+        battalionFixture({ id: 'b1' }),
+        battalionFixture({ id: 'b2', manpower: 650, eligibility: 'ALREADY_MOVED' }),
+        battalionFixture({ id: 'b3', unitType: 'CAVALRY', eligibility: 'RECRUITED_THIS_TURN' }),
+      ],
+    })
+    renderGame({ getMilitary: vi.fn().mockResolvedValue(military) })
+
+    const panel = await openProvince(/^Elmsford/)
+    expect(await within(panel).findByText('Your battalions')).toBeInTheDocument()
+    expect(within(panel).getByText('650 / 1,000')).toBeInTheDocument()
+    expect(within(panel).getByText('Moved this turn')).toBeInTheDocument()
+    expect(within(panel).getByText('Recruited this turn — defends, cannot move yet')).toBeInTheDocument()
+    expect(within(panel).getByRole('checkbox', { name: 'Select Cavalry, 1,000 of 1,000 men' })).toBeInTheDocument()
+  })
+
+  it('shows the enemy forces of a province without selection controls', async () => {
+    renderGame()
+
+    const panel = await openProvince(/^Sablewater/)
+    expect(await within(panel).findByText('Enemy battalions')).toBeInTheDocument()
+    expect(within(panel).getByText('· Ostran Confederacy')).toBeInTheDocument()
+    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('recruits a battalion and refreshes the treasury and city from the server', async () => {
+    const getGameState = vi
+      .fn()
+      .mockResolvedValueOnce(gameStateFixture())
+      .mockResolvedValue(gameStateFixture({ stateVersion: 4 }))
+    const getEconomy = vi
+      .fn()
+      .mockResolvedValueOnce(economyFixture())
+      .mockResolvedValue(economyFixture({ treasuryMg: 25000, projectedUpkeepMg: 1500, projectedNetMg: 48500 }))
+    const recruit = vi.fn().mockResolvedValue({
+      battalion: battalionFixture({ id: 'new', unitType: 'CAVALRY', eligibility: 'RECRUITED_THIS_TURN' }),
+      treasuryMg: 25000,
+      cityPopulation: 7000,
+    })
+    renderGame({ getGameState, getEconomy, recruit })
+
+    const panel = await openProvince(/^Elmsford/)
+    await userEvent.click(await within(panel).findByRole('radio', { name: 'Cavalry' }))
+    expect(within(panel).getByText('25 gold')).toBeInTheDocument()
+    expect(within(panel).getByText('−1,000 (city: 8,000 → 7,000)')).toBeInTheDocument()
+    expect(within(panel).getByText('1.5 gold per round')).toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Recruit Cavalry' }))
+
+    expect(recruit).toHaveBeenCalledWith('g1', 'city-elmsford', 'CAVALRY', expect.stringMatching(/^[0-9a-f-]{36}$/))
+    const treasury = screen.getByRole('region', { name: 'Treasury' })
+    expect(await within(treasury).findByText('25 gold')).toBeInTheDocument()
+    expect(getEconomy).toHaveBeenCalledTimes(2)
+  })
+
+  it('disables recruitment with the server’s reasons', async () => {
+    const military = militaryFixture()
+    military.recruitment[1].options = military.recruitment[1].options.map((o) => ({
+      ...o,
+      allowed: false,
+      blockers: ['INSUFFICIENT_GOLD'],
+    }))
+    renderGame({ getMilitary: vi.fn().mockResolvedValue(military) })
+
+    const panel = await openProvince(/^Elmsford/)
+    expect(await within(panel).findByText('Not enough gold in the treasury.')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Recruit Infantry' })).toBeDisabled()
+  })
+
+  it('moves a selection into an enemy province and shows the battle report', async () => {
+    const move = vi.fn().mockResolvedValue({
+      outcome: 'ATTACK_WON',
+      toProvinceKey: 'sablewater',
+      battalions: [battalionFixture({ provinceKey: 'sablewater', manpower: 880, eligibility: 'ALREADY_MOVED' })],
+      battle: battleFixture(),
+    })
+    renderGame({ move })
+
+    const panel = await openProvince(/^Elmsford/)
+    const attack = await within(panel).findByRole('button', { name: 'Attack Sablewater' })
+    expect(attack).toBeDisabled()
+    expect(within(panel).getByText('Select battalions to move them.')).toBeInTheDocument()
+
+    await userEvent.click(within(panel).getByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
+    expect(within(panel).getByText('1 enemy battalion')).toBeInTheDocument()
+    expect(within(panel).getByText('River: attack −20%')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Move to Varnhold' })).toBeEnabled()
+    const map = screen.getByRole('group', { name: /^Map of/ })
+    expect(within(map).getByRole('button', { name: /^Sablewater.*move target/ })).toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Attack Sablewater' }))
+
+    expect(move).toHaveBeenCalledWith('g1', ['b1'], 'sablewater', expect.stringMatching(/^[0-9a-f-]{36}$/))
+    expect(await within(panel).findByText('Victory at Sablewater.')).toBeInTheDocument()
+    const report = screen.getByRole('region', { name: 'Battle of Sablewater' })
+    expect(within(report).getByText('Kingdom of Varn won.')).toBeInTheDocument()
+    expect(within(report).getByText('River crossing ×0.8')).toBeInTheDocument()
+    expect(within(report).getByText('The defenders retreated to Varnhold.')).toBeInTheDocument()
+    expect(within(report).getByText('120 (12.0%)')).toBeInTheDocument()
+  })
+
+  it('explains why a mixed selection cannot move and lets the server have the last word', async () => {
+    const military = militaryFixture({
+      battalions: [battalionFixture({ id: 'b1' }), battalionFixture({ id: 'b2', manpower: 650, eligibility: 'ALREADY_MOVED' })],
+    })
+    const move = vi.fn().mockRejectedValue(new ApiError({ status: 422, code: 'BATTALION_ALREADY_MOVED' }))
+    renderGame({ getMilitary: vi.fn().mockResolvedValue(military), move })
+
+    const panel = await openProvince(/^Elmsford/)
+    await userEvent.click(await within(panel).findByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
+    await userEvent.click(within(panel).getByRole('checkbox', { name: 'Select Infantry, 650 of 1,000 men' }))
+    expect(within(panel).getByText('1 selected battalion cannot move this turn.')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Move to Varnhold' })).toBeDisabled()
+
+    await userEvent.click(within(panel).getByRole('checkbox', { name: 'Select Infantry, 650 of 1,000 men' }))
+    await userEvent.click(within(panel).getByRole('button', { name: 'Move to Varnhold' }))
+    expect(await within(panel).findByText('A selected battalion has already moved this turn.')).toBeInTheDocument()
+  })
+
+  it('disables every command while waiting for the other player', async () => {
+    renderGame(
+      { getMilitary: vi.fn().mockResolvedValue(militaryFixture({ yourTurn: false })) },
+      gameStateFixture({ activeSeat: 1, yourTurn: false }),
+    )
+
+    const panel = await openProvince(/^Elmsford/)
+    expect(await within(panel).findByText('You can move on your turn.')).toBeInTheDocument()
+    within(panel)
+      .getAllByRole('checkbox')
+      .forEach((box) => expect(box).toBeDisabled())
+    expect(within(panel).getByRole('button', { name: 'Move to Varnhold' })).toBeDisabled()
+  })
+
+  it('groups selected battalions into a named army', async () => {
+    const regroup = vi.fn().mockResolvedValue({
+      army: { id: 'a1', nationId: 'nation-varn', name: 'First Army', provinceKey: 'elmsford', battalionIds: ['b1'] },
+    })
+    renderGame({ regroup })
+
+    const panel = await openProvince(/^Elmsford/)
+    await userEvent.click(await within(panel).findByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
+    await userEvent.type(within(panel).getByRole('textbox', { name: 'Army name' }), 'First Army')
+    await userEvent.click(within(panel).getByRole('button', { name: 'Group as army' }))
+
+    expect(regroup).toHaveBeenCalledWith('g1', 'First Army', ['b1'], expect.stringMatching(/^[0-9a-f-]{36}$/))
+    expect(await within(panel).findByText('Formed First Army.')).toBeInTheDocument()
+  })
+
+  it('shows the upkeep of your forces and opens past battle reports', async () => {
+    const getBattle = vi.fn().mockResolvedValue(battleFixture({ winner: 'DEFENDER' }))
+    renderGame({
+      getMilitary: vi.fn().mockResolvedValue(
+        militaryFixture({
+          recentBattles: [
+            {
+              id: 'battle-1',
+              round: 1,
+              turnNumber: 1,
+              provinceKey: 'sablewater',
+              attackerNationId: 'nation-varn',
+              defenderNationId: OSTRA,
+              winner: 'DEFENDER',
+              attackerLosses: 120,
+              defenderLosses: 310,
+              createdAt: '2026-10-18T12:00:00Z',
+            },
+          ],
+        }),
+      ),
+      getBattle,
+    })
+
+    const forces = await screen.findByRole('region', { name: 'Your forces' })
+    expect(within(forces).getByText('1,650')).toBeInTheDocument()
+    expect(within(forces).getByText('−0.825 gold')).toBeInTheDocument()
+    expect(within(forces).getByText(/Ostran Confederacy won/)).toBeInTheDocument()
+    await userEvent.click(within(forces).getByRole('button', { name: 'Battle of Sablewater' }))
+
+    expect(getBattle).toHaveBeenCalledWith('g1', 'battle-1')
+    const report = await screen.findByRole('region', { name: 'Battle of Sablewater' })
+    expect(within(report).getByText('The attackers fell back to their starting province.')).toBeInTheDocument()
+    await userEvent.click(within(report).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('region', { name: 'Battle of Sablewater' })).not.toBeInTheDocument()
+  })
+})

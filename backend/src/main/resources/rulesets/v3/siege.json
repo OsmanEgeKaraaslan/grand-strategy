@@ -1,0 +1,27 @@
+{
+  "version": "v3",
+  "levels": {
+    "1": { "buildCostMg": 50000,  "buildDurationRounds": 2, "upkeepMg": 1000, "maxIntegrity": 100 },
+    "2": { "buildCostMg": 100000, "buildDurationRounds": 2, "upkeepMg": 2000, "maxIntegrity": 200 },
+    "3": { "buildCostMg": 150000, "buildDurationRounds": 2, "upkeepMg": 3000, "maxIntegrity": 300 }
+  },
+  "progress": {
+    "requiredBase": 5,
+    "requiredPerLevel": 1,
+    "pointsPerUnit": 100,
+    "basePerRound": 100,
+    "artilleryPerBattalion": 50,
+    "battalionManpower": 1000
+  },
+  "attritionBps": 500,
+  "bombardment": { "fortressIntegrityLossBps": 10000, "workshopsDamaged": 1 },
+  "repair": { "costBps": 3000, "durationRounds": 1 },
+  "startingFortresses": {
+    "varnhold": 2,
+    "ostrava": 2,
+    "greyspire": 1,
+    "kaldric": 1,
+    "elmsford": 1,
+    "sablewater": 1
+  }
+}
