@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { describeError } from '../api/client'
-import { useMove, useRecruit, useRegroup } from '../api/queries'
+import { useAttach, useMove, useRecruit, useRegroup, useRelease } from '../api/queries'
 import type {
   Battalion,
   BattleReport,
@@ -74,13 +74,18 @@ export function MilitaryPanel({
 }: MilitaryPanelProps) {
   const [disbandMessage, setDisbandMessage] = useState<string | null>(null)
   const here = military.battalions.filter((b) => b.provinceKey === province.key)
-  const mine = here.filter((b) => b.nationId === military.nationId)
-  const others = here.filter((b) => b.nationId !== military.nationId)
+  const you = military.nationId
+  // Battalions you command: your own unless lent to an ally, and allies' battalions lent to you.
+  const mine = here.filter((b) => (b.nationId === you && !b.commanderNationId) || b.commanderNationId === you)
+  const lent = here.filter((b) => b.nationId === you && b.commanderNationId && b.commanderNationId !== you)
+  const others = here.filter((b) => b.nationId !== you && b.commanderNationId !== you)
   const enemies = others.filter((b) => relations.atWar(b.nationId))
   const neutrals = others.filter((b) => !relations.atWar(b.nationId))
   const armyNames = new Map(military.armies.map((a) => [a.id, a.name]))
   const recruitment = military.recruitment.find((r) => r.provinceKey === province.key)
   const selectedMine = mine.filter((b) => selected.includes(b.id))
+  const selectedOwn = selectedMine.filter((b) => b.nationId === you)
+  const nationName = (id: string) => nations.get(id)?.name ?? 'an ally'
 
   function toggle(id: string) {
     onSelectedChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id])
@@ -99,6 +104,20 @@ export function MilitaryPanel({
           selectable={yourTurn}
           selected={selected}
           onToggle={toggle}
+          you={you}
+          nationName={nationName}
+        />
+      )}
+      {lent.length > 0 && (
+        <LentBattalions gameId={gameId} battalions={lent} yourTurn={yourTurn} nationName={nationName} />
+      )}
+      {yourTurn && selectedOwn.length > 0 && selectedOwn.length === selectedMine.length && relations.partners.length > 0 && (
+        <LendControls
+          gameId={gameId}
+          battalionIds={selectedOwn.map((b) => b.id)}
+          partners={relations.partners}
+          nationName={nationName}
+          onDone={() => onSelectedChange([])}
         />
       )}
       {neutrals.length > 0 && (
@@ -123,7 +142,7 @@ export function MilitaryPanel({
           onToggle={toggle}
         />
       )}
-      {selectedMine.length === 1 && (
+      {selectedMine.length === 1 && selectedMine[0].nationId === you && (
         <BattalionManagement
           key={selectedMine[0].id}
           gameId={gameId}
@@ -168,6 +187,8 @@ function BattalionList({
   selectable,
   selected,
   onToggle,
+  you,
+  nationName,
 }: {
   title: string
   battalions: Battalion[]
@@ -176,6 +197,8 @@ function BattalionList({
   selectable: boolean
   selected: string[]
   onToggle: (id: string) => void
+  you?: string
+  nationName?: (id: string) => string
 }) {
   return (
     <div className="battalions">
@@ -207,6 +230,9 @@ function BattalionList({
                   <meter min={0} max={b.maxManpower} value={b.manpower} aria-label={`${label}`} />
                 </span>
                 {b.armyId && armyNames.has(b.armyId) && <span className="tag">{armyNames.get(b.armyId)}</span>}
+                {you && b.nationId !== you && nationName && (
+                  <span className="tag">Lent by {nationName(b.nationId)} — you command it</span>
+                )}
                 {b.eligibility && (
                   <span className={`tag ${b.eligibility === 'READY' ? 'tag--active' : ''}`}>
                     {ELIGIBILITY_TEXT[b.eligibility]}
@@ -421,6 +447,94 @@ function RecruitControls({ gameId, city, yourTurn }: { gameId: string; city: Cit
       </button>
       {!yourTurn && <p className="muted">You can recruit on your turn.</p>}
       {recruit.error && <Alert>{describeError(recruit.error)}</Alert>}
+    </div>
+  )
+}
+
+/** Your battalions an ally commands: it may move and attack with them; you pay their upkeep and may recall them. */
+function LentBattalions({
+  gameId,
+  battalions,
+  yourTurn,
+  nationName,
+}: {
+  gameId: string
+  battalions: Battalion[]
+  yourTurn: boolean
+  nationName: (id: string) => string
+}) {
+  const release = useRelease(gameId)
+  return (
+    <div className="battalions">
+      <h4>Your battalions lent to allies</h4>
+      <ul className="battalion-list">
+        {battalions.map((b) => (
+          <li key={b.id} className="battalion">
+            <span className={`unit-icon unit-icon--${b.unitType.toLowerCase()}`} aria-hidden="true" />
+            <span className="battalion__body">
+              <span className="battalion__name">{UNIT_LABELS[b.unitType]}</span>
+              <span className="battalion__strength">{b.manpower.toLocaleString('en-US')} men</span>
+              <span className="tag">Commanded by {nationName(b.commanderNationId ?? '')}</span>
+              {yourTurn && (
+                <button
+                  type="button"
+                  className="link-button"
+                  disabled={release.isPending}
+                  onClick={() => release.mutate({ battalionIds: [b.id], idempotencyKey: crypto.randomUUID() })}
+                >
+                  Recall
+                </button>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="muted">Recalling does not give a battalion another move this round.</p>
+      {release.error && <Alert>{describeError(release.error)}</Alert>}
+    </div>
+  )
+}
+
+function LendControls({
+  gameId,
+  battalionIds,
+  partners,
+  nationName,
+  onDone,
+}: {
+  gameId: string
+  battalionIds: string[]
+  partners: string[]
+  nationName: (id: string) => string
+  onDone: () => void
+}) {
+  const attach = useAttach(gameId)
+  const [partner, setPartner] = useState('')
+  const chosen = partners.includes(partner) ? partner : partners[0]
+  return (
+    <div className="move-controls">
+      <label>
+        Lend to
+        <select value={chosen} onChange={(e) => setPartner(e.target.value)}>
+          {partners.map((p) => (
+            <option key={p} value={p}>
+              {nationName(p)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        className="button"
+        disabled={attach.isPending}
+        onClick={() =>
+          attach.mutate({ battalionIds, commanderNationId: chosen, idempotencyKey: crypto.randomUUID() }, { onSuccess: onDone })
+        }
+      >
+        Lend {battalionIds.length} battalion(s)
+      </button>
+      <p className="muted">The ally may move and attack with them; you keep paying their upkeep and can recall them on your turn.</p>
+      {attach.error && <Alert>{describeError(attach.error)}</Alert>}
     </div>
   )
 }

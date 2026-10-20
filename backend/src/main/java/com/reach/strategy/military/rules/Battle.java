@@ -43,13 +43,22 @@ public final class Battle {
 
 	}
 
-	/** A participating battalion as the battle sees it. */
-	public record Fighter(UUID id, UnitType type, int manpower) {
+	/**
+	 * A participating battalion as the battle sees it.
+	 *
+	 * @param modifiers its own nation's technology and doctrine (coalition battles, Phase 10), or null
+	 * for the side's modifiers
+	 */
+	public record Fighter(UUID id, UnitType type, int manpower, SideModifiers modifiers) {
 
 		public Fighter {
 			if (manpower <= 0) {
 				throw new IllegalArgumentException("A fighting battalion needs soldiers");
 			}
+		}
+
+		public Fighter(UUID id, UnitType type, int manpower) {
+			this(id, type, manpower, null);
 		}
 
 	}
@@ -161,8 +170,8 @@ public final class Battle {
 		for (int number = 1; number <= combat.maxPhases(); number++) {
 			Map<UnitType, BigDecimal> a = strengths(attackers, remaining, rules);
 			Map<UnitType, BigDecimal> d = strengths(defenders, remaining, rules);
-			Firepower attackFire = firepower(a, d, true, input, rules);
-			Firepower defenceFire = firepower(d, a, false, input, rules);
+			Firepower attackFire = firepower(attackers, remaining, a, d, true, input, rules);
+			Firepower defenceFire = firepower(defenders, remaining, d, a, false, input, rules);
 			// Simultaneous fire: both sides' damage is computed before any losses are applied.
 			Map<UnitType, Integer> defenderLosses = casualties(attackFire.damage(), d, defenders, remaining, rules);
 			Map<UnitType, Integer> attackerLosses = casualties(defenceFire.damage(), a, attackers, remaining, rules);
@@ -221,31 +230,72 @@ public final class Battle {
 
 	}
 
-	private static Firepower firepower(Map<UnitType, BigDecimal> own, Map<UnitType, BigDecimal> enemy,
-			boolean attacking, Input input, MilitaryRules rules) {
+	/**
+	 * Damage a side deals. The screen, artillery protection and the cavalry flank are properties of
+	 * the whole side; technology and doctrine belong to each battalion's nation, so a coalition side
+	 * adds up each nation's contribution with its own modifiers (Phase 10). A side of one nation uses
+	 * exactly the single-nation formula.
+	 */
+	private static Firepower firepower(List<Fighter> fighters, Map<UUID, Integer> remaining,
+			Map<UnitType, BigDecimal> own, Map<UnitType, BigDecimal> enemy, boolean attacking, Input input,
+			MilitaryRules rules) {
 		MilitaryRules.CombatRules combat = rules.combat();
 		BigDecimal protection = protection(own, rules);
 		BigDecimal artEff = combat.artilleryMinEffectiveness()
 			.add(BigDecimal.ONE.subtract(combat.artilleryMinEffectiveness()).multiply(protection, MC), MC);
 		BigDecimal cavalryTerrain = input.mountains() ? combat.cavalryMountainFactor() : BigDecimal.ONE;
-		SideModifiers mods = attacking ? input.attackerModifiers() : input.defenderModifiers();
+		SideModifiers sideMods = attacking ? input.attackerModifiers() : input.defenderModifiers();
+		Map<SideModifiers, List<Fighter>> groups = new LinkedHashMap<>();
+		for (Fighter f : fighters) {
+			groups.computeIfAbsent(f.modifiers() == null ? sideMods : f.modifiers(), m -> new ArrayList<>()).add(f);
+		}
+		BigDecimal flank = flank(own, enemy, input, combat);
+		if (groups.size() > 1) {
+			BigDecimal weighted = BigDecimal.ZERO;
+			BigDecimal baseTotal = BigDecimal.ZERO;
+			for (var group : groups.entrySet()) {
+				Map<UnitType, BigDecimal> strengths = strengths(group.getValue(), remaining, rules);
+				BigDecimal groupBase = base(strengths, group.getKey(), artEff, cavalryTerrain, rules);
+				baseTotal = baseTotal.add(groupBase, MC);
+				weighted = weighted.add(groupBase.multiply(terrain(group.getKey(), attacking, input, combat), MC), MC);
+			}
+			BigDecimal damage = weighted.multiply(BigDecimal.ONE.add(flank, MC), MC);
+			BigDecimal terrain = baseTotal.signum() == 0 ? BigDecimal.ONE : weighted.divide(baseTotal, MC);
+			return new Firepower(protection, artEff, flank, terrain, damage);
+		}
+		SideModifiers mods = groups.isEmpty() ? sideMods : groups.keySet().iterator().next();
+		BigDecimal base = base(own, mods, artEff, cavalryTerrain, rules);
+		BigDecimal terrain = terrain(mods, attacking, input, combat);
+		BigDecimal damage = base.multiply(BigDecimal.ONE.add(flank, MC), MC).multiply(terrain, MC);
+		return new Firepower(protection, artEff, flank, terrain, damage);
+	}
 
-		// techMod per unit type: the soldiers are unchanged, each one simply hits harder.
-		BigDecimal base = own.get(UnitType.INFANTRY).multiply(rules.unit(UnitType.INFANTRY).attack(), MC)
+	/** techMod per unit type: the soldiers are unchanged, each one simply hits harder. */
+	private static BigDecimal base(Map<UnitType, BigDecimal> own, SideModifiers mods, BigDecimal artEff,
+			BigDecimal cavalryTerrain, MilitaryRules rules) {
+		return own.get(UnitType.INFANTRY).multiply(rules.unit(UnitType.INFANTRY).attack(), MC)
 			.multiply(mods.damageMultiplier(UnitType.INFANTRY), MC)
 			.add(own.get(UnitType.CAVALRY).multiply(rules.unit(UnitType.CAVALRY).attack(), MC).multiply(cavalryTerrain, MC)
 				.multiply(mods.damageMultiplier(UnitType.CAVALRY), MC), MC)
 			.add(own.get(UnitType.ARTILLERY).multiply(rules.unit(UnitType.ARTILLERY).attack(), MC).multiply(artEff, MC)
 				.multiply(mods.damageMultiplier(UnitType.ARTILLERY), MC), MC);
+	}
 
-		BigDecimal flank = BigDecimal.ZERO;
+	/** Cavalry flank of the whole side (none in mountains). */
+	private static BigDecimal flank(Map<UnitType, BigDecimal> own, Map<UnitType, BigDecimal> enemy, Input input,
+			MilitaryRules.CombatRules combat) {
 		BigDecimal enemyTotal = sum(enemy);
-		if (!input.mountains() && enemyTotal.signum() > 0) {
-			BigDecimal excess = own.get(UnitType.CAVALRY).subtract(enemy.get(UnitType.CAVALRY), MC).max(BigDecimal.ZERO);
-			BigDecimal ratio = excess.divide(enemyTotal.multiply(combat.flankEnemyShare(), MC), MC).min(BigDecimal.ONE);
-			flank = combat.flankMaxBonus().multiply(ratio, MC);
+		if (input.mountains() || enemyTotal.signum() == 0) {
+			return BigDecimal.ZERO;
 		}
+		BigDecimal excess = own.get(UnitType.CAVALRY).subtract(enemy.get(UnitType.CAVALRY), MC).max(BigDecimal.ZERO);
+		BigDecimal ratio = excess.divide(enemyTotal.multiply(combat.flankEnemyShare(), MC), MC).min(BigDecimal.ONE);
+		return combat.flankMaxBonus().multiply(ratio, MC);
+	}
 
+	/** Terrain multiplier of an attacking nation (river, mountains; reduced by its doctrines). */
+	private static BigDecimal terrain(SideModifiers mods, boolean attacking, Input input,
+			MilitaryRules.CombatRules combat) {
 		BigDecimal terrain = BigDecimal.ONE;
 		if (attacking && input.river()) {
 			terrain = terrain.multiply(SideModifiers.reduced(combat.riverAttackMultiplier(), mods.riverPenaltyReductionBps()),
@@ -255,8 +305,7 @@ public final class Battle {
 			terrain = terrain.multiply(
 					SideModifiers.reduced(combat.mountainAttackMultiplier(), mods.mountainPenaltyReductionBps()), MC);
 		}
-		BigDecimal damage = base.multiply(BigDecimal.ONE.add(flank, MC), MC).multiply(terrain, MC);
-		return new Firepower(protection, artEff, flank, terrain, damage);
+		return terrain;
 	}
 
 	/** P: how well the infantry/cavalry screen covers the artillery (1 = fully protected). */

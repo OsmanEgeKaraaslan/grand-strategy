@@ -399,10 +399,46 @@ balancing pass follows from that playtest. Until then gameplay is verified by au
 endpoint, server-authoritative commands, no secrets in code, validated input); Phase 15 audits and
 hardens, it does not introduce security for the first time.
 
-## Phase 10 — World Expansion
+## Phase 10 — World Expansion, N-Faction Multiplayer & Coalition Diplomacy — **implemented (2026-10-20)**
 
-- Larger and additional maps (more provinces, more nations, neutral land if Q-W4 is decided),
-  map selection in the lobby, 3–4 player games.
+**10A — world and multiplayer:**
+
+- **Map:** Grand Campaign (72 irregular provinces, 10 fictional Europe-inspired factions, rivers,
+  mountains), generated deterministically by `tools/mapgen/grand-campaign.mjs` from original data;
+  adjacency = shared land border ≥ 16 units (corner touches excluded), validated against the geometry
+  at startup; city points separate from outlines. The Sundered Reach stays available.
+- **Nations and lobbies:** 2–4 human players, map choice and player count at creation, only playable
+  factions selectable, no duplicates, invitation codes as before; every other faction is a passive
+  NPC placeholder (not an AI). Turns skip nations without a player and eliminated players.
+- **Balance:** starting treasury, capital workshops and forces per faction tier and fortresses per
+  map, all in ruleset v6.
+- **Gold gifts:** active player, positive bounded milligold, atomic, idempotent, public history,
+  blocked to war enemies (configurable); Send Gold card with preview and confirmation.
+- **Map UI:** pan, zoom (buttons and wheel), drag, selection, city markers.
+
+**10B — coalitions:**
+
+- Coalition battles (per-nation modifiers, per-battalion losses, cohorts preserved, per-nation
+  report lines, no merged nation); allies defend together; coalition occupation and sieges.
+- Attached battalions (owner lends to an ally or co-belligerent, commander moves and attacks only,
+  owner pays and recalls, invalid attachments end); movement once per global round in v6.
+- Defensive calls to arms (honour joins, decline ends the alliance; no deadline or penalty).
+- War leaders (declarer and target; succession on elimination).
+- Peace conferences: request and answer out of turn, whole-game pause, immutable revisions,
+  approvals bound to revisions, required approvals of both principals and every giver, atomic
+  re-validated settlement, cancellation, no timeouts or automatic acceptance.
+- Separate peace for non-leaders; elimination of landless nations; domination victory; v6 score
+  with gold; results stored once; no concede button.
+- **Frontend:** call-to-arms card, conference card (revision, terms, approvals, approve/reject,
+  revise, end), general and separate peace buttons, pause banner, lend/recall battalions, coalition
+  battle report, eliminated markers, domination results.
+- **Tests:** pure rule tests (geometry, coalition damage, round movement, coalition control, peace
+  sides, approvers, NPC placeholder, v6 victory), PostgreSQL ITs (Grand Campaign lobby, turns, NPCs,
+  gifts; calls, attachments, coalition and allied battles; conferences, pause, revisions, approvals,
+  rollback, concurrency, separate peace, NPC counterpart, elimination, domination, access control;
+  v5 compatibility) and a four-human, ten-nation end-to-end scenario; frontend tests.
+- **Not done:** AI (Phase 11), offensive calls to arms, neutral land (Q-W4), war-score costs of terms,
+  a Playwright session, balancing of the new map (Q-W5).
 
 ## Phase 11 — Enemy AI
 

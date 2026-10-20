@@ -9,14 +9,25 @@ import { formatGold } from './gold'
 export interface Relations {
   atWar: (nationId: string) => boolean
   mayEnter: (controllerNationId: string) => boolean
+  /** Nations you may lend battalions to (allies and nations on your side of a war; Phase 10). */
+  partners: string[]
 }
 
 export function relationsOf(overview: DiplomacyOverview | undefined, yourNationId: string | undefined): Relations {
   if (!overview || !overview.available) {
-    return { atWar: (id) => id !== yourNationId, mayEnter: () => true }
+    return { atWar: (id) => id !== yourNationId, mayEnter: () => true, partners: [] }
   }
   const byId = new Map(overview.nations.map((n) => [n.nationId, n]))
+  const partners = new Set(overview.nations.filter((n) => n.status === 'ALLIED').map((n) => n.nationId))
+  for (const war of overview.rules?.features?.attachments ? overview.wars : []) {
+    const mine = war.participants.find((p) => p.nationId === yourNationId && p.leftRound == null)
+    if (war.status !== 'ACTIVE' || !mine) continue
+    war.participants
+      .filter((p) => p.side === mine.side && p.leftRound == null && p.nationId !== yourNationId)
+      .forEach((p) => partners.add(p.nationId))
+  }
   return {
+    partners: overview.rules?.features?.attachments ? [...partners].sort() : [],
     atWar: (id) => byId.get(id)?.status === 'WAR',
     mayEnter: (id) => id === yourNationId || byId.get(id)?.weMayEnter === true,
   }
@@ -109,6 +120,18 @@ export const EVENT_LABELS: Record<string, string> = {
   TRIBUTE_CANCELLED: 'stopped paying tribute to',
   FORCES_WITHDRAWN: 'withdrew battalions',
   CONTROL_RETURNED: 'regained control of a province from',
+  GOLD_GIFT: 'sent gold to',
+  CALL_TO_ARMS: 'called to arms',
+  CALL_HONORED: 'honoured the call to arms of',
+  CALL_DECLINED: 'declined the call to arms of',
+  CONFERENCE_REQUESTED: 'asked for a peace conference with',
+  CONFERENCE_OPENED: 'opened a peace conference with',
+  CONFERENCE_REJECTED: 'refused a peace conference with',
+  CONFERENCE_CANCELLED: 'ended a peace conference without a treaty',
+  SEPARATE_PEACE: 'made a separate peace with',
+  NATION_ELIMINATED: 'was eliminated',
+  WAR_LEADER_CHANGED: 'now leads its side instead of',
+  ATTACHMENTS_ENDED: 'attachments ended',
 }
 
 export function describeEvent(event: DiplomacyEvent, names: Names): string {
@@ -127,6 +150,8 @@ export function describeEvent(event: DiplomacyEvent, names: Names): string {
       return `${actor} paid ${formatGold(Number(d.paidMg))} gold tribute to ${target} (${d.round}/${d.rounds}${Number(d.paidMg) < Number(d.dueMg) ? `, ${formatGold(Number(d.dueMg))} was due` : ''})`
     case 'POPULATION_TRANSFERRED':
       return `${Number(d.people).toLocaleString('en-US')} people moved from ${names.province(String(d.fromProvinceKey))} to ${names.province(String(d.toProvinceKey))}`
+    case 'ATTACHMENTS_ENDED':
+      return `${d.battalions} lent battalion(s) returned to their owners`
     case 'FORCES_WITHDRAWN':
       return `${d.battalions} battalion(s) withdrew from territory they may no longer enter`
     default:
@@ -149,7 +174,7 @@ export const BLOCKER_TEXT: Record<string, string> = {
 
 export const VIOLATION_TEXT: Record<string, string> = {
   TOO_MANY_TERMS: 'Too many terms.',
-  NOT_A_PARTY: 'Only the two war leaders can give or receive.',
+  NOT_A_PARTY: 'Only nations on opposite sides of this war (in a separate peace: the leaving nation and the other side) can give or receive.',
   SAME_NATION: 'A nation cannot give to itself.',
   PROVINCE_NOT_FOUND: 'Unknown province.',
   PROVINCE_NOT_OWNED: 'The giving nation does not own this province.',

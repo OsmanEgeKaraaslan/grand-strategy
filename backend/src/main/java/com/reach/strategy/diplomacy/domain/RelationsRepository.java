@@ -114,7 +114,18 @@ public class RelationsRepository {
 
 	}
 
-	public record ParticipantRow(UUID warId, UUID nationId, String side, int joinedRound, String joinReason) {
+	/** @param leftRound round it left the war (separate peace, elimination), or null while it fights */
+	public record ParticipantRow(UUID warId, UUID nationId, String side, int joinedRound, String joinReason,
+			Integer leftRound, String leftReason) {
+
+		public ParticipantRow(UUID warId, UUID nationId, String side, int joinedRound, String joinReason) {
+			this(warId, nationId, side, joinedRound, joinReason, null, null);
+		}
+
+		public boolean active() {
+			return leftRound == null;
+		}
+
 	}
 
 	public List<WarRow> wars(UUID gameId) {
@@ -154,10 +165,11 @@ public class RelationsRepository {
 
 	public List<ParticipantRow> participants(UUID gameId) {
 		return jdbc.query("""
-				SELECT p.war_id, p.nation_id, p.side, p.joined_round, p.join_reason
+				SELECT p.war_id, p.nation_id, p.side, p.joined_round, p.join_reason, p.left_round, p.left_reason
 				FROM game.war_participant p WHERE p.game_id = ? ORDER BY p.war_id, p.side, p.joined_round, p.nation_id
 				""", (rs, row) -> new ParticipantRow(rs.getObject("war_id", UUID.class), rs.getObject("nation_id", UUID.class),
-				rs.getString("side"), rs.getInt("joined_round"), rs.getString("join_reason")), gameId);
+				rs.getString("side"), rs.getInt("joined_round"), rs.getString("join_reason"),
+				(Integer) rs.getObject("left_round"), rs.getString("left_reason")), gameId);
 	}
 
 	public void insertParticipant(UUID gameId, ParticipantRow p) {
@@ -165,6 +177,28 @@ public class RelationsRepository {
 				INSERT INTO game.war_participant (game_id, war_id, nation_id, side, joined_round, join_reason)
 				VALUES (?, ?, ?, ?, ?, ?)
 				""", gameId, p.warId(), p.nationId(), p.side(), p.joinedRound(), p.joinReason());
+	}
+
+	/** A nation leaves a war (separate peace, elimination): its fronts in that war end. */
+	public void leaveWar(UUID gameId, UUID warId, UUID nationId, int round, String reason) {
+		int updated = jdbc.update("""
+				UPDATE game.war_participant SET left_round = ?, left_reason = ?
+				WHERE game_id = ? AND war_id = ? AND nation_id = ? AND left_round IS NULL
+				""", round, reason, gameId, warId, nationId);
+		if (updated != 1) {
+			throw new IllegalStateException("Nation " + nationId + " is not fighting in war " + warId);
+		}
+		jdbc.update("""
+				UPDATE game.war_front SET active = false
+				WHERE game_id = ? AND war_id = ? AND active AND (nation_a_id = ? OR nation_b_id = ?)
+				""", gameId, warId, nationId, nationId);
+	}
+
+	/** A new leader of one side (the previous one left the war). */
+	public void setLeader(UUID gameId, UUID warId, String side, UUID nationId) {
+		String column = "ATTACKER".equals(side) ? "attacker_leader_id" : "defender_leader_id";
+		jdbc.update("UPDATE game.war SET " + column + " = ? WHERE game_id = ? AND id = ? AND status = 'ACTIVE'", nationId,
+				gameId, warId);
 	}
 
 	/** A pair of nations now fighting each other in this war (unique among active fronts). */

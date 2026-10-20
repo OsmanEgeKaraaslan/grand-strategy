@@ -43,6 +43,18 @@ class GameCommandService implements GameCommands {
 	@Override
 	@Transactional
 	public <T> T execute(CurrentPlayer me, UUID gameId, UUID idempotencyKey, String commandType, Handler<T> handler) {
+		return run(me, gameId, idempotencyKey, commandType, handler, false);
+	}
+
+	@Override
+	@Transactional
+	public <T> T executeOutOfTurn(CurrentPlayer me, UUID gameId, UUID idempotencyKey, String commandType,
+			Handler<T> handler) {
+		return run(me, gameId, idempotencyKey, commandType, handler, true);
+	}
+
+	private <T> T run(CurrentPlayer me, UUID gameId, UUID idempotencyKey, String commandType, Handler<T> handler,
+			boolean outOfTurn) {
 		Game game = games.findByIdForUpdate(gameId).orElseThrow(GameErrors::gameNotFound);
 		GamePlayer mine = memberships.findByGameIdOrderBySeatOrder(game.id())
 			.stream()
@@ -65,8 +77,16 @@ class GameCommandService implements GameCommands {
 			}
 			return handler.replay(context, previous.get().resultRef());
 		}
-		if (game.activeSeat() != mine.seatOrder()) {
-			throw new ApiException(HttpStatus.CONFLICT, "NOT_ACTIVE_PLAYER", "It is not your turn.");
+		if (mine.eliminated()) {
+			throw GameErrors.eliminated();
+		}
+		if (!outOfTurn) {
+			if (game.paused()) {
+				throw GameErrors.pausedForConference();
+			}
+			if (game.activeSeat() != mine.seatOrder()) {
+				throw new ApiException(HttpStatus.CONFLICT, "NOT_ACTIVE_PLAYER", "It is not your turn.");
+			}
 		}
 
 		Outcome<T> outcome = handler.execute(context);

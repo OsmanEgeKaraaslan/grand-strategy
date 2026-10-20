@@ -601,4 +601,19 @@ class DiplomacyIT {
 		assertThat(code(api.result(game.host(), game.gameId()))).isEqualTo("409 GAME_NOT_FINISHED");
 	}
 
+	@Test
+	void coalitionFeaturesOfRulesetV6AreUnavailableInOlderGames() throws Exception {
+		Lobby game = world.startedGame();
+		String warId = d.declareWar(game, game.host(), d.ostra(game));
+		assertThat(code(api.requestConference(game.guest(), game.gameId(), warId, "GENERAL", UUID.randomUUID())))
+			.isEqualTo("409 CONFERENCES_NOT_AVAILABLE");
+		assertThat(code(api.callToArms(game.host(), game.gameId(), warId, d.ostra(game), UUID.randomUUID())))
+			.isEqualTo("409 CALLS_TO_ARMS_NOT_AVAILABLE");
+		String battalion = world.battalions(game, "varn", "varnhold").getFirst();
+		assertThat(code(api.attach(game.host(), game.gameId(), List.of(battalion), d.ostra(game), UUID.randomUUID())))
+			.isEqualTo("409 ATTACHMENT_NOT_AVAILABLE");
+		// The Phase 9 turn-bound peace proposals still work there.
+		d.proposePeace(game, game.host(), warId, "[]");
+	}
+
 }

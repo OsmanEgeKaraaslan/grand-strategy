@@ -29,6 +29,14 @@ public class MapTemplateReader {
 		return jdbc.queryForList("SELECT id FROM game.map_template ORDER BY key, version", UUID.class);
 	}
 
+	/** The highest published version of a map. */
+	public Optional<UUID> findLatestId(String key) {
+		return jdbc.queryForList("SELECT id FROM game.map_template WHERE key = ? ORDER BY version DESC LIMIT 1", UUID.class,
+				key)
+			.stream()
+			.findFirst();
+	}
+
 	public Optional<UUID> findId(String key, int version) {
 		return jdbc.queryForList("SELECT id FROM game.map_template WHERE key = ? AND version = ?", UUID.class, key, version)
 			.stream()
@@ -37,9 +45,10 @@ public class MapTemplateReader {
 
 	public Optional<MapTemplate> load(UUID mapId) {
 		List<Header> headers = jdbc.query(
-				"SELECT id, key, version, name, view_box, max_players FROM game.map_template WHERE id = ?",
+				"SELECT id, key, version, name, view_box, max_players, min_border_length FROM game.map_template WHERE id = ?",
 				(rs, row) -> new Header(rs.getObject("id", UUID.class), rs.getString("key"), rs.getInt("version"),
-						rs.getString("name"), rs.getString("view_box"), rs.getInt("max_players")),
+						rs.getString("name"), rs.getString("view_box"), rs.getInt("max_players"),
+						(Integer) rs.getObject("min_border_length")),
 				mapId);
 		if (headers.isEmpty()) {
 			return Optional.empty();
@@ -50,7 +59,7 @@ public class MapTemplateReader {
 		Map<String, MapTemplate.ProvinceShape> shapes = new LinkedHashMap<>();
 		Map<UUID, String> keysById = new LinkedHashMap<>();
 		jdbc.query("""
-				SELECT id, key, name, terrain, svg_path, label_x, label_y, city_name, start_population
+				SELECT id, key, name, terrain, svg_path, label_x, label_y, city_name, start_population, city_x, city_y
 				FROM game.province_template WHERE map_template_id = ? ORDER BY key
 				""", rs -> {
 			String key = rs.getString("key");
@@ -59,7 +68,10 @@ public class MapTemplateReader {
 			provinces.add(new MapDefinition.Province(id, key, rs.getString("name"),
 					MapDefinition.Terrain.valueOf(rs.getString("terrain")), rs.getString("city_name"),
 					rs.getInt("start_population")));
-			shapes.put(key, new MapTemplate.ProvinceShape(rs.getString("svg_path"), rs.getInt("label_x"), rs.getInt("label_y")));
+			Integer cityX = (Integer) rs.getObject("city_x");
+			Integer cityY = (Integer) rs.getObject("city_y");
+			shapes.put(key, new MapTemplate.ProvinceShape(rs.getString("svg_path"), rs.getInt("label_x"), rs.getInt("label_y"),
+					cityX == null ? rs.getInt("label_x") : cityX, cityY == null ? rs.getInt("label_y") : cityY));
 		}, mapId);
 
 		List<MapDefinition.Adjacency> adjacencies = new ArrayList<>();
@@ -89,22 +101,24 @@ public class MapTemplateReader {
 		}, mapId);
 
 		List<MapDefinition.Nation> nations = jdbc.query("""
-				SELECT id, key, name, color, capital_province_id FROM game.nation_template
+				SELECT id, key, name, color, capital_province_id, tier, playable FROM game.nation_template
 				WHERE map_template_id = ? ORDER BY key
 				""", (rs, row) -> {
 			UUID id = rs.getObject("id", UUID.class);
 			List<String> owned = new ArrayList<>(startProvinces.getOrDefault(id, List.of()));
 			owned.sort(String::compareTo);
 			return new MapDefinition.Nation(id, rs.getString("key"), rs.getString("name"), rs.getString("color"),
-					keysById.get(rs.getObject("capital_province_id", UUID.class)), owned);
+					keysById.get(rs.getObject("capital_province_id", UUID.class)), owned,
+					MapDefinition.Tier.valueOf(rs.getString("tier")), rs.getBoolean("playable"));
 		}, mapId);
 
 		MapDefinition definition = new MapDefinition(header.id(), header.key(), header.version(), header.name(),
-				header.maxPlayers(), provinces, adjacencies, nations);
+				header.maxPlayers(), provinces, adjacencies, nations, header.minBorderLength());
 		return Optional.of(new MapTemplate(definition, new MapTemplate.Geometry(header.viewBox(), shapes, rivers)));
 	}
 
-	private record Header(UUID id, String key, int version, String name, String viewBox, int maxPlayers) {
+	private record Header(UUID id, String key, int version, String name, String viewBox, int maxPlayers,
+			Integer minBorderLength) {
 	}
 
 }

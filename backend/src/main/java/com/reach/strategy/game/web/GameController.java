@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.UUID;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -36,7 +38,7 @@ class GameController {
 
 	@PostMapping
 	ResponseEntity<LobbyView> create(CurrentPlayer me, @Valid @RequestBody CreateGameRequest request) {
-		LobbyView lobby = lobbyService.create(me, request.name());
+		LobbyView lobby = lobbyService.create(me, request.name(), request.maxPlayers(), request.mapKey());
 		return ResponseEntity.created(URI.create("/api/v1/games/" + lobby.id())).body(lobby);
 	}
 
@@ -66,7 +68,12 @@ class GameController {
 		return lobbyService.start(me, gameId);
 	}
 
-	record CreateGameRequest(@NotBlank @Size(min = 3, max = 40) String name) {
+	/**
+	 * @param maxPlayers human players (2–4 on the Grand Campaign; default 2)
+	 * @param mapKey map to play (default: the configured default map)
+	 */
+	record CreateGameRequest(@NotBlank @Size(min = 3, max = 40) String name, @Min(2) @Max(8) Integer maxPlayers,
+			@Size(max = 64) String mapKey) {
 	}
 
 	record JoinGameRequest(@NotBlank @Size(max = 32) String inviteCode) {

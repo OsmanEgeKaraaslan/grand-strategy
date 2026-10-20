@@ -21,6 +21,8 @@ export function BattleReportView({
   const defender = nations.get(battle.defenderNationId)
   const name = (key: string | null) => (key ? (provinceNames.get(key) ?? key) : '')
   const winner = battle.winner === 'ATTACKER' ? attacker : defender
+  // Several nations on a side (Phase 10): each fought with its own technology and keeps its own losses.
+  const coalition = (details.nations?.length ?? 0) > 2
   const pct = (lost: number, initial: number) => `${((lost * 100) / initial).toFixed(1)}%`
 
   return (
@@ -73,6 +75,32 @@ export function BattleReportView({
           </tr>
         </tbody>
       </table>
+      {coalition && (
+        <table className="battle-table" aria-label="By nation">
+          <thead>
+            <tr>
+              <th scope="col">Nation</th>
+              <th scope="col">Soldiers</th>
+              <th scope="col">Losses</th>
+              <th scope="col">Outcome</th>
+            </tr>
+          </thead>
+          <tbody>
+            {details.nations!.map((n) => (
+              <tr key={n.nationId}>
+                <th scope="row">
+                  {n.side === 'ATTACKER' ? 'Attacker' : 'Defender'} · {nations.get(n.nationId)?.name ?? 'Unknown'}
+                </th>
+                <td>{n.manpowerBefore.toLocaleString('en-US')}</td>
+                <td>{n.losses.toLocaleString('en-US')}</td>
+                <td>
+                  {n.destroyed ? 'Destroyed' : n.retreatProvinceKey ? `Retreated to ${name(n.retreatProvinceKey)}` : 'Held the field'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       <table className="battle-table" aria-label="By unit type">
         <thead>
           <tr>

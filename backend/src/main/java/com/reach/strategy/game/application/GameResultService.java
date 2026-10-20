@@ -63,7 +63,7 @@ public class GameResultService {
 		List<ResultView.Standing> standings = results.standings(gameId).stream().map(s -> {
 			WorldApi.NationState nation = nations.get(s.nationId());
 			return new ResultView.Standing(s.rank(), s.nationId(), nation.name(), nation.color(),
-					names.getOrDefault(s.playerId(), "Unknown player"), me.id().equals(s.playerId()), s.score(),
+					s.playerId() == null ? "Computer (NPC)" : names.getOrDefault(s.playerId(), "Unknown player"), me.id().equals(s.playerId()), s.score(),
 					s.ownedProvinces(), s.ownedPopulation(), s.treasuryMg());
 		}).toList();
 		Map<String, Long> statistics = jsonMapper.readValue(result.statisticsJson(), new TypeReference<Map<String, Long>>() {

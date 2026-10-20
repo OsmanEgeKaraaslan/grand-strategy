@@ -152,6 +152,7 @@ public class PeaceService {
 	private UUID create(CurrentPlayer me, UUID gameId, GameCommands.CommandContext context, UUID warId,
 			List<PeaceTerms.Term> terms, UUID counterOf) {
 		DiplomacyState.Picture picture = state.load(gameId).orElseThrow(DiplomacyErrors::notAvailable);
+		turnBoundPeace(picture);
 		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
 		UUID proposer = DiplomacyQueries.nationOf(snapshot, context.gamePlayerId());
 		RelationsRepository.WarRow war = activeWar(picture, warId);
@@ -210,6 +211,7 @@ public class PeaceService {
 	private GameCommands.Outcome<DiplomacyViews.PeaceResult> settle(UUID gameId, GameCommands.CommandContext context,
 			UUID proposalId) {
 		DiplomacyState.Picture picture = state.load(gameId).orElseThrow(DiplomacyErrors::notAvailable);
+		turnBoundPeace(picture);
 		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
 		UUID nation = DiplomacyQueries.nationOf(snapshot, context.gamePlayerId());
 		TreatyRepository.ProposalRow proposal = incoming(gameId, proposalId, nation);
@@ -266,7 +268,7 @@ public class PeaceService {
 				queries.warView(ctx, after.war(war.id()).orElseThrow()), withdrawals, returned), treatyId);
 	}
 
-	private void apply(UUID gameId, GameCommands.CommandContext context, RelationsRepository.WarRow war, UUID treatyId,
+	void apply(UUID gameId, GameCommands.CommandContext context, RelationsRepository.WarRow war, UUID treatyId,
 			PeaceTerms.Term term, WorldApi.WorldSnapshot before, DiplomacyState.Picture picture) {
 		switch (term) {
 			case PeaceTerms.Reparations r -> {
@@ -301,7 +303,7 @@ public class PeaceService {
 	 * Provinces controlled by a nation that is no longer at war with their legal owner return to the
 	 * owner's control (occupation ends with the war; only ceded provinces change hands).
 	 */
-	private List<String> returnControl(UUID gameId, GameCommands.CommandContext context, UUID warId) {
+	List<String> returnControl(UUID gameId, GameCommands.CommandContext context, UUID warId) {
 		Hostility.Relations now = state.load(gameId).orElseThrow().hostility();
 		List<String> returned = new ArrayList<>();
 		world.snapshot(gameId)
@@ -317,6 +319,13 @@ public class PeaceService {
 						Map.of("provinceKey", p.provinceKey()));
 			});
 		return returned;
+	}
+
+	/** Ruleset v6 negotiates peace in conferences; the Phase 9 proposals stay for older games. */
+	private static void turnBoundPeace(DiplomacyState.Picture picture) {
+		if (picture.rules().features().peaceConferences()) {
+			throw DiplomacyErrors.conflict("USE_PEACE_CONFERENCE", "In this game peace is negotiated in a peace conference.");
+		}
 	}
 
 	// --- helpers --------------------------------------------------------------------------------

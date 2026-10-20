@@ -18,7 +18,10 @@ import com.reach.strategy.military.api.ForceWithdrawal;
 import com.reach.strategy.military.api.Hostility;
 import com.reach.strategy.military.api.SiegeGate;
 import com.reach.strategy.military.domain.Battalion;
+import com.reach.strategy.military.domain.ArmyRepository;
 import com.reach.strategy.military.domain.BattalionRepository;
+import com.reach.strategy.military.domain.CohortLedger;
+import com.reach.strategy.military.rules.Cohorts;
 import com.reach.strategy.world.api.WorldApi;
 
 import org.springframework.stereotype.Service;
@@ -41,9 +44,13 @@ class WithdrawalService implements ForceWithdrawal {
 	private final BattalionRepository battalions;
 	private final List<Hostility> hostility;
 	private final List<SiegeGate> siegeGates;
+	private final CohortLedger cohorts;
+	private final ArmyRepository armies;
 
 	WithdrawalService(WorldApi world, BattalionRepository battalions, List<Hostility> hostility,
-			List<SiegeGate> siegeGates) {
+			List<SiegeGate> siegeGates, CohortLedger cohorts, ArmyRepository armies) {
+		this.cohorts = cohorts;
+		this.armies = armies;
 		this.world = world;
 		this.battalions = battalions;
 		this.hostility = List.copyOf(hostility);
@@ -92,6 +99,68 @@ class WithdrawalService implements ForceWithdrawal {
 		Set<UUID> everywhere = new HashSet<>(byId.keySet());
 		siegeGates.forEach(gate -> gate.presenceChanged(gameId, everywhere, round, turnNumber, now));
 		return withdrawn;
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.MANDATORY)
+	public int endInvalidAttachments(UUID gameId) {
+		battalions.flush();
+		Hostility.Relations relations = MilitaryService.State.load(world, List.of(), hostility, gameId).relations();
+		Set<UUID> eliminated = new HashSet<>();
+		world.snapshot(gameId).nations().stream().filter(WorldApi.NationState::eliminated).forEach(n -> eliminated.add(n.id()));
+		List<Battalion> ended = battalions.findByGameIdOrderById(gameId)
+			.stream()
+			.filter(b -> b.commanderNationId() != null)
+			.filter(b -> eliminated.contains(b.commanderNationId())
+					|| !relations.mayCommand(b.nationId(), b.commanderNationId()))
+			.toList();
+		ended.forEach(Battalion::detach);
+		battalions.saveAllAndFlush(ended);
+		return ended.size();
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.MANDATORY)
+	public int endAttachmentsOf(UUID gameId, UUID nationId) {
+		battalions.flush();
+		List<Battalion> ended = battalions.findByGameIdOrderById(gameId)
+			.stream()
+			.filter(b -> b.commanderNationId() != null)
+			.filter(b -> b.nationId().equals(nationId) || b.commanderNationId().equals(nationId))
+			.toList();
+		ended.forEach(Battalion::detach);
+		battalions.saveAllAndFlush(ended);
+		return ended.size();
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.MANDATORY)
+	public int dissolveNation(UUID gameId, UUID nationId) {
+		battalions.flush();
+		int returned = 0;
+		for (Battalion battalion : battalions.findByGameIdOrderById(gameId)) {
+			if (nationId.equals(battalion.commanderNationId())) {
+				battalion.detach();
+				battalions.save(battalion);
+			}
+			if (!battalion.nationId().equals(nationId)) {
+				continue;
+			}
+			// Soldiers go home to the city they were raised in, in origin city order.
+			for (Cohorts.Cohort cohort : cohorts.of(battalion)
+				.stream()
+				.sorted(java.util.Comparator.comparing(c -> c.originCityId().toString()))
+				.toList()) {
+				world.changePopulation(gameId, cohort.originCityId(), cohort.soldiers());
+				returned += cohort.soldiers();
+			}
+			cohorts.removed(battalion);
+			battalions.delete(battalion);
+		}
+		battalions.flush();
+		armies.findByGameIdOrderById(gameId).stream().filter(a -> a.nationId().equals(nationId)).forEach(armies::delete);
+		armies.flush();
+		return returned;
 	}
 
 	/** Breadth-first from {@code start} (excluded); within one distance the lowest province key wins. */

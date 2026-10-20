@@ -44,18 +44,20 @@ class EconomyStartInitializer implements GameStartInitializer {
 	public void initialize(UUID gameId, UUID mapId, String rulesetVersion) {
 		EconomyRules rules = rulesets.rules(rulesetVersion);
 		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
-		Map<UUID, String> capitalByNationTemplate = world.mapSummary(mapId)
+		Map<UUID, WorldApi.NationOption> templates = world.mapSummary(mapId)
 			.nations()
 			.stream()
-			.collect(Collectors.toMap(WorldApi.NationOption::id, WorldApi.NationOption::capitalProvinceKey));
+			.collect(Collectors.toMap(WorldApi.NationOption::id, n -> n));
 		Map<String, UUID> cityByProvince = snapshot.provinces()
 			.stream()
 			.collect(Collectors.toMap(WorldApi.ProvinceState::provinceKey, WorldApi.ProvinceState::cityId));
 
 		snapshot.nations().stream().sorted((a, b) -> a.id().compareTo(b.id())).forEach(nation -> {
-			economies.save(NationEconomy.opening(gameId, nation.id(), rules.startingTreasuryMg()));
-			UUID capitalCity = cityByProvince.get(capitalByNationTemplate.get(nation.nationTemplateId()));
-			for (int i = 0; i < rules.startingCapitalWorkshops(); i++) {
+			// Ruleset v6: values per faction tier (major realms start richer, small states poorer).
+			WorldApi.NationOption template = templates.get(nation.nationTemplateId());
+			economies.save(NationEconomy.opening(gameId, nation.id(), rules.startingTreasuryMg(template.tier())));
+			UUID capitalCity = cityByProvince.get(template.capitalProvinceKey());
+			for (int i = 0; i < rules.startingCapitalWorkshops(template.tier()); i++) {
 				buildings.save(Building.startingWorkshop(gameId, capitalCity, 1, clock.instant()));
 			}
 		});

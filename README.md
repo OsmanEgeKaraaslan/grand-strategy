@@ -27,7 +27,8 @@ The project has two equal goals:
 | 7 — Sieges, fortifications, repairs | Implemented: fortresses (levels 1–3, build, upgrade, repair, upkeep), sieges of fortified provinces across global rounds (5% civilian attrition, artillery shortens sieges but damages the fortress and a workshop), capture of control only, workshop repairs, besieged-city restrictions; unfortified provinces keep simple occupation. All backend (unit + PostgreSQL) and frontend tests pass locally |
 | 8 — Technology, research, doctrines, growth | Implemented: Military Academy, University and Barracks producing national research points, military and civilian technology levels, doctrines (mountain, river, siege, logistics) that change real combat, siege and upkeep calculations, Tier 1 → 2 workshop upgrades, 0.5% population growth. All backend (unit + PostgreSQL) and frontend tests pass locally |
 | **9 — Diplomacy, war, peace, victory** | **Implemented**: peace by default, war declarations that gate movement, battles, occupation and sieges, normal alliances and defensive pacts, server-side war score, peace proposals settled atomically (provinces, reparations, ten-round tribute, population transfers), truce and withdrawal, round-30 match completion with stored results. All backend (unit + PostgreSQL) and frontend tests pass locally |
-| Your manual playtest | Next: play a complete game (see “Manual two-player test” below), then Phase 10 |
+| **10 — World expansion, N-faction multiplayer, coalitions** | **Implemented**: Grand Campaign map (72 provinces, 10 factions), 2–4 human players with passive game-controlled nations, starting values per tier, gold gifts, defensive calls to arms, coalition battles, attached battalions, peace conferences with revisions and approvals that pause the game, separate peace, elimination and domination (ruleset v6). All backend (unit + PostgreSQL) and frontend tests pass locally |
+| Your manual playtest | Next: play a Grand Campaign game (see “Manual multiplayer test” below). Phase 11 (AI) is not started |
 
 Playable so far: create a lobby, invite a rival, choose nations, start, take turns on the map, earn gold and build workshops, recruit, reinforce and disband battalions, move them, fight battles, occupy open provinces, besiege fortresses and repair the damage, build research institutions, unlock technology and doctrines, upgrade workshops to Tier 2 and watch cities grow. Declare war, form alliances, negotiate peace with territory, gold, tribute and people, and play a complete game to its round-30 result. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -135,9 +136,41 @@ Economy check: click one of your provinces to see its farmers, workshop workers 
 a Tier 1 workshop (40 gold) on your turn, and end the round — your treasury grows by the projected
 income and the workshop becomes active, producing from the following round.
 
+### Manual multiplayer test (Grand Campaign, Phase 10)
+
+New games use ruleset v6 and the Grand Campaign map. Use three browser profiles (or normal and private
+windows of different browsers), each signed in with its own account.
+
+1. In window 1 create a game: map *Grand Campaign*, *3 human players*. Join with the invitation code in
+   windows 2 and 3. Choose Castavar, Nordmark and Vostrava (the other factions are greyed out: they
+   are controlled by the game). Start.
+2. **Turns:** only the three human nations take turns; the seven game-controlled nations never block.
+   Pan and zoom the map with the buttons, the mouse wheel or by dragging.
+3. **Gift:** on Castavar's turn open *Send gold*, choose Nordmark, enter an amount, confirm.
+4. **Alliance:** on Nordmark's turn propose a *Defensive pact* to Vostrava; accept it on Vostrava's turn.
+5. **War and call to arms:** Castavar declares war on Nordmark. On Nordmark's turn the war card shows
+   *Call to arms* with Vostrava; call. On Vostrava's turn the call appears under *Calls to arms*:
+   *Honour — join the war* (or *Decline*, which ends the alliance after confirmation).
+6. **Coalition battle with a lent battalion:** the four powers never border each other; armies meet in
+   the lands between them. Nordmark and Vostrava both border Aestia (game-controlled): both declare
+   war on Aestia, march into the same Aestian province (e.g. Zemgale), and on Vostrava's turn select
+   its battalion there and *Lend* it to Nordmark. On Nordmark's turn it is listed as “Lent by Vostrava —
+   you command it”; select it with Nordmark's own battalions and attack a neighbouring Aestian
+   province. The battle report has a line per nation; each battalion moves at most once per round.
+7. **Peace conference:** in the Castavar–Nordmark war a leader presses *Request peace conference*; the
+   other leader accepts (at any time). All windows show the pause banner and *End turn* disappears.
+   Revise the draft (e.g. Vostrava pays gold to Castavar) — Vostrava must now approve as well; approve
+   in every window that shows *Approve revision n*. The last approval settles the treaty and play
+   resumes with the same player. Vostrava (not a leader there) can instead ask Castavar for a
+   *separate peace*. Against Aestia, the game-controlled nation agrees to talk at once and gives up
+   only provinces you already occupy.
+8. **Elimination / domination:** a treaty that takes every province of a nation eliminates it (its
+   soldiers go home as civilians); when one nation is left the game ends with reason “Every other
+   nation was eliminated”.
+
 ### Manual two-player test (complete game, Phase 9)
 
-New games use ruleset v5. Two browser windows (one normal, one private), each signed in with its own
+Games on the Sundered Reach created before Phase 10 use ruleset v5. Two browser windows (one normal, one private), each signed in with its own
 account; host = first window.
 
 1. Create a game in window 1, join with the invitation code in window 2, choose Varn and Ostra, start.

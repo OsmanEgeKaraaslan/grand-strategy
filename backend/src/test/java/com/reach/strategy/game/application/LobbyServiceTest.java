@@ -59,8 +59,8 @@ class LobbyServiceTest {
 	WorldApi world;
 
 	static final UUID MAP = UUID.randomUUID();
-	static final WorldApi.NationOption VARN = new WorldApi.NationOption(UUID.randomUUID(), "varn", "Kingdom of Varn", "#3f6fb5", "varnhold", 6);
-	static final WorldApi.NationOption OSTRA = new WorldApi.NationOption(UUID.randomUUID(), "ostra", "Ostran Confederacy", "#b5503a", "ostrava", 6);
+	static final WorldApi.NationOption VARN = new WorldApi.NationOption(UUID.randomUUID(), "varn", "Kingdom of Varn", "#3f6fb5", "varnhold", 6, "POWER", true);
+	static final WorldApi.NationOption OSTRA = new WorldApi.NationOption(UUID.randomUUID(), "ostra", "Ostran Confederacy", "#b5503a", "ostrava", 6, "POWER", true);
 
 	LobbyService service;
 
@@ -77,7 +77,7 @@ class LobbyServiceTest {
 		service = new LobbyService(games, memberships, playerDirectory, world, List.of(), "v1",
 				Clock.fixed(NOW, ZoneOffset.UTC));
 		when(world.defaultMapId()).thenReturn(MAP);
-		when(world.mapSummary(MAP)).thenReturn(new WorldApi.MapSummary(MAP, "The Sundered Reach", 2, List.of(VARN, OSTRA)));
+		when(world.mapSummary(MAP)).thenReturn(new WorldApi.MapSummary(MAP, "sundered-reach", "The Sundered Reach", 2, List.of(VARN, OSTRA)));
 		Game.Created created = Game.create("Twin Shores", host.id(), 2, MAP, "v1", InviteCode.generate(), NOW);
 		game = created.game();
 		storedMembers.add(created.host());

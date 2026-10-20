@@ -1,12 +1,14 @@
 package com.reach.strategy.diplomacy.rules;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /**
@@ -60,11 +62,22 @@ public final class PeaceTerms {
 	 * @param partyB the other war leader (the recipient)
 	 * @param treasuryMg current treasury per party
 	 */
-	public record Facts(UUID partyA, UUID partyB, List<ProvinceFact> provinces, Map<UUID, Long> treasuryMg) {
+	/**
+	 * @param sideOf Phase 10 coalition peace: every nation that may give or receive, with its war side; a
+	 * term must go from one side to the other. Null for a two-leader treaty (Phase 9).
+	 * @param capitalsCedable ruleset v6: starting capitals may be ceded
+	 */
+	public record Facts(UUID partyA, UUID partyB, List<ProvinceFact> provinces, Map<UUID, Long> treasuryMg,
+			Map<UUID, String> sideOf, boolean capitalsCedable) {
+
+		public Facts(UUID partyA, UUID partyB, List<ProvinceFact> provinces, Map<UUID, Long> treasuryMg) {
+			this(partyA, partyB, provinces, treasuryMg, null, false);
+		}
 
 		public Facts {
 			provinces = List.copyOf(provinces);
 			treasuryMg = Map.copyOf(treasuryMg);
+			sideOf = sideOf == null ? null : Map.copyOf(sideOf);
 		}
 
 		Optional<ProvinceFact> province(String key) {
@@ -108,7 +121,7 @@ public final class PeaceTerms {
 		Map<UUID, Integer> peopleBySource = new HashMap<>();
 		for (int i = 0; i < terms.size(); i++) {
 			Term term = terms.get(i);
-			if (!party(term.from(), facts) || !party(term.to(), facts)) {
+			if (!party(term.from(), facts) || !party(term.to(), facts) || !opposite(term, facts)) {
 				violations.add(new Violation(i, Code.NOT_A_PARTY));
 				continue;
 			}
@@ -128,7 +141,7 @@ public final class PeaceTerms {
 					else if (!province.get().ownerNationId().equals(c.from())) {
 						violations.add(new Violation(i, Code.PROVINCE_NOT_OWNED));
 					}
-					else if (province.get().capital()) {
+					else if (province.get().capital() && !facts.capitalsCedable()) {
 						violations.add(new Violation(i, Code.CAPITAL_NOT_CEDABLE));
 					}
 				}
@@ -204,7 +217,56 @@ public final class PeaceTerms {
 	}
 
 	private static boolean party(UUID nation, Facts facts) {
-		return nation != null && (nation.equals(facts.partyA()) || nation.equals(facts.partyB()));
+		if (nation == null) {
+			return false;
+		}
+		return facts.sideOf() == null ? nation.equals(facts.partyA()) || nation.equals(facts.partyB())
+				: facts.sideOf().containsKey(nation);
+	}
+
+	/** Coalition peace: a term moves assets from one side of the war to the other, never within a side. */
+	private static boolean opposite(Term term, Facts facts) {
+		return facts.sideOf() == null || term.from().equals(term.to())
+				|| !facts.sideOf().get(term.from()).equals(facts.sideOf().get(term.to()));
+	}
+
+	/**
+	 * Who must approve a treaty draft (Phase 10, APPROVED policy 2026-10-20): both negotiating
+	 * principals always, and every other nation that gives up something of its own — a province it
+	 * owns, gold, tribute or people from one of its cities. Receiving needs no approval, and ending a
+	 * military occupation is not a loss of the occupier's assets. Sorted by nation id.
+	 */
+	public static List<UUID> requiredApprovers(Collection<UUID> principals, List<Term> terms) {
+		Set<UUID> required = new TreeSet<>(principals);
+		terms.forEach(t -> required.add(t.from()));
+		return List.copyOf(required);
+	}
+
+	/**
+	 * The PROVISIONAL placeholder for nations without a player until AI exists (Phase 11): an NPC
+	 * approves a draft only if all it gives up are provinces the other side already holds militarily.
+	 * It never pays gold or tribute and never gives up people. This is not strategy, only a
+	 * deterministic rule so wars against NPC nations can end.
+	 *
+	 * @param controllerByProvince current military controller of each province
+	 */
+	public static boolean npcApproves(UUID npc, List<Term> terms, Map<String, UUID> controllerByProvince,
+			Map<UUID, String> sideOf) {
+		for (Term t : terms) {
+			if (!t.from().equals(npc)) {
+				continue;
+			}
+			if (!(t instanceof ProvinceCession c)) {
+				return false;
+			}
+			UUID controller = controllerByProvince.get(c.provinceKey());
+			String npcSide = sideOf.get(npc);
+			if (controller == null || controller.equals(npc) || !sideOf.containsKey(controller)
+					|| sideOf.get(controller).equals(npcSide)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**

@@ -11,7 +11,13 @@ import java.util.stream.Collectors;
  * Pure data for the rules engine — SVG geometry lives elsewhere ({@code MapGeometry}).
  */
 public record MapDefinition(UUID id, String key, int version, String name, int maxPlayers, List<Province> provinces,
-		List<Adjacency> adjacencies, List<Nation> nations) {
+		List<Adjacency> adjacencies, List<Nation> nations, Integer minBorderLength) {
+
+	/** A map without a declared border threshold (older hand-drawn maps). */
+	public MapDefinition(UUID id, String key, int version, String name, int maxPlayers, List<Province> provinces,
+			List<Adjacency> adjacencies, List<Nation> nations) {
+		this(id, key, version, name, maxPlayers, provinces, adjacencies, nations, null);
+	}
 
 	public MapDefinition {
 		provinces = List.copyOf(provinces);
@@ -22,6 +28,13 @@ public record MapDefinition(UUID id, String key, int version, String name, int m
 	public enum Terrain {
 
 		PLAINS, MOUNTAINS
+
+	}
+
+	/** Starting profile of a faction: balanced human powers, a major realm, regional powers and small states. */
+	public enum Tier {
+
+		POWER, MAJOR, REGIONAL, MINOR
 
 	}
 
@@ -47,12 +60,23 @@ public record MapDefinition(UUID id, String key, int version, String name, int m
 
 	}
 
-	/** A playable nation with its capital and starting provinces (legal owner and controller). */
+	/**
+	 * A nation with its capital and starting provinces (legal owner and controller).
+	 *
+	 * @param tier starting profile (balance values per tier come from the ruleset)
+	 * @param playable whether a human may choose it; the others are NPC-controlled
+	 */
 	public record Nation(UUID id, String key, String name, String color, String capitalProvinceKey,
-			List<String> startProvinceKeys) {
+			List<String> startProvinceKeys, Tier tier, boolean playable) {
 
 		public Nation {
 			startProvinceKeys = List.copyOf(startProvinceKeys);
+			tier = tier == null ? Tier.POWER : tier;
+		}
+
+		public Nation(UUID id, String key, String name, String color, String capitalProvinceKey,
+				List<String> startProvinceKeys) {
+			this(id, key, name, color, capitalProvinceKey, startProvinceKeys, Tier.POWER, true);
 		}
 
 	}

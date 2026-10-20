@@ -1,0 +1,7 @@
+# Integration-test defaults: the Phase 1–9 suites were written for the two-nation map and ruleset
+# v5. Phase 10 suites opt into v6 and the Grand Campaign with @TestPropertySource.
+strategy:
+  ruleset:
+    current-version: v5
+  world:
+    default-map: sundered-reach

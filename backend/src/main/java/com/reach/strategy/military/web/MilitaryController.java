@@ -14,6 +14,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import com.reach.strategy.identity.api.CurrentPlayer;
+import com.reach.strategy.military.application.AttachmentService;
 import com.reach.strategy.military.application.BattalionService;
 import com.reach.strategy.military.application.MilitaryService;
 import com.reach.strategy.military.application.MilitaryViews;
@@ -42,8 +43,10 @@ class MilitaryController {
 	private final MilitaryService military;
 
 	private final BattalionService battalions;
+	private final AttachmentService attachments;
 
-	MilitaryController(MilitaryService military, BattalionService battalions) {
+	MilitaryController(MilitaryService military, BattalionService battalions, AttachmentService attachments) {
+		this.attachments = attachments;
 		this.military = military;
 		this.battalions = battalions;
 	}
@@ -94,6 +97,22 @@ class MilitaryController {
 		return ResponseEntity.created(URI.create("/api/v1/games/" + gameId + "/military")).body(result);
 	}
 
+	/** Places own battalions under an ally's command (ruleset v6). */
+	@PostMapping("/attachments")
+	MilitaryViews.AttachmentResult attach(CurrentPlayer me, @PathVariable UUID gameId,
+			@RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey,
+			@Valid @RequestBody AttachRequest request) {
+		return attachments.attach(me, gameId, request.battalionIds(), request.commanderNationId(), required(idempotencyKey));
+	}
+
+	/** Takes own battalions back from an ally's command. */
+	@PostMapping("/attachments/release")
+	MilitaryViews.AttachmentResult detach(CurrentPlayer me, @PathVariable UUID gameId,
+			@RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey,
+			@Valid @RequestBody DetachRequest request) {
+		return attachments.detach(me, gameId, request.battalionIds(), required(idempotencyKey));
+	}
+
 	/** One own battalion: soldiers by origin city, reinforcement quote and disband preview. */
 	@GetMapping("/battalions/{battalionId}")
 	MilitaryViews.BattalionDetails battalion(CurrentPlayer me, @PathVariable UUID gameId, @PathVariable UUID battalionId) {
@@ -132,6 +151,12 @@ class MilitaryController {
 
 	record MoveRequest(@NotEmpty @Size(max = 100) List<@NotNull UUID> battalionIds,
 			@NotBlank @Size(max = 64) @Pattern(regexp = "[a-z0-9-]+") String toProvinceKey) {
+	}
+
+	record AttachRequest(@NotEmpty @Size(max = 100) List<@NotNull UUID> battalionIds, @NotNull UUID commanderNationId) {
+	}
+
+	record DetachRequest(@NotEmpty @Size(max = 100) List<@NotNull UUID> battalionIds) {
 	}
 
 	record RegroupRequest(@NotBlank @Size(max = 40) String name,

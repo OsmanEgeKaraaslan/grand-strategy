@@ -12,8 +12,14 @@ import java.util.UUID;
  */
 public interface WorldApi {
 
-	/** The map new games are created on (Phase 3 has exactly one published map). */
+	/** The map new games are created on unless the host picks another (configuration `strategy.world.default-map`). */
 	UUID defaultMapId();
+
+	/** The latest version of a published map by key, if it exists. */
+	Optional<UUID> mapId(String key);
+
+	/** Every published map, for choosing one when creating a game. */
+	List<MapSummary> maps();
 
 	/** Basic facts about a map, including its selectable nations. */
 	MapSummary mapSummary(UUID mapId);
@@ -22,12 +28,12 @@ public interface WorldApi {
 	Topology topology(UUID mapId);
 
 	/**
-	 * Creates the independent, mutable world of one game from its map template: one nation per
-	 * assignment, every province owned and controlled by its starting nation, one city per
-	 * province. Must run inside the caller's transaction (all-or-nothing with the game start).
+	 * Creates the independent, mutable world of one game from its map template: every nation of the
+	 * map, every province owned and controlled by its starting nation, one city per province. Nations
+	 * in {@code gamePlayerByNation} are HUMAN-controlled, all others NPC-controlled (Phase 10). Must run
+	 * inside the caller's transaction (all-or-nothing with the game start).
 	 *
-	 * @param gamePlayerByNation the game_player id that plays each nation template; must cover
-	 * every nation of the map (no unplayed nations until neutral land exists, Q-W4)
+	 * @param gamePlayerByNation the game_player id that plays each chosen nation template
 	 */
 	void instantiate(UUID gameId, UUID mapId, Map<UUID, UUID> gamePlayerByNation);
 
@@ -50,6 +56,12 @@ public interface WorldApi {
 	void setController(UUID gameId, String provinceKey, UUID controllerNationId);
 
 	/**
+	 * Marks a nation eliminated in {@code round} (Phase 10: it legally owns no province any more). The
+	 * row stays for history. Must run inside the caller's transaction.
+	 */
+	void markEliminated(UUID gameId, UUID nationId, int round);
+
+	/**
 	 * Legal ownership transfer by an accepted peace treaty (Phase 9) — the only way ownership ever
 	 * changes. The new owner also becomes the controller; city, buildings and population stay with the
 	 * province. Must run inside the caller's transaction.
@@ -58,7 +70,7 @@ public interface WorldApi {
 	 */
 	void transferOwnership(UUID gameId, String provinceKey, UUID fromNationId, UUID toNationId);
 
-	record MapSummary(UUID id, String name, int maxPlayers, List<NationOption> nations) {
+	record MapSummary(UUID id, String key, String name, int maxPlayers, List<NationOption> nations) {
 
 		public Optional<NationOption> nation(UUID nationTemplateId) {
 			return nations.stream().filter(nation -> nation.id().equals(nationTemplateId)).findFirst();
@@ -66,7 +78,12 @@ public interface WorldApi {
 
 	}
 
-	record NationOption(UUID id, String key, String name, String color, String capitalProvinceKey, int provinceCount) {
+	/**
+	 * @param tier starting profile: POWER, MAJOR, REGIONAL or MINOR
+	 * @param playable whether a human may choose it
+	 */
+	record NationOption(UUID id, String key, String name, String color, String capitalProvinceKey, int provinceCount,
+			String tier, boolean playable) {
 	}
 
 	record WorldSnapshot(UUID mapId, List<NationState> nations, List<ProvinceState> provinces) {
@@ -81,7 +98,26 @@ public interface WorldApi {
 
 	}
 
-	record NationState(UUID id, UUID nationTemplateId, String name, String color, UUID gamePlayerId) {
+	/**
+	 * @param gamePlayerId null for an NPC-controlled nation
+	 * @param control HUMAN or NPC
+	 * @param eliminatedRound round in which it was eliminated, or null
+	 */
+	record NationState(UUID id, UUID nationTemplateId, String name, String color, UUID gamePlayerId, String control,
+			Integer eliminatedRound) {
+
+		public NationState(UUID id, UUID nationTemplateId, String name, String color, UUID gamePlayerId) {
+			this(id, nationTemplateId, name, color, gamePlayerId, gamePlayerId == null ? "NPC" : "HUMAN", null);
+		}
+
+		public boolean eliminated() {
+			return eliminatedRound != null;
+		}
+
+		public boolean npc() {
+			return gamePlayerId == null;
+		}
+
 	}
 
 	/** Owner and controller are separate: they differ while a province is occupied (Q-W1). */

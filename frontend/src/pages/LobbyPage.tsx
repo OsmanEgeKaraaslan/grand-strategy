@@ -93,6 +93,13 @@ function LobbyDetails({ lobby }: { lobby: Lobby }) {
   )
 }
 
+const TIER_LABELS: Record<string, string> = {
+  POWER: 'balanced power',
+  MAJOR: 'major realm',
+  REGIONAL: 'regional power',
+  MINOR: 'small state',
+}
+
 function NationPicker({ lobby }: { lobby: Lobby }) {
   const chooseNation = useChooseNation(lobby.id)
   const seatNames = new Map(lobby.participants.map((p) => [p.seat, p.displayName]))
@@ -100,17 +107,21 @@ function NationPicker({ lobby }: { lobby: Lobby }) {
   return (
     <section className="card" aria-labelledby="nations-title">
       <h2 id="nations-title">Choose your nation</h2>
-      <p className="muted">Each nation can be led by one player. You can change your choice until the game starts.</p>
+      <p className="muted">
+        Each playable nation can be led by one player. You can change your choice until the game starts; the other
+        nations are controlled by the game.
+      </p>
       {chooseNation.error && <Alert>{describeError(chooseNation.error)}</Alert>}
       <ul className="nation-list">
         {lobby.nations.map((nation) => {
           const takenByOther = nation.chosenBySeat !== null && !nation.chosenByYou
+          const playable = nation.playable !== false
           return (
             <li key={nation.id}>
               <button
                 type="button"
                 className={`nation-card ${nation.chosenByYou ? 'nation-card--mine' : ''}`}
-                disabled={takenByOther || chooseNation.isPending}
+                disabled={!playable || takenByOther || chooseNation.isPending}
                 aria-pressed={nation.chosenByYou}
                 onClick={() => chooseNation.mutate(nation.id)}
               >
@@ -118,8 +129,10 @@ function NationPicker({ lobby }: { lobby: Lobby }) {
                 <span className="nation-card__body">
                   <span className="nation-card__name">{nation.name}</span>
                   <span className="muted">
-                    {nation.provinceCount} provinces ·{' '}
-                    {nation.chosenByYou
+                    {nation.provinceCount} provinces · {TIER_LABELS[nation.tier] ?? nation.tier} ·{' '}
+                    {!playable
+                      ? 'controlled by the game'
+                      : nation.chosenByYou
                       ? 'your nation'
                       : takenByOther
                         ? `chosen by ${seatNames.get(nation.chosenBySeat!) ?? 'another player'}`

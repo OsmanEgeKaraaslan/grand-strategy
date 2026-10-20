@@ -106,6 +106,17 @@ public class TreatyRepository {
 				t.truceUntilRound(), Timestamp.from(t.createdAt()));
 	}
 
+	/** A treaty settled by a peace conference (Phase 10): general, or the separate peace of one nation. */
+	public void insertConferenceTreaty(UUID gameId, TreatyRow t, UUID conferenceId, int revision, UUID exitingNationId) {
+		jdbc.update("""
+				INSERT INTO game.peace_treaty (id, game_id, war_id, conference_id, revision, kind, exiting_nation_id,
+				    signed_round, signed_turn, terms, truce_until_round, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
+				""", t.id(), gameId, t.warId(), conferenceId, revision, exitingNationId == null ? "GENERAL" : "SEPARATE",
+				exitingNationId, t.signedRound(), t.signedTurn(), t.termsJson(), t.truceUntilRound(),
+				Timestamp.from(t.createdAt()));
+	}
+
 	public List<TreatyRow> treaties(UUID gameId) {
 		return jdbc.query("""
 				SELECT id, war_id, proposal_id, signed_round, signed_turn, terms::text AS terms, truce_until_round, created_at

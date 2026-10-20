@@ -108,7 +108,7 @@ public class BattalionService {
 						state.mods(nationId).upkeepReductionBps()));
 
 		return new MilitaryViews.BattalionDetails(
-				MilitaryService.view(battalion, state, nationId, membership.turnNumber(), rules),
+				MilitaryService.view(battalion, state, nationId, MilitaryService.clock(rules, membership.turnNumber(), membership.round()), rules),
 				soldiers.stream().map(c -> cohortView(c, state)).toList(), reinforcement, disband);
 	}
 
@@ -138,12 +138,12 @@ public class BattalionService {
 				long cost = Reinforcement.cost(battalion.unitType(), soldiers, rules);
 				economy.spend(nationId, cost);
 				int population = world.changePopulation(gameId, province.cityId(), -soldiers);
-				battalion.reinforce(soldiers, context.turnNumber());
+				battalion.reinforce(soldiers, MilitaryService.clock(rules, context));
 				battalions.saveAndFlush(battalion);
 				cohorts.reinforced(battalion, province.cityId(), soldiers);
 
 				MilitaryViews.ReinforceResult result = new MilitaryViews.ReinforceResult(
-						MilitaryService.view(battalion, state, nationId, context.turnNumber(), rules), soldiers, cost,
+						MilitaryService.view(battalion, state, nationId, MilitaryService.clock(rules, context), rules), soldiers, cost,
 						economy.treasury(nationId).treasuryMg(), province.cityId(), population);
 				UUID transferId = record(gameId, ManpowerTransferRepository.Kind.REINFORCE, battalion, nationId,
 						soldiers, cost, result, context);

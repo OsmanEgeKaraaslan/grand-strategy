@@ -140,7 +140,14 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
           {economy.error && <Alert>{describeError(economy.error)}</Alert>}
           <ResearchPanel gameId={state.id} stateVersion={state.stateVersion} military={military.data} />
           {diplomacy.data && (
-            <DiplomacyPanel gameId={state.id} overview={diplomacy.data} state={state} names={names} capitalKeys={capitalKeys} />
+            <DiplomacyPanel
+              gameId={state.id}
+              overview={diplomacy.data}
+              state={state}
+              names={names}
+              capitalKeys={capitalKeys}
+              treasuryMg={economy.data?.nation.treasuryMg}
+            />
           )}
           {diplomacy.error && <Alert>{describeError(diplomacy.error)}</Alert>}
           {military.error && <Alert>{describeError(military.error)}</Alert>}
@@ -221,6 +228,10 @@ function TurnBar({ state }: { state: GameState }) {
         <span className="swatch" style={{ background: activeNation?.color }} aria-hidden="true" />
         {state.status === 'FINISHED' ? (
           <strong>Game over — final state after round {state.round}</strong>
+        ) : state.pausedConferenceId ? (
+          <strong>Paused for a peace conference — no turn passes until it ends (see Diplomacy)</strong>
+        ) : state.youAreEliminated ? (
+          <span>Your nation has been eliminated. You can keep watching.</span>
         ) : state.yourTurn ? (
           <strong>Your turn</strong>
         ) : (
@@ -233,7 +244,7 @@ function TurnBar({ state }: { state: GameState }) {
       </div>
       <div className="turn-bar__actions">
         {endTurn.error && <span className="turn-bar__error">{describeError(endTurn.error)}</span>}
-        {state.yourTurn && (
+        {state.yourTurn && !state.pausedConferenceId && (
           <button
             type="button"
             className="button button--primary"
@@ -394,6 +405,7 @@ function PlayersCard({ state }: { state: GameState }) {
                 {player.displayName}
                 {player.you && <span className="tag tag--you">You</span>}
                 {active && <span className="tag tag--active">Active</span>}
+                {nation?.eliminatedRound != null && <span className="tag tag--warning">Eliminated</span>}
                 <span className="seat__nation muted">{nation?.name}</span>
               </span>
             </li>

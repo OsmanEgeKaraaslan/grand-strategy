@@ -61,7 +61,7 @@ class EconomyState {
 		WorldApi.NationState nationOfPlayer(UUID gamePlayerId) {
 			return world.nations()
 				.stream()
-				.filter(nation -> nation.gamePlayerId().equals(gamePlayerId))
+				.filter(nation -> gamePlayerId.equals(nation.gamePlayerId()))
 				.findFirst()
 				.orElseThrow(() -> new IllegalStateException("No nation for game player " + gamePlayerId));
 		}

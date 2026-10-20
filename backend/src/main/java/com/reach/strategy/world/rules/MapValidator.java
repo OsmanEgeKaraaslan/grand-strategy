@@ -16,7 +16,7 @@ import java.util.Set;
  * Rules: unique province and nation keys; adjacency only between existing, distinct provinces,
  * without duplicates; a connected graph; every province starts owned by exactly one nation (no
  * neutral land in the MVP, Q-W4); every nation owns at least one province including its capital;
- * at least two nations and enough nations for the map's player count.
+ * at least two nations and enough playable (human-selectable) nations for the map's player count.
  */
 public final class MapValidator {
 
@@ -85,8 +85,9 @@ public final class MapValidator {
 		if (map.nations().size() < 2) {
 			problems.add("A map needs at least two nations");
 		}
-		if (map.nations().size() < map.maxPlayers()) {
-			problems.add("Map supports " + map.maxPlayers() + " players but has only " + map.nations().size() + " nations");
+		long playable = map.nations().stream().filter(MapDefinition.Nation::playable).count();
+		if (playable < map.maxPlayers()) {
+			problems.add("Map supports " + map.maxPlayers() + " players but has only " + playable + " playable nations");
 		}
 		return List.copyOf(problems);
 	}

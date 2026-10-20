@@ -31,14 +31,28 @@ public interface Hostility {
 	 * @param totalWar the pre-diplomacy rule: every pair at war, no movement restriction
 	 * @param wars pairs at war in an active war
 	 * @param access military access from alliances or a shared war side
+	 * @param coalitions ruleset v6: several nations may fight on one side of a battle, occupy and besiege
+	 * together, and battalions may be attached to an ally
+	 * @param partners pairs that may command each other's attached battalions (an active alliance of any
+	 * kind, or the same side of an active war)
 	 */
-	record Relations(boolean totalWar, Set<Pair> wars, Set<Access> access) {
+	record Relations(boolean totalWar, Set<Pair> wars, Set<Access> access, boolean coalitions, Set<Pair> partners) {
 
 		public static final Relations TOTAL_WAR = new Relations(true, Set.of(), Set.of());
+
+		public Relations(boolean totalWar, Set<Pair> wars, Set<Access> access) {
+			this(totalWar, wars, access, false, Set.of());
+		}
 
 		public Relations {
 			wars = Set.copyOf(wars);
 			access = Set.copyOf(access);
+			partners = Set.copyOf(partners);
+		}
+
+		/** Whether {@code owner} may place battalions under {@code commander}'s command. */
+		public boolean mayCommand(UUID owner, UUID commander) {
+			return coalitions && !owner.equals(commander) && partners.contains(Pair.of(owner, commander));
 		}
 
 		public boolean atWar(UUID x, UUID y) {

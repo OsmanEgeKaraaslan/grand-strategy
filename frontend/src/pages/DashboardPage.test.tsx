@@ -61,8 +61,37 @@ describe('DashboardPage', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Create game' }))
 
-    expect(api.createGame).toHaveBeenCalledWith('New campaign', expect.anything())
+    expect(api.createGame).toHaveBeenCalledWith({ name: 'New campaign', maxPlayers: 2, mapKey: undefined }, expect.anything())
     expect(await screen.findByText('Lobby page')).toBeInTheDocument()
+  })
+
+  it('creates a Grand Campaign for four players', async () => {
+    const api = fakeApi({
+      getMe: vi.fn().mockResolvedValue(me),
+      listGames: vi.fn().mockResolvedValue([]),
+      listMaps: vi.fn().mockResolvedValue([
+        { id: 'm1', key: 'sundered-reach', name: 'The Sundered Reach', maxPlayers: 2, nations: 2, playableNations: 2 },
+        { id: 'm2', key: 'grand-campaign', name: 'Grand Campaign', maxPlayers: 4, nations: 10, playableNations: 4 },
+      ]),
+      createGame: vi.fn().mockResolvedValue(lobby),
+    })
+    renderDashboard(api)
+
+    const map = await screen.findByRole('combobox', { name: /^Map/ })
+    expect(map).toHaveValue('grand-campaign')
+    expect(screen.getByText(/controlled by the game/)).toBeInTheDocument()
+    // A two-player map offers only two players.
+    await userEvent.selectOptions(map, 'sundered-reach')
+    expect(screen.getByRole('combobox', { name: /Human players/ })).toHaveValue('2')
+    await userEvent.selectOptions(map, 'grand-campaign')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: /Human players/ }), '4')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Game name' }), 'Continental')
+    await userEvent.click(screen.getByRole('button', { name: 'Create game' }))
+
+    expect(api.createGame).toHaveBeenCalledWith(
+      { name: 'Continental', maxPlayers: 4, mapKey: 'grand-campaign' },
+      expect.anything(),
+    )
   })
 
   it('joins with an invitation code and opens the lobby', async () => {

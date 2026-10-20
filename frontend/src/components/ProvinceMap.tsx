@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import type { GameMap, ProvinceState } from '../api/types'
 
 export interface NationStyle {
@@ -26,6 +26,30 @@ interface ProvinceMapProps {
   besieged?: Set<string>
 }
 
+interface View {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+const MIN_ZOOM = 1
+const MAX_ZOOM = 6
+
+function parseViewBox(viewBox: string): View {
+  const [x, y, w, h] = viewBox.trim().split(/[\s,]+/).map(Number)
+  return { x, y, w, h }
+}
+
+/** Keeps the view inside the map and between the zoom limits. */
+function clampView(view: View, base: View): View {
+  const w = Math.min(base.w, Math.max(base.w / MAX_ZOOM, view.w))
+  const h = (w / base.w) * base.h
+  const x = Math.min(base.x + base.w - w, Math.max(base.x, view.x))
+  const y = Math.min(base.y + base.h - h, Math.max(base.y, view.y))
+  return { x, y, w, h }
+}
+
 export interface UnitCounts {
   friendly: number
   hostile: number
@@ -34,7 +58,8 @@ export interface UnitCounts {
 /**
  * Renders the province map as SVG from the template geometry, coloured by the game's real
  * ownership. Occupied provinces (controller ≠ owner) get the controller's colour as hatching.
- * Provinces are keyboard-focusable buttons.
+  * Provinces are keyboard-focusable buttons. The view can be zoomed (buttons, mouse wheel) and
+ * panned (drag); a click without dragging still selects a province.
  */
 export function ProvinceMap({
   map,
@@ -53,6 +78,76 @@ export function ProvinceMap({
     [...provinces.values()].filter((p) => p.controllerNationId !== p.ownerNationId).map((p) => p.controllerNationId),
   )
 
+  const base = parseViewBox(map.viewBox)
+  const [view, setView] = useState<View>(base)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const drag = useRef<{ startX: number; startY: number; view: View; moved: boolean } | null>(null)
+  const suppressClick = useRef(false)
+  const zoom = base.w / view.w
+
+  function zoomBy(factor: number, centreX = view.x + view.w / 2, centreY = view.y + view.h / 2) {
+    setView((current) => {
+      const w = current.w / factor
+      const h = current.h / factor
+      return clampView(
+        { x: centreX - ((centreX - current.x) / current.w) * w, y: centreY - ((centreY - current.y) / current.h) * h, w, h },
+        base,
+      )
+    })
+  }
+
+  // Wheel zoom needs a non-passive listener so the page does not scroll at the same time.
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    function onWheel(event: WheelEvent) {
+      event.preventDefault()
+      const rect = svg!.getBoundingClientRect()
+      if (rect.width === 0) return
+      setView((current) => {
+        const cx = current.x + ((event.clientX - rect.left) / rect.width) * current.w
+        const cy = current.y + ((event.clientY - rect.top) / rect.height) * current.h
+        const factor = event.deltaY < 0 ? 1.2 : 1 / 1.2
+        const w = current.w / factor
+        const h = current.h / factor
+        return clampView({ x: cx - ((cx - current.x) / current.w) * w, y: cy - ((cy - current.y) / current.h) * h, w, h }, base)
+      })
+    }
+    svg.addEventListener('wheel', onWheel, { passive: false })
+    return () => svg.removeEventListener('wheel', onWheel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map.viewBox])
+
+  function onPointerDown(event: PointerEvent<SVGSVGElement>) {
+    drag.current = { startX: event.clientX, startY: event.clientY, view, moved: false }
+  }
+
+  function onPointerMove(event: PointerEvent<SVGSVGElement>) {
+    const d = drag.current
+    const svg = svgRef.current
+    if (!d || !svg) return
+    const dx = event.clientX - d.startX
+    const dy = event.clientY - d.startY
+    if (!d.moved && Math.hypot(dx, dy) < 5) return
+    d.moved = true
+    const rect = svg.getBoundingClientRect()
+    if (rect.width === 0) return
+    setView(clampView({ ...d.view, x: d.view.x - (dx / rect.width) * d.view.w, y: d.view.y - (dy / rect.height) * d.view.h }, base))
+  }
+
+  function onPointerUp() {
+    suppressClick.current = drag.current?.moved ?? false
+    drag.current = null
+  }
+
+  function select(key: string) {
+    if (suppressClick.current) {
+      suppressClick.current = false
+      return
+    }
+    onSelect(key)
+  }
+
   function handleKey(event: KeyboardEvent, key: string) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
@@ -61,7 +156,29 @@ export function ProvinceMap({
   }
 
   return (
-    <svg className="province-map" viewBox={map.viewBox} role="group" aria-label={`Map of ${map.name}`}>
+    <div className="province-map__frame">
+      <div className="province-map__controls" role="toolbar" aria-label="Map view">
+        <button type="button" className="button" onClick={() => zoomBy(1.5)} disabled={zoom >= MAX_ZOOM} aria-label="Zoom in">
+          +
+        </button>
+        <button type="button" className="button" onClick={() => zoomBy(1 / 1.5)} disabled={zoom <= MIN_ZOOM} aria-label="Zoom out">
+          −
+        </button>
+        <button type="button" className="button" onClick={() => setView(base)} disabled={zoom <= MIN_ZOOM} aria-label="Show the whole map">
+          ⤢
+        </button>
+      </div>
+    <svg
+      ref={svgRef}
+      className="province-map"
+      viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+      role="group"
+      aria-label={`Map of ${map.name}`}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerUp}
+    >
       <defs>
         <pattern id="terrain-mountains" width="18" height="14" patternUnits="userSpaceOnUse">
           <path d="M1 13 L6 4 L11 13 M8 13 L12 7 L17 13" fill="none" stroke="rgb(20 24 30 / 0.45)" strokeWidth="1.2" />
@@ -79,7 +196,7 @@ export function ProvinceMap({
           </pattern>
         ))}
       </defs>
-      <rect className="province-map__sea" x="-50" y="-50" width="1100" height="740" />
+      <rect className="province-map__sea" x={base.x - 50} y={base.y - 50} width={base.w + 100} height={base.h + 100} />
 
       {map.provinces.map((province) => {
         const state = provinces.get(province.key)
@@ -114,7 +231,7 @@ export function ProvinceMap({
               aria-label={label}
               aria-pressed={selected}
               data-province={province.key}
-              onClick={() => onSelect(province.key)}
+              onClick={() => select(province.key)}
               onKeyDown={(event) => handleKey(event, province.key)}
             />
             {province.terrain === 'MOUNTAINS' && (
@@ -164,6 +281,22 @@ export function ProvinceMap({
         )
       })}
 
+      {map.provinces
+        .filter((province) => province.cityX !== undefined && (province.cityX !== province.labelX || province.cityY !== province.labelY))
+        .map((province) => {
+          const capital = map.nations.some((nation) => nation.capitalProvinceKey === province.key)
+          return (
+            <circle
+              key={`city-${province.key}`}
+              cx={province.cityX}
+              cy={province.cityY}
+              r={capital ? 5 : 3}
+              className={`province-map__city ${capital ? 'province-map__city--capital' : ''}`}
+              aria-hidden="true"
+            />
+          )
+        })}
+
       {map.provinces.map((province) => {
         const fortress = fortresses.get(province.key)
         if (!fortress || fortress.level < 1) return null
@@ -209,5 +342,6 @@ export function ProvinceMap({
         )
       })}
     </svg>
+    </div>
   )
 }

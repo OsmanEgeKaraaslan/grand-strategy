@@ -46,8 +46,13 @@ public final class MilitaryViews {
 	 * null for other nations'
 	 * @param upkeepMg this battalion's upkeep at the next round end
 	 */
+	/**
+	 * @param eligibility movement eligibility, shown only to the nation commanding the battalion
+	 * @param commanderNationId the ally it is attached to (Phase 10), or null when its owner commands it
+	 */
 	public record BattalionView(UUID id, UUID nationId, String unitType, int manpower, int maxManpower,
-			String provinceKey, UUID armyId, UUID originCityId, int recruitedRound, String eligibility, long upkeepMg) {
+			String provinceKey, UUID armyId, UUID originCityId, int recruitedRound, String eligibility, long upkeepMg,
+			UUID commanderNationId) {
 	}
 
 	public record ArmyView(UUID id, UUID nationId, String name, String provinceKey, List<UUID> battalionIds) {
@@ -77,6 +82,10 @@ public final class MilitaryViews {
 	 */
 	public record MoveTarget(String provinceKey, String terrain, boolean river, UUID controllerNationId,
 			boolean hostile, int hostileBattalions, boolean accessible) {
+	}
+
+	/** The battalions after an attach or detach command. */
+	public record AttachmentResult(List<BattalionView> battalions) {
 	}
 
 	public record RecruitResult(BattalionView battalion, long treasuryMg, int cityPopulation) {
@@ -149,12 +158,40 @@ public final class MilitaryViews {
 			int defenderInitial, int attackerLosses, int defenderLosses, String broken, String winner,
 			String retreatProvinceKey, boolean defendersDestroyed, Boolean attackerBroke, Boolean defenderBroke,
 			MilitaryModifiers.NationModifiers attackerModifiers,
-			MilitaryModifiers.NationModifiers defenderModifiers) {
+			MilitaryModifiers.NationModifiers defenderModifiers, List<NationSide> nations) {
+
+		public BattleDetails(String fromProvinceKey, String provinceKey, boolean river, boolean mountains,
+				List<Participant> attackers, List<Participant> defenders, List<PhaseView> phases, int attackerInitial,
+				int defenderInitial, int attackerLosses, int defenderLosses, String broken, String winner,
+				String retreatProvinceKey, boolean defendersDestroyed, Boolean attackerBroke, Boolean defenderBroke,
+				MilitaryModifiers.NationModifiers attackerModifiers, MilitaryModifiers.NationModifiers defenderModifiers) {
+			this(fromProvinceKey, provinceKey, river, mountains, attackers, defenders, phases, attackerInitial,
+					defenderInitial, attackerLosses, defenderLosses, broken, winner, retreatProvinceKey, defendersDestroyed,
+					attackerBroke, defenderBroke, attackerModifiers, defenderModifiers, null);
+		}
+
+	}
+
+	/**
+	 * One nation's part in a battle (Phase 10: several nations may fight on a side).
+	 *
+	 * @param side ATTACKER or DEFENDER
+	 * @param retreatProvinceKey where its defeated battalions retreated, or null
+	 * @param modifiers its technology and doctrine as applied to its battalions
+	 */
+	public record NationSide(UUID nationId, String side, int manpowerBefore, int losses, String retreatProvinceKey,
+			boolean destroyed, MilitaryModifiers.NationModifiers modifiers) {
 	}
 
 	/** @param fate SURVIVED, RETREATED or DESTROYED */
 	public record Participant(UUID battalionId, String unitType, int manpowerBefore, int losses, int manpowerAfter,
-			String fate) {
+			String fate, UUID nationId) {
+
+		public Participant(UUID battalionId, String unitType, int manpowerBefore, int losses, int manpowerAfter,
+				String fate) {
+			this(battalionId, unitType, manpowerBefore, losses, manpowerAfter, fate, null);
+		}
+
 	}
 
 	public record PhaseView(int number, SideView attacker, SideView defender) {

@@ -75,6 +75,16 @@ public class Battalion implements Persistable<UUID> {
 	@Column(name = "last_reinforced_turn_number")
 	private Integer lastReinforcedTurnNumber;
 
+	@Column(name = "last_moved_round")
+	private Integer lastMovedRound;
+
+	@Column(name = "last_reinforced_round")
+	private Integer lastReinforcedRound;
+
+	/** An ally commanding this battalion (attached forces, Phase 10), or null for its owner. */
+	@Column(name = "commander_nation_id")
+	private UUID commanderNationId;
+
 	/** Replacements received during {@code lastReinforcedTurnNumber}; counts toward the per-turn limit. */
 	@Column(name = "reinforced_this_turn", nullable = false)
 	private int reinforcedThisTurn;
@@ -109,6 +119,43 @@ public class Battalion implements Persistable<UUID> {
 		battalion.recruitedTurnNumber = recruitedTurnNumber;
 		battalion.createdAt = now;
 		return battalion;
+	}
+
+	public Movement.Eligibility eligibility(Movement.Clock clock) {
+		return Movement.eligibility(recruitedTurnNumber, recruitedRound, lastMovedTurnNumber, lastMovedRound,
+				lastReinforcedTurnNumber, lastReinforcedRound, clock);
+	}
+
+	/** Spends this round's (or turn's) movement; the province stays the same if the attack failed. */
+	public void moved(UUID provinceStateId, Movement.Clock clock) {
+		this.provinceStateId = provinceStateId;
+		this.lastMovedTurnNumber = clock.turnNumber();
+		if (clock.roundBased()) {
+			this.lastMovedRound = clock.round();
+		}
+	}
+
+	/** Who gives this battalion orders: its owner, or the ally it is attached to. */
+	public UUID commander() {
+		return commanderNationId == null ? nationId : commanderNationId;
+	}
+
+	public UUID commanderNationId() {
+		return commanderNationId;
+	}
+
+	/** Places the battalion under an ally's command; it leaves its (national) army. Movement is unchanged. */
+	public void attachTo(UUID commander) {
+		this.commanderNationId = commander;
+		this.armyId = null;
+	}
+
+	public void detach() {
+		this.commanderNationId = null;
+	}
+
+	public Integer lastMovedRound() {
+		return lastMovedRound;
 	}
 
 	public Movement.Eligibility eligibility(int currentTurnNumber) {
@@ -154,6 +201,13 @@ public class Battalion implements Persistable<UUID> {
 	 * Adds replacements (already validated and paid). Spends the battalion's movement and attack for
 	 * this turn (PROVISIONAL tactical rule); it still defends.
 	 */
+	public void reinforce(int soldiers, Movement.Clock clock) {
+		reinforce(soldiers, clock.turnNumber());
+		if (clock.roundBased()) {
+			lastReinforcedRound = clock.round();
+		}
+	}
+
 	public void reinforce(int soldiers, int turnNumber) {
 		if (soldiers <= 0 || manpower + soldiers > maxManpower) {
 			throw new IllegalArgumentException("Cannot add " + soldiers + " to " + manpower + "/" + maxManpower);

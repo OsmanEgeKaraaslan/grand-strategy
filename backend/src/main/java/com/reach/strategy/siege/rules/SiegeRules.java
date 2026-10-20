@@ -12,7 +12,13 @@ import java.util.TreeMap;
  * @param startingFortresses fortress level per province key at game start (new games only)
  */
 public record SiegeRules(String version, Map<Integer, FortressLevel> levels, Progress progress, int attritionBps,
-		Bombardment bombardment, Repair repair, Map<String, Integer> startingFortresses) {
+		Bombardment bombardment, Repair repair, Map<String, Integer> startingFortresses,
+		Map<String, Map<String, Integer>> startingFortressesByMap) {
+
+	public SiegeRules(String version, Map<Integer, FortressLevel> levels, Progress progress, int attritionBps,
+			Bombardment bombardment, Repair repair, Map<String, Integer> startingFortresses) {
+		this(version, levels, progress, attritionBps, bombardment, repair, startingFortresses, null);
+	}
 
 	public SiegeRules {
 		if (levels == null || levels.isEmpty() || progress == null || bombardment == null || repair == null
@@ -26,12 +32,22 @@ public record SiegeRules(String version, Map<Integer, FortressLevel> levels, Pro
 		}
 		levels = Map.copyOf(new TreeMap<>(levels));
 		startingFortresses = startingFortresses == null ? Map.of() : Map.copyOf(startingFortresses);
+		startingFortressesByMap = startingFortressesByMap == null ? Map.of() : Map.copyOf(startingFortressesByMap);
 		int maxLevel = levels.size();
 		startingFortresses.forEach((key, level) -> {
 			if (level < 1 || level > maxLevel) {
 				throw new IllegalArgumentException("Invalid starting fortress " + key + " = " + level);
 			}
 		});
+	}
+
+	/**
+	 * Starting fortresses of a map (v6+: listed per map key, so one ruleset serves several maps);
+	 * rulesets before v6 list one map's provinces directly.
+	 */
+	public Map<String, Integer> startingFortresses(String mapKey) {
+		return startingFortressesByMap.isEmpty() ? startingFortresses
+				: startingFortressesByMap.getOrDefault(mapKey, Map.of());
 	}
 
 	public int maxLevel() {

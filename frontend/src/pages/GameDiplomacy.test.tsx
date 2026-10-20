@@ -97,6 +97,7 @@ function diplomacyFixture(status: 'PEACE' | 'WAR', overrides: Partial<DiplomacyO
     events: atWar
       ? [{ id: 'ev1', round: 2, kind: 'WAR_DECLARED', actorNationId: VARN, targetNationId: OSTRA, warId: 'w1', details: {}, createdAt: '' }]
       : [],
+    gifts: [],
     ...overrides,
   }
 }

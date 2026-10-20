@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import com.reach.strategy.world.api.WorldApi;
 import com.reach.strategy.world.application.WorldService;
 import com.reach.strategy.world.domain.MapTemplate;
 import com.reach.strategy.world.rules.MapDefinition;
@@ -24,6 +25,16 @@ class MapController {
 
 	MapController(WorldService world) {
 		this.world = world;
+	}
+
+	/** Published maps that new games can be created on. */
+	@GetMapping
+	List<MapChoice> maps() {
+		return world.maps()
+			.stream()
+			.map(m -> new MapChoice(m.id(), m.key(), m.name(), m.maxPlayers(), m.nations().size(),
+					(int) m.nations().stream().filter(WorldApi.NationOption::playable).count()))
+			.toList();
 	}
 
 	@GetMapping("/{mapId}")
@@ -47,7 +58,7 @@ class MapController {
 					.sorted((a, b) -> a.provinceKey().compareTo(b.provinceKey()))
 					.toList();
 				return new ProvinceView(province.key(), province.name(), province.terrain().name(), province.cityName(),
-						shape.svgPath(), shape.labelX(), shape.labelY(), neighbours);
+						shape.svgPath(), shape.labelX(), shape.labelY(), shape.cityX(), shape.cityY(), neighbours);
 			}).toList();
 			List<RiverView> rivers = template.geometry()
 				.rivers()
@@ -57,7 +68,7 @@ class MapController {
 			List<NationView> nations = map.nations()
 				.stream()
 				.map(nation -> new NationView(nation.id(), nation.key(), nation.name(), nation.color(),
-						nation.capitalProvinceKey(), nation.startProvinceKeys()))
+						nation.capitalProvinceKey(), nation.startProvinceKeys(), nation.tier().name(), nation.playable()))
 				.toList();
 			return new MapView(map.id(), map.key(), map.version(), map.name(), template.geometry().viewBox(), provinces,
 					rivers, nations);
@@ -66,7 +77,11 @@ class MapController {
 	}
 
 	record ProvinceView(String key, String name, String terrain, String cityName, String svgPath, int labelX, int labelY,
-			List<NeighbourView> neighbours) {
+			int cityX, int cityY, List<NeighbourView> neighbours) {
+	}
+
+	/** @param maxPlayers human players the map supports; the other nations are NPC-controlled */
+	record MapChoice(UUID id, String key, String name, int maxPlayers, int nations, int playableNations) {
 	}
 
 	record NeighbourView(String provinceKey, String crossing) {
@@ -76,7 +91,7 @@ class MapController {
 	}
 
 	record NationView(UUID id, String key, String name, String color, String capitalProvinceKey,
-			List<String> startProvinceKeys) {
+			List<String> startProvinceKeys, String tier, boolean playable) {
 	}
 
 }

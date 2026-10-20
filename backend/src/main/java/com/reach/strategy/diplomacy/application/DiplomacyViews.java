@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.reach.strategy.diplomacy.rules.DiplomacyRules;
+
 /**
  * Read models of diplomacy. Wars, alliances, treaties, tributes and the event history are public
  * (no fog of war, Q-T4); peace and alliance proposals are shown only to the two nations concerned.
@@ -20,14 +22,25 @@ public final class DiplomacyViews {
 	 */
 	public record Overview(UUID gameId, boolean available, String rulesetVersion, int round, boolean yourTurn,
 			UUID yourNationId, Rules rules, List<NationRelation> nations, List<WarView> wars, List<AllianceView> alliances,
-			List<ProposalView> proposals, List<TreatyView> treaties, List<TributeView> tributes, List<EventView> events) {
+			List<ProposalView> proposals, List<TreatyView> treaties, List<TributeView> tributes, List<EventView> events,
+			List<Gift> gifts, List<CallView> calls, List<ConferenceView> conferences) {
+
+		public Overview(UUID gameId, boolean available, String rulesetVersion, int round, boolean yourTurn,
+				UUID yourNationId, Rules rules, List<NationRelation> nations, List<WarView> wars,
+				List<AllianceView> alliances, List<ProposalView> proposals, List<TreatyView> treaties,
+				List<TributeView> tributes, List<EventView> events, List<Gift> gifts) {
+			this(gameId, available, rulesetVersion, round, yourTurn, yourNationId, rules, nations, wars, alliances,
+					proposals, treaties, tributes, events, gifts, List.of(), List.of());
+		}
+
 	}
 
 	public record Rules(String version, int truceRounds, int proposalExpiryRounds, int maxPeaceTerms, int tributeRateBps,
 			int tributeRounds, int populationMinPeople, int populationMaxPeople, int populationMaxShareBps,
 			int populationMinResidual, long reparationsMaxMg, int maxScore, int victoryMaxRounds, int victoryProvincePoints,
 			int victoryPointsPerThousandPopulation, boolean normalAllianceGrantsAccess,
-			boolean defensiveAllianceGrantsAccess, boolean coBelligerentAccess) {
+			boolean defensiveAllianceGrantsAccess, boolean coBelligerentAccess, Long giftMaxMg, boolean giftsToEnemies,
+			DiplomacyRules.Features features, int victoryPointsPerHundredGold, boolean domination) {
 	}
 
 	/**
@@ -55,7 +68,14 @@ public final class DiplomacyViews {
 			Score score, String yourSide, boolean youLead) {
 	}
 
-	public record Participant(UUID nationId, String name, String side, String joinReason, int joinedRound) {
+	/** @param leftRound round the nation left the war (separate peace, elimination), null while it fights */
+	public record Participant(UUID nationId, String name, String side, String joinReason, int joinedRound,
+			Integer leftRound, String leftReason) {
+
+		public Participant(UUID nationId, String name, String side, String joinReason, int joinedRound) {
+			this(nationId, name, side, joinReason, joinedRound, null, null);
+		}
+
 	}
 
 	/** @param net attacker total minus defender total (positive favours the attacker) */
@@ -124,9 +144,49 @@ public final class DiplomacyViews {
 	public record Violation(int term, String code) {
 	}
 
+	/** A gold gift (public history). */
+	public record Gift(UUID id, UUID senderNationId, UUID recipientNationId, long amountMg, int round, Instant createdAt) {
+	}
+
+	/**
+	 * A defensive call to arms (public).
+	 *
+	 * @param status PENDING, HONORED, DECLINED or CANCELLED
+	 * @param canAnswer the viewer is the called ally and the call is pending
+	 */
+	public record CallView(UUID id, UUID warId, UUID callerNationId, UUID allyNationId, String status, int createdRound,
+			Integer answeredRound, boolean canAnswer) {
+	}
+
+	/**
+	 * A peace conference (public: every nation sees the draft it may be affected by).
+	 *
+	 * @param kind GENERAL (between the war leaders) or SEPARATE (one nation leaves the war)
+	 * @param status REQUESTED, ACTIVE, CONCLUDED, REJECTED or CANCELLED
+	 * @param terms the current revision's terms (empty before the conference opens)
+	 * @param approvals every nation whose approval the current revision needs, with its decision
+	 * @param violations why the current revision could not be settled now (empty = it could)
+	 */
+	public record ConferenceView(UUID id, UUID warId, String kind, UUID requesterNationId, UUID counterpartNationId,
+			String status, int requestedRound, int currentRevision, List<Term> terms, List<Approval> approvals,
+			List<RevisionSummary> revisions, List<String> violations, boolean youArePrincipal, boolean canAnswer,
+			boolean canCancel, boolean canRevise, boolean youMustDecide) {
+	}
+
+	/** @param decision APPROVED, REJECTED or null (not yet decided) */
+	public record Approval(UUID nationId, String name, boolean npc, String decision) {
+	}
+
+	public record RevisionSummary(int revision, UUID authorNationId, int termCount, Instant createdAt) {
+	}
+
 	// --- command results ------------------------------------------------------------------------
 
 	public record WarResult(WarView war, List<UUID> joinedDefenders) {
+	}
+
+	/** @param treasuryMg the sender's treasury after the gift */
+	public record GiftResult(Gift gift, long treasuryMg) {
 	}
 
 	public record AllianceResult(AllianceView alliance, List<Withdrawal> withdrawals) {
@@ -137,6 +197,13 @@ public final class DiplomacyViews {
 
 	/** @param withdrawals battalions moved out of territory their nation may no longer enter */
 	public record PeaceResult(TreatyView treaty, WarView war, List<Withdrawal> withdrawals, List<String> controlReturned) {
+	}
+
+	public record CallResult(CallView call) {
+	}
+
+	/** @param treaty the treaty, when this command settled it */
+	public record ConferenceResult(ConferenceView conference, TreatyView treaty, List<Withdrawal> withdrawals) {
 	}
 
 	public record Withdrawal(UUID battalionId, UUID nationId, String fromProvinceKey, String toProvinceKey) {

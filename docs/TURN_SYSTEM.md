@@ -338,6 +338,25 @@ make it enforceable regardless of army grouping:
 Because `turn_number` increases for every player turn, "once per player turn" is
 an equality check, and neither value is touched by regrouping armies.
 
+## 9b. More players, NPC nations, elimination and the conference pause (Phase 10)
+
+- **Seats.** A game has 2–4 human seats; nations without a player have no seat. Turn order is the
+  seat order; `TurnOrder.next` skips the seats of **eliminated** players. Nations without a player
+  never take a turn, so they can never block the game. A round ends after the last seat that still
+  plays.
+- **Elimination** (DIPLOMACY §16) marks `game_player.eliminated_round`; every command of an eliminated
+  player answers `409 NATION_ELIMINATED`. If the active player was eliminated by the treaty, the turn
+  passes to the next seat when play resumes, in the same transaction.
+- **Pause for a peace conference.** While `game.paused_conference_id` is set, `POST /turn/end` and
+  every normal command answer `409 GAME_PAUSED_FOR_CONFERENCE`; `yourTurn` is false for everybody;
+  round, turn number and active seat do not change. Conference commands use
+  `GameCommands.executeOutOfTurn`: lock the game row → membership → in progress → idempotent replay →
+  not eliminated → handler → record command → state version (no active-player or pause check). Ending
+  the conference clears the pause in the same transaction, and the active player continues its turn.
+- **Finishing** may now also happen inside a command (domination after a settlement): the command's
+  transaction stores the result exactly once and sets the game `FINISHED` (`GameControl.finishIfDecided`).
+- **Movement eligibility** in v6 is per global round (COMBAT_AND_SIEGE §3a).
+
 ## 10. Testing the turn system
 
 | Test | Kind |

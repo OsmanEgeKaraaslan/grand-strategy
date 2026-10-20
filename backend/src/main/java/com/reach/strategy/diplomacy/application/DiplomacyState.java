@@ -83,32 +83,43 @@ class DiplomacyState {
 			Set<Hostility.Pair> warPairs = new HashSet<>();
 			fronts.forEach(f -> warPairs.add(Hostility.Pair.of(f.nationA(), f.nationB())));
 			Set<Hostility.Access> access = new HashSet<>();
+			Set<Hostility.Pair> partners = new HashSet<>();
 			for (RelationsRepository.AllianceRow a : alliances) {
+				if ("ACTIVE".equals(a.status())) {
+					partners.add(Hostility.Pair.of(a.nationA(), a.nationB()));
+				}
 				if ("ACTIVE".equals(a.status())
 						&& rules.militaryAccess().grantedBy(Diplomacy.AllianceKind.valueOf(a.kind()))) {
 					access.add(new Hostility.Access(a.nationA(), a.nationB()));
 					access.add(new Hostility.Access(a.nationB(), a.nationA()));
 				}
 			}
-			if (rules.militaryAccess().coBelligerents()) {
-				for (RelationsRepository.WarRow war : wars) {
-					if (!war.active()) {
-						continue;
-					}
-					List<RelationsRepository.ParticipantRow> members = participantsOf(war.id());
-					for (RelationsRepository.ParticipantRow x : members) {
-						for (RelationsRepository.ParticipantRow y : members) {
-							if (!x.nationId().equals(y.nationId()) && x.side().equals(y.side())) {
+			for (RelationsRepository.WarRow war : wars) {
+				if (!war.active()) {
+					continue;
+				}
+				List<RelationsRepository.ParticipantRow> members = participantsOf(war.id());
+				for (RelationsRepository.ParticipantRow x : members) {
+					for (RelationsRepository.ParticipantRow y : members) {
+						if (!x.nationId().equals(y.nationId()) && x.side().equals(y.side())) {
+							partners.add(Hostility.Pair.of(x.nationId(), y.nationId()));
+							if (rules.militaryAccess().coBelligerents()) {
 								access.add(new Hostility.Access(x.nationId(), y.nationId()));
 							}
 						}
 					}
 				}
 			}
-			return new Hostility.Relations(false, warPairs, access);
+			return new Hostility.Relations(false, warPairs, access, rules.features().coalitionWarfare(), partners);
 		}
 
+		/** Nations still fighting in a war (not those who left by separate peace or elimination). */
 		List<RelationsRepository.ParticipantRow> participantsOf(UUID warId) {
+			return participants.stream().filter(p -> p.warId().equals(warId) && p.active()).toList();
+		}
+
+		/** Everyone who ever fought in a war, including those who left. */
+		List<RelationsRepository.ParticipantRow> allParticipantsOf(UUID warId) {
 			return participants.stream().filter(p -> p.warId().equals(warId)).toList();
 		}
 

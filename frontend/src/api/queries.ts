@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApi } from './ApiContext'
-import type { AllianceKind, InstitutionType, Lobby, PeaceTerm, ResearchTrack, UnitType } from './types'
+import type { AllianceKind, ConferenceKind, InstitutionType, Lobby, PeaceTerm, ResearchTrack, UnitType } from './types'
 
 /** How often an open lobby is re-fetched so new participants appear (no WebSockets needed). */
 export const LOBBY_POLL_INTERVAL_MS = 3000
@@ -48,6 +48,12 @@ function useLobbyMutation<I = string>(action: (input: I) => Promise<Lobby>) {
 export function useCreateGame() {
   const api = useApi()
   return useLobbyMutation(api.createGame)
+}
+
+/** Published maps (immutable templates). */
+export function useMaps() {
+  const api = useApi()
+  return useQuery({ queryKey: ['maps'] as const, queryFn: api.listMaps, staleTime: Infinity })
 }
 
 export function useJoinGame() {
@@ -400,4 +406,90 @@ export function useCheckPeace(gameId: string) {
   return useMutation({
     mutationFn: ({ warId, terms }: { warId: string; terms: PeaceTerm[] }) => api.checkPeace(gameId, warId, terms),
   })
+}
+
+export function useSendGold(gameId: string) {
+  const api = useApi()
+  return useGameCommand(gameId, ({ recipientNationId, amountMg, idempotencyKey }: {
+    recipientNationId: string
+    amountMg: number
+    idempotencyKey: string
+  }) => api.sendGold(gameId, recipientNationId, amountMg, idempotencyKey))
+}
+
+// --- Phase 10: coalitions, calls to arms and peace conferences ----------------------------------
+
+export function useAttach(gameId: string) {
+  const api = useApi()
+  return useGameCommand(gameId, ({ battalionIds, commanderNationId, idempotencyKey }: {
+    battalionIds: string[]
+    commanderNationId: string
+    idempotencyKey: string
+  }) => api.attach(gameId, battalionIds, commanderNationId, idempotencyKey))
+}
+
+export function useRelease(gameId: string) {
+  const api = useApi()
+  return useGameCommand(gameId, ({ battalionIds, idempotencyKey }: { battalionIds: string[]; idempotencyKey: string }) =>
+    api.release(gameId, battalionIds, idempotencyKey),
+  )
+}
+
+export function useCallToArms(gameId: string) {
+  const api = useApi()
+  return useGameCommand(gameId, ({ warId, allyNationId, idempotencyKey }: {
+    warId: string
+    allyNationId: string
+    idempotencyKey: string
+  }) => api.callToArms(gameId, warId, allyNationId, idempotencyKey))
+}
+
+export function useAnswerCall(gameId: string) {
+  const api = useApi()
+  return useGameCommand(gameId, ({ callId, accept, idempotencyKey }: { callId: string; accept: boolean; idempotencyKey: string }) =>
+    api.answerCall(gameId, callId, accept, idempotencyKey),
+  )
+}
+
+export function useRequestConference(gameId: string) {
+  const api = useApi()
+  return useGameCommand(gameId, ({ warId, kind, idempotencyKey }: { warId: string; kind: ConferenceKind; idempotencyKey: string }) =>
+    api.requestConference(gameId, warId, kind, idempotencyKey),
+  )
+}
+
+export function useAnswerConference(gameId: string) {
+  const api = useApi()
+  return useGameCommand(gameId, ({ conferenceId, accept, idempotencyKey }: {
+    conferenceId: string
+    accept: boolean
+    idempotencyKey: string
+  }) => api.answerConference(gameId, conferenceId, accept, idempotencyKey))
+}
+
+export function useCancelConference(gameId: string) {
+  const api = useApi()
+  return useGameCommand(gameId, ({ conferenceId, idempotencyKey }: { conferenceId: string; idempotencyKey: string }) =>
+    api.cancelConference(gameId, conferenceId, idempotencyKey),
+  )
+}
+
+export function useSubmitDraft(gameId: string) {
+  const api = useApi()
+  return useGameCommand(gameId, ({ conferenceId, expectedRevision, terms, idempotencyKey }: {
+    conferenceId: string
+    expectedRevision: number
+    terms: PeaceTerm[]
+    idempotencyKey: string
+  }) => api.submitDraft(gameId, conferenceId, expectedRevision, terms, idempotencyKey))
+}
+
+export function useDecideDraft(gameId: string) {
+  const api = useApi()
+  return useGameCommand(gameId, ({ conferenceId, revision, action, idempotencyKey }: {
+    conferenceId: string
+    revision: number
+    action: 'approve' | 'reject'
+    idempotencyKey: string
+  }) => api.decideDraft(gameId, conferenceId, revision, action, idempotencyKey))
 }

@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -103,7 +105,7 @@ public class MilitaryService {
 		UUID nationId = state.nationOfPlayer(membership.gamePlayerId());
 		List<Battalion> all = battalions.findByGameIdOrderById(gameId);
 		List<MilitaryViews.BattalionView> views = all.stream()
-			.map(b -> view(b, state, nationId, membership.turnNumber(), rules))
+			.map(b -> view(b, state, nationId, MilitaryService.clock(rules, membership.turnNumber(), membership.round()), rules))
 			.toList();
 		EconomyApi.TreasuryState treasury = economy.treasury(nationId);
 		List<MilitaryViews.CityRecruitment> recruitment = state.snapshot()
@@ -133,7 +135,7 @@ public class MilitaryService {
 		List<Battalion> all = battalions.findByGameIdOrderById(gameId);
 		List<MilitaryViews.BattalionView> here = all.stream()
 			.filter(b -> b.provinceStateId().equals(province.provinceStateId()))
-			.map(b -> view(b, state, nationId, membership.turnNumber(), rules))
+			.map(b -> view(b, state, nationId, MilitaryService.clock(rules, membership.turnNumber(), membership.round()), rules))
 			.toList();
 		List<MilitaryViews.MoveTarget> targets = state.topology().neighbours(provinceKey).stream().map(key -> {
 			WorldApi.ProvinceState neighbour = state.province(key);
@@ -200,7 +202,7 @@ public class MilitaryService {
 						context.turnNumber(), context.now()));
 				cohorts.raised(battalion);
 				return new GameCommands.Outcome<>(new MilitaryViews.RecruitResult(
-						view(battalion, state, nationId, context.turnNumber(), rules),
+						view(battalion, state, nationId, MilitaryService.clock(rules, context), rules),
 						economy.treasury(nationId).treasuryMg(), population), battalion.id());
 			}
 
@@ -212,7 +214,7 @@ public class MilitaryService {
 				WorldApi.ProvinceState city = state.snapshot().provinceOfCity(cityId).orElseThrow(MilitaryService::cityNotFound);
 				// The battalion may since have been destroyed; the replay still reports the current treasury.
 				MilitaryViews.BattalionView battalion = battalions.findById(resultRef)
-					.map(b -> view(b, state, nationId, context.turnNumber(), rules))
+					.map(b -> view(b, state, nationId, MilitaryService.clock(rules, context), rules))
 					.orElse(null);
 				return new MilitaryViews.RecruitResult(battalion, economy.treasury(nationId).treasuryMg(),
 						city.population());
@@ -245,14 +247,23 @@ public class MilitaryService {
 		});
 	}
 
+
+	/**
+	 * A move by the caller's nation (the commander). Ruleset v6 (Phase 10): the selected battalions may
+	 * include allies' battalions attached to the commander; every nation present at war with the
+	 * commander defends together; each battalion fights with its own nation's technology and
+	 * doctrine; defeated defenders retreat nation by nation. Before v6 a battle has exactly one nation
+	 * per side.
+	 */
 	private GameCommands.Outcome<MilitaryViews.MoveResult> executeMove(GameCommands.CommandContext context,
 			UUID gameId, List<UUID> battalionIds, String toProvinceKey) {
 		MilitaryRules rules = rulesets.rules(context.rulesetVersion());
+		Movement.Clock clock = clock(rules, context);
 		State state = load(gameId);
 		UUID nationId = state.nationOfPlayer(context.gamePlayerId());
-		List<Battalion> moving = ownColocated(gameId, battalionIds, nationId);
+		List<Battalion> moving = commandedColocated(gameId, battalionIds, nationId);
 		for (Battalion battalion : moving) {
-			Movement.Eligibility eligibility = battalion.eligibility(context.turnNumber());
+			Movement.Eligibility eligibility = battalion.eligibility(clock);
 			if (eligibility != Movement.Eligibility.READY) {
 				throw notReady(eligibility);
 			}
@@ -268,12 +279,16 @@ public class MilitaryService {
 			throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "NOT_ADJACENT",
 					"Battalions can only move to an adjacent province.");
 		}
-		if (!state.relations().mayEnter(nationId, destination.ownerNationId(), destination.controllerNationId())) {
-			throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "NO_MILITARY_ACCESS",
-					"Your battalions may not enter this province: you are not at war with its holder and have no military access.");
+		// Attached battalions keep their owner's diplomatic rights: each owner must be allowed in.
+		Set<UUID> movingNations = moving.stream().map(Battalion::nationId).collect(Collectors.toCollection(TreeSet::new));
+		for (UUID owner : movingNations) {
+			if (!state.relations().mayEnter(owner, destination.ownerNationId(), destination.controllerNationId())) {
+				throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "NO_MILITARY_ACCESS",
+						"Your battalions may not enter this province: you are not at war with its holder and have no military access.");
+			}
 		}
 
-		// Only battalions of nations at war with the mover fight; allied or neutral ones stay out of it.
+		// Only battalions of nations at war with the commander fight; allied or neutral ones stay out of it.
 		List<Battalion> defenders = battalions.findByGameIdAndProvinceStateIdOrderById(gameId,
 				destination.provinceStateId())
 			.stream()
@@ -282,80 +297,105 @@ public class MilitaryService {
 		Set<UUID> armiesTouched = armiesOf(moving);
 		if (defenders.isEmpty()) {
 			leaveArmiesIfSplit(gameId, moving);
-			moving.forEach(b -> b.moved(destination.provinceStateId(), context.turnNumber()));
+			moving.forEach(b -> b.moved(destination.provinceStateId(), clock));
 			battalions.saveAllAndFlush(moving);
 			deleteEmptyArmies(gameId, armiesTouched);
 			presenceChanged(gameId, Set.of(origin, destination.provinceStateId()), context);
-			List<MilitaryViews.BattalionView> views = moving.stream()
-				.map(b -> view(b, state, nationId, context.turnNumber(), rules))
-				.toList();
+			List<MilitaryViews.BattalionView> views = moving.stream().map(b -> view(b, state, nationId, clock, rules)).toList();
 			return new GameCommands.Outcome<>(new MilitaryViews.MoveResult("MOVED", toProvinceKey, views, null),
 					moving.getFirst().id());
 		}
 
-		Set<UUID> defenderNations = defenders.stream().map(Battalion::nationId).collect(Collectors.toSet());
-		if (defenderNations.size() != 1) {
-			// Coalition battles (several enemy nations on one field) arrive with Phase 10.
+		Set<UUID> defenderNations = defenders.stream().map(Battalion::nationId).collect(Collectors.toCollection(TreeSet::new));
+		if (defenderNations.size() != 1 && !state.relations().coalitions()) {
 			throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "COALITION_BATTLE_UNSUPPORTED",
-					"Battalions of several enemy nations hold this province; coalition battles are not supported yet.");
+					"Battalions of several enemy nations hold this province; coalition battles are not supported in this game.");
 		}
-		UUID defenderNation = defenderNations.iterator().next();
+		for (UUID owner : movingNations) {
+			for (UUID enemy : defenderNations) {
+				if (!state.relations().atWar(owner, enemy)) {
+					throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "ATTACHED_NOT_AT_WAR",
+							"An attached battalion's nation is not at war with every defender here.");
+				}
+			}
+		}
+		UUID defenderNation = leadingNation(defenders);
 		armiesTouched.addAll(armiesOf(defenders));
 		boolean mountains = state.terrain(toProvinceKey) == WorldApi.Terrain.MOUNTAINS;
-		Battle.Result result = Battle.resolve(new Battle.Input(fighters(moving), fighters(defenders), border.get().river(),
-				mountains, state.side(nationId), state.side(defenderNation)), rules);
+		Battle.Result result = Battle.resolve(new Battle.Input(fighters(moving, state), fighters(defenders, state),
+				border.get().river(), mountains, state.side(nationId), state.side(defenderNation)), rules);
 
 		Map<UUID, Integer> before = new LinkedHashMap<>();
 		moving.forEach(b -> before.put(b.id(), b.manpower()));
 		defenders.forEach(b -> before.put(b.id(), b.manpower()));
+		Map<UUID, UUID> ownerOf = new LinkedHashMap<>();
+		moving.forEach(b -> ownerOf.put(b.id(), b.nationId()));
+		defenders.forEach(b -> ownerOf.put(b.id(), b.nationId()));
 		Map<UUID, String> fate = new LinkedHashMap<>();
 		List<Battalion> survivingAttackers = survivors(moving, result, fate);
 		List<Battalion> survivingDefenders = survivors(defenders, result, fate);
 
 		boolean attackerWon = result.winner() == Battle.Side.ATTACKER;
-		String retreatKey = null;
-		boolean defendersDestroyed = false;
+		Map<UUID, String> retreatByNation = new LinkedHashMap<>();
+		Set<UUID> destroyedNations = new HashSet<>();
 		if (attackerWon) {
 			leaveArmiesIfSplit(gameId, survivingAttackers);
-			survivingAttackers.forEach(b -> b.moved(destination.provinceStateId(), context.turnNumber()));
-			if (!survivingDefenders.isEmpty()) {
-				Optional<String> retreat = retreatDestination(gameId, state, toProvinceKey, defenderNation);
+			survivingAttackers.forEach(b -> b.moved(destination.provinceStateId(), clock));
+			battalions.saveAll(survivingAttackers);
+			List<Battalion> staying = new ArrayList<>();
+			// Each defeated nation retreats on its own (to a province it controls), in nation id order.
+			for (UUID nation : defenderNations) {
+				List<Battalion> own = survivingDefenders.stream().filter(b -> b.nationId().equals(nation)).toList();
+				if (own.isEmpty()) {
+					continue;
+				}
+				Optional<String> retreat = retreatDestination(gameId, state, toProvinceKey, nation);
 				if (retreat.isPresent()) {
-					retreatKey = retreat.get();
-					UUID target = state.province(retreatKey).provinceStateId();
-					survivingDefenders.forEach(b -> {
+					retreatByNation.put(nation, retreat.get());
+					UUID target = state.province(retreat.get()).provinceStateId();
+					own.forEach(b -> {
 						b.retreatTo(target);
 						fate.put(b.id(), "RETREATED");
 					});
+					staying.addAll(own);
+					battalions.saveAll(own);
 				}
 				else {
 					// Q-C3: nowhere to retreat — the defeated battalions are destroyed.
-					defendersDestroyed = true;
-					survivingDefenders.forEach(b -> {
+					destroyedNations.add(nation);
+					own.forEach(b -> {
 						fate.put(b.id(), "DESTROYED");
 						cohorts.removed(b);
 					});
-					battalions.deleteAll(survivingDefenders);
-					survivingDefenders = List.of();
+					battalions.deleteAll(own);
 				}
 			}
+			survivingDefenders = staying;
 		}
 		else {
-			// The attack failed: attackers stay where they were, their movement for the turn is spent.
-			survivingAttackers.forEach(b -> b.moved(b.provinceStateId(), context.turnNumber()));
+			// The attack failed: attackers stay where they were, their movement is spent.
+			survivingAttackers.forEach(b -> b.moved(b.provinceStateId(), clock));
 		}
 		battalions.saveAll(survivingAttackers);
 		battalions.saveAll(survivingDefenders);
 		battalions.flush();
 		deleteEmptyArmies(gameId, armiesTouched);
 
+		List<MilitaryViews.NationSide> nations = new ArrayList<>();
+		for (UUID nation : movingNations) {
+			nations.add(nationSide(nation, "ATTACKER", moving, before, result, null, false, state));
+		}
+		for (UUID nation : defenderNations) {
+			nations.add(nationSide(nation, "DEFENDER", defenders, before, result, retreatByNation.get(nation),
+					destroyedNations.contains(nation), state));
+		}
 		MilitaryViews.BattleDetails details = new MilitaryViews.BattleDetails(fromKey, toProvinceKey,
-				border.get().river(), mountains, participants(moving, before, result, fate),
-				participants(defenders, before, result, fate), phases(result), result.attackerInitial(),
+				border.get().river(), mountains, participants(moving, before, result, fate, ownerOf),
+				participants(defenders, before, result, fate, ownerOf), phases(result), result.attackerInitial(),
 				result.defenderInitial(), result.attackerLosses(), result.defenderLosses(),
-				result.broken() == null ? null : result.broken().name(), result.winner().name(), retreatKey,
-				defendersDestroyed, result.attackerBroke(), result.defenderBroke(), state.mods(nationId),
-				state.mods(defenderNation));
+				result.broken() == null ? null : result.broken().name(), result.winner().name(),
+				retreatByNation.get(defenderNation), destroyedNations.contains(defenderNation), result.attackerBroke(),
+				result.defenderBroke(), state.mods(nationId), state.mods(defenderNation), nations);
 		BattleReportRepository.Row row = new BattleReportRepository.Row(UUID.randomUUID(), context.round(),
 				context.turnNumber(), destination.provinceStateId(), nationId, defenderNation, result.winner().name(),
 				context.rulesetVersion(), jsonMapper.writeValueAsString(details), context.now());
@@ -364,16 +404,42 @@ public class MilitaryService {
 				defenderNation, attackerWon, result.attackerLosses(), result.defenderLosses());
 		warEvents.forEach(events -> events.battleFought(gameId, fought));
 		Set<UUID> touched = new HashSet<>(Set.of(destination.provinceStateId(), origin));
-		if (retreatKey != null) {
-			touched.add(state.province(retreatKey).provinceStateId());
-		}
+		retreatByNation.values().forEach(key -> touched.add(state.province(key).provinceStateId()));
 		presenceChanged(gameId, touched, context);
 
 		List<MilitaryViews.BattalionView> views = survivingAttackers.stream()
-			.map(b -> view(b, state, nationId, context.turnNumber(), rules))
+			.map(b -> view(b, state, nationId, clock, rules))
 			.toList();
 		return new GameCommands.Outcome<>(new MilitaryViews.MoveResult(attackerWon ? "ATTACK_WON" : "ATTACK_REPELLED",
 				toProvinceKey, views, battleView(row, state)), row.id());
+	}
+
+	/** The defending nation with the most soldiers present (ties: lowest nation id) leads the defence. */
+	private static UUID leadingNation(List<Battalion> defenders) {
+		Map<UUID, Integer> manpower = new TreeMap<>();
+		defenders.forEach(b -> manpower.merge(b.nationId(), b.manpower(), Integer::sum));
+		UUID leader = null;
+		int most = -1;
+		for (var entry : manpower.entrySet()) {
+			if (entry.getValue() > most) {
+				leader = entry.getKey();
+				most = entry.getValue();
+			}
+		}
+		return leader;
+	}
+
+	private static MilitaryViews.NationSide nationSide(UUID nation, String side, List<Battalion> all,
+			Map<UUID, Integer> before, Battle.Result result, String retreatKey, boolean destroyed, State state) {
+		int start = 0;
+		int lost = 0;
+		for (Battalion b : all) {
+			if (b.nationId().equals(nation)) {
+				start += before.get(b.id());
+				lost += result.losses().getOrDefault(b.id(), 0);
+			}
+		}
+		return new MilitaryViews.NationSide(nation, side, start, lost, retreatKey, destroyed, state.mods(nation));
 	}
 
 	/**
@@ -391,14 +457,14 @@ public class MilitaryService {
 			List<MilitaryViews.BattalionView> survivors = battalions.findByGameIdAndIdIn(gameId, attackerIds)
 				.stream()
 				.sorted(Comparator.comparing(Battalion::id))
-				.map(b -> view(b, state, nationId, context.turnNumber(), rules))
+				.map(b -> view(b, state, nationId, MilitaryService.clock(rules, context), rules))
 				.toList();
 			return new MilitaryViews.MoveResult("ATTACKER".equals(view.winner()) ? "ATTACK_WON" : "ATTACK_REPELLED",
 					view.provinceKey(), survivors, view);
 		}
 		return battalions.findById(resultRef)
 			.map(b -> new MilitaryViews.MoveResult("MOVED", state.keyOf(b.provinceStateId()),
-					List.of(view(b, state, nationId, context.turnNumber(), rules)), null))
+					List.of(view(b, state, nationId, MilitaryService.clock(rules, context), rules)), null))
 			.orElseGet(() -> new MilitaryViews.MoveResult("MOVED", null, List.of(), null));
 	}
 
@@ -466,6 +532,32 @@ public class MilitaryService {
 
 	// --- shared command helpers ---------------------------------------------------------------
 
+	/**
+	 * Battalions the caller may give orders to: its own (unless attached to an ally) and allies'
+	 * battalions attached to it (Phase 10). All must stand in the same province.
+	 */
+	private List<Battalion> commandedColocated(UUID gameId, List<UUID> battalionIds, UUID nationId) {
+		Set<UUID> ids = new HashSet<>(battalionIds);
+		List<Battalion> selected = new ArrayList<>(battalions.findByGameIdAndIdIn(gameId, ids));
+		if (ids.isEmpty() || selected.size() != ids.size()) {
+			throw new ApiException(HttpStatus.NOT_FOUND, "BATTALION_NOT_FOUND", "Battalion not found in this game.");
+		}
+		if (selected.stream().anyMatch(b -> b.nationId().equals(nationId) && !b.commander().equals(nationId))) {
+			throw new ApiException(HttpStatus.CONFLICT, "BATTALION_ATTACHED",
+					"That battalion is attached to an ally, which commands it until you release it.");
+		}
+		if (selected.stream().anyMatch(b -> !b.commander().equals(nationId))) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "NOT_YOUR_BATTALION",
+					"You can only command your own battalions and those attached to you.");
+		}
+		if (selected.stream().map(Battalion::provinceStateId).distinct().count() != 1) {
+			throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "BATTALIONS_NOT_COLOCATED",
+					"All selected battalions must be in the same province.");
+		}
+		selected.sort(Comparator.comparing(b -> b.id().toString()));
+		return selected;
+	}
+
 	private List<Battalion> ownColocated(UUID gameId, List<UUID> battalionIds, UUID nationId) {
 		Set<UUID> ids = new HashSet<>(battalionIds);
 		List<Battalion> selected = new ArrayList<>(battalions.findByGameIdAndIdIn(gameId, ids));
@@ -475,6 +567,10 @@ public class MilitaryService {
 		if (selected.stream().anyMatch(b -> !b.nationId().equals(nationId))) {
 			throw new ApiException(HttpStatus.FORBIDDEN, "NOT_YOUR_BATTALION",
 					"You can only command your own battalions.");
+		}
+		if (selected.stream().anyMatch(b -> b.commanderNationId() != null)) {
+			throw new ApiException(HttpStatus.CONFLICT, "BATTALION_ATTACHED",
+					"A selected battalion is under an ally's command; detach it first.");
 		}
 		if (selected.stream().map(Battalion::provinceStateId).distinct().count() != 1) {
 			throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "BATTALIONS_NOT_COLOCATED",
@@ -518,8 +614,11 @@ public class MilitaryService {
 		return ids;
 	}
 
-	private static List<Battle.Fighter> fighters(List<Battalion> list) {
-		return list.stream().map(b -> new Battle.Fighter(b.id(), b.unitType(), b.manpower())).toList();
+	/** Each battalion fights with its own nation's technology and doctrine (coalition sides, Phase 10). */
+	private static List<Battle.Fighter> fighters(List<Battalion> list, State state) {
+		return list.stream()
+			.map(b -> new Battle.Fighter(b.id(), b.unitType(), b.manpower(), state.side(b.nationId())))
+			.toList();
 	}
 
 	/** Applies battle losses; battalions at zero are deleted (their dead never return to civilians). */
@@ -543,12 +642,23 @@ public class MilitaryService {
 
 	// --- views --------------------------------------------------------------------------------
 
-	static MilitaryViews.BattalionView view(Battalion b, State state, UUID viewerNationId, int turnNumber,
+	/** The movement clock of a ruleset: per global round from v6, per player turn before. */
+	static Movement.Clock clock(MilitaryRules rules, int turnNumber, int round) {
+		return new Movement.Clock(turnNumber, round, rules.roundBasedMovement());
+	}
+
+	static Movement.Clock clock(MilitaryRules rules, GameCommands.CommandContext context) {
+		return clock(rules, context.turnNumber(), context.round());
+	}
+
+	static MilitaryViews.BattalionView view(Battalion b, State state, UUID viewerNationId, Movement.Clock clock,
 			MilitaryRules rules) {
-		String eligibility = b.nationId().equals(viewerNationId) ? b.eligibility(turnNumber).name() : null;
+		// Eligibility is shown to whoever commands the battalion (its owner, or the ally it is attached to).
+		String eligibility = b.commander().equals(viewerNationId) ? b.eligibility(clock).name() : null;
 		return new MilitaryViews.BattalionView(b.id(), b.nationId(), b.unitType().name(), b.manpower(), b.maxManpower(),
 				state.keyOf(b.provinceStateId()), b.armyId(), b.originCityId(), b.recruitedRound(), eligibility,
-				Upkeep.of(b.unitType(), b.manpower(), b.maxManpower(), rules, state.mods(b.nationId()).upkeepReductionBps()));
+				Upkeep.of(b.unitType(), b.manpower(), b.maxManpower(), rules, state.mods(b.nationId()).upkeepReductionBps()),
+				b.commanderNationId());
 	}
 
 	private List<MilitaryViews.ArmyView> armyViews(UUID gameId, List<Battalion> all, State state) {
@@ -643,11 +753,12 @@ public class MilitaryService {
 	}
 
 	private static List<MilitaryViews.Participant> participants(List<Battalion> side, Map<UUID, Integer> before,
-			Battle.Result result, Map<UUID, String> fate) {
+			Battle.Result result, Map<UUID, String> fate, Map<UUID, UUID> ownerOf) {
 		return side.stream().map(b -> {
 			int lost = result.losses().getOrDefault(b.id(), 0);
 			int start = before.get(b.id());
-			return new MilitaryViews.Participant(b.id(), b.unitType().name(), start, lost, start - lost, fate.get(b.id()));
+			return new MilitaryViews.Participant(b.id(), b.unitType().name(), start, lost, start - lost, fate.get(b.id()),
+					ownerOf.get(b.id()));
 		}).toList();
 	}
 

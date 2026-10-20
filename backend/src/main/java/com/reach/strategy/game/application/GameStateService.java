@@ -56,6 +56,7 @@ public class GameStateService {
 		Map<UUID, String> names = playerDirectory.displayNames(members.stream().map(GamePlayer::playerId).toList());
 		Map<UUID, WorldApi.NationState> nationByPlayer = snapshot.nations()
 			.stream()
+			.filter(nation -> nation.gamePlayerId() != null)
 			.collect(Collectors.toMap(WorldApi.NationState::gamePlayerId, Function.identity()));
 
 		List<GameStateView.Player> players = members.stream()
@@ -67,7 +68,8 @@ public class GameStateService {
 		List<GameStateView.Nation> nations = snapshot.nations()
 			.stream()
 			.map(nation -> new GameStateView.Nation(nation.id(), nation.name(), nation.color(),
-					seatByGamePlayer.get(nation.gamePlayerId())))
+					nation.gamePlayerId() == null ? null : seatByGamePlayer.get(nation.gamePlayerId()), nation.control(),
+					nation.eliminatedRound()))
 			.toList();
 		List<GameStateView.Province> provinces = snapshot.provinces()
 			.stream()
@@ -77,7 +79,9 @@ public class GameStateService {
 
 		return new GameStateView(game.id(), game.name(), game.status(), game.mapTemplateId(), game.currentRound(),
 				game.activeSeat(), game.turnNumber(), game.stateVersion(), mine.seatOrder(),
-				game.activeSeat() == mine.seatOrder(), players, nations, provinces);
+				game.status() == GameStatus.IN_PROGRESS && !game.paused() && !mine.eliminated()
+						&& game.activeSeat() == mine.seatOrder(),
+				players, nations, provinces, game.pausedConferenceId(), mine.eliminated());
 	}
 
 	/**
@@ -85,12 +89,17 @@ public class GameStateService {
 	 */
 	public record GameStateView(UUID id, String name, GameStatus status, UUID mapId, int round, int activeSeat,
 			int turnNumber, long stateVersion, int yourSeat, boolean yourTurn, List<Player> players, List<Nation> nations,
-			List<Province> provinces) {
+			List<Province> provinces, UUID pausedConferenceId, boolean youAreEliminated) {
 
 		public record Player(int seat, String displayName, boolean host, boolean you, UUID nationId) {
 		}
 
-		public record Nation(UUID id, String name, String color, int seat) {
+		/**
+		 * @param seat the seat of its human player, or null for an NPC-controlled nation
+		 * @param control HUMAN or NPC
+		 * @param eliminatedRound round in which it was eliminated, or null
+		 */
+		public record Nation(UUID id, String name, String color, Integer seat, String control, Integer eliminatedRound) {
 		}
 
 		/** Legal owner and military controller; they differ only while occupied (Q-W1). */

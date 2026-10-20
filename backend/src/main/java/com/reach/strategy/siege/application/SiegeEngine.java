@@ -100,11 +100,12 @@ class SiegeEngine {
 	}
 
 	private ControlDecision.Action decide(Ctx ctx, WorldApi.ProvinceState p) {
-		Set<UUID> nations = ctx.presenceIn(p).stream().map(MilitaryPresence.Presence::nationId).collect(Collectors.toSet());
+		Map<UUID, Integer> manpower = new java.util.TreeMap<>();
+		ctx.presenceIn(p).forEach(b -> manpower.merge(b.nationId(), b.manpower(), Integer::sum));
 		Fortification fortress = ctx.fortificationOf(p);
 		Siege active = ctx.activeSiegeOrNull(p);
-		return ControlDecision.decide(p.controllerNationId(), nations, fortress == null ? 0 : fortress.effectiveLevel(),
-				active == null ? null : active.besiegerNationId(), ctx.relations()::atWar);
+		return ControlDecision.decide(p.controllerNationId(), manpower, fortress == null ? 0 : fortress.effectiveLevel(),
+				active == null ? null : active.besiegerNationId(), ctx.relations()::atWar, ctx.relations().coalitions());
 	}
 
 	private Siege start(Ctx ctx, WorldApi.ProvinceState p, UUID besieger, int round, int turnNumber, Instant now) {

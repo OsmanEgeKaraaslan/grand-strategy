@@ -58,9 +58,28 @@ public class LobbyService {
 
 	@Transactional
 	public LobbyView create(CurrentPlayer me, String name) {
+		return create(me, name, null, null);
+	}
+
+	/**
+	 * Creates a lobby for {@code maxPlayers} humans (2 up to what the map supports; default 2) on the
+	 * chosen or default map. The map's other nations will be NPC-controlled.
+	 */
+	@Transactional
+	public LobbyView create(CurrentPlayer me, String name, Integer maxPlayers, String mapKey) {
 		Instant now = clock.instant();
-		Game.Created created = Game.create(name.strip(), me.id(), Game.DEFAULT_MAX_PLAYERS, world.defaultMapId(),
-				currentRulesetVersion, freshInviteCode(), now);
+		UUID mapId = mapKey == null || mapKey.isBlank() ? world.defaultMapId()
+				: world.mapId(mapKey)
+					.orElseThrow(() -> new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "MAP_NOT_FOUND",
+							"That map does not exist."));
+		WorldApi.MapSummary map = world.mapSummary(mapId);
+		int players = maxPlayers == null ? Game.DEFAULT_MAX_PLAYERS : maxPlayers;
+		if (players < 2 || players > map.maxPlayers()) {
+			throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "INVALID_PLAYER_COUNT",
+					"This map supports 2 to " + map.maxPlayers() + " human players.");
+		}
+		Game.Created created = Game.create(name.strip(), me.id(), players, mapId, currentRulesetVersion,
+				freshInviteCode(), now);
 		games.save(created.game());
 		memberships.save(created.host());
 		return view(created.game(), List.of(created.host()), me);
@@ -120,6 +139,10 @@ public class LobbyService {
 		if (map.nation(nationTemplateId).isEmpty()) {
 			throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "NATION_NOT_FOUND",
 					"That nation does not exist on this game's map.");
+		}
+		if (!map.nation(nationTemplateId).get().playable()) {
+			throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "NATION_NOT_PLAYABLE",
+					"That nation is controlled by the game; choose one of the playable nations.");
 		}
 		GamePlayer mine = mine(members, me);
 		if (nationTemplateId.equals(mine.nationTemplateId())) {

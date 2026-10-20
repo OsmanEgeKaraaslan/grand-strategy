@@ -56,4 +56,7 @@ strategy:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:}
   # Balance values (costs, rates, durations) are versioned; new games use this version and keep it.
   ruleset:
-    current-version: v5
+    current-version: v6
+  # Map of new games unless the host picks another (a map key; the latest version is used).
+  world:
+    default-map: grand-campaign

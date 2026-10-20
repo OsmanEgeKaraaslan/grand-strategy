@@ -37,6 +37,23 @@ public final class ApiDriver {
 			.content("{\"name\":\"" + name + "\"}"));
 	}
 
+	/** @param mapKey null for the default map */
+	public MvcResult createGame(String token, String name, int maxPlayers, String mapKey) throws Exception {
+		return perform(as(post("/api/v1/games"), token).contentType(MediaType.APPLICATION_JSON)
+			.content("{\"name\":\"" + name + "\",\"maxPlayers\":" + maxPlayers
+					+ (mapKey == null ? "" : ",\"mapKey\":\"" + mapKey + "\"") + "}"));
+	}
+
+	public MvcResult maps(String token) throws Exception {
+		return perform(as(get("/api/v1/maps"), token));
+	}
+
+	public MvcResult sendGold(String token, String gameId, String recipientNationId, long amountMg, UUID idempotencyKey)
+			throws Exception {
+		return command(post("/api/v1/games/" + gameId + "/diplomacy/gifts"), token,
+				"{\"recipientNationId\":\"" + recipientNationId + "\",\"amountMg\":" + amountMg + "}", idempotencyKey);
+	}
+
 	public MvcResult join(String token, String inviteCode) throws Exception {
 		return perform(as(post("/api/v1/games/join"), token).contentType(MediaType.APPLICATION_JSON)
 			.content("{\"inviteCode\":\"" + inviteCode + "\"}"));
@@ -206,6 +223,69 @@ public final class ApiDriver {
 			withBody.header("Idempotency-Key", idempotencyKey.toString());
 		}
 		return perform(withBody);
+	}
+
+	// --- coalitions and conferences (Phase 10B) -------------------------------------------------
+
+	public MvcResult attach(String token, String gameId, List<String> battalionIds, String commanderNationId,
+			UUID idempotencyKey) throws Exception {
+		return command(post("/api/v1/games/" + gameId + "/attachments"), token, "{\"battalionIds\":" + jsonList(battalionIds)
+				+ ",\"commanderNationId\":\"" + commanderNationId + "\"}", idempotencyKey);
+	}
+
+	public MvcResult release(String token, String gameId, List<String> battalionIds, UUID idempotencyKey)
+			throws Exception {
+		return command(post("/api/v1/games/" + gameId + "/attachments/release"), token,
+				"{\"battalionIds\":" + jsonList(battalionIds) + "}", idempotencyKey);
+	}
+
+	public MvcResult callToArms(String token, String gameId, String warId, String allyNationId, UUID idempotencyKey)
+			throws Exception {
+		return command(post("/api/v1/games/" + gameId + "/diplomacy/wars/" + warId + "/calls"), token,
+				"{\"allyNationId\":\"" + allyNationId + "\"}", idempotencyKey);
+	}
+
+	public MvcResult answerCall(String token, String gameId, String callId, boolean accept, UUID idempotencyKey)
+			throws Exception {
+		return command(post("/api/v1/games/" + gameId + "/diplomacy/calls/" + callId + "/answer"), token,
+				"{\"accept\":" + accept + "}", idempotencyKey);
+	}
+
+	/** @param kind GENERAL or SEPARATE */
+	public MvcResult requestConference(String token, String gameId, String warId, String kind, UUID idempotencyKey)
+			throws Exception {
+		return command(post("/api/v1/games/" + gameId + "/diplomacy/wars/" + warId + "/conferences"), token,
+				"{\"kind\":\"" + kind + "\"}", idempotencyKey);
+	}
+
+	public MvcResult answerConference(String token, String gameId, String conferenceId, boolean accept,
+			UUID idempotencyKey) throws Exception {
+		return command(post("/api/v1/games/" + gameId + "/diplomacy/conferences/" + conferenceId + "/answer"), token,
+				"{\"accept\":" + accept + "}", idempotencyKey);
+	}
+
+	public MvcResult cancelConference(String token, String gameId, String conferenceId, UUID idempotencyKey)
+			throws Exception {
+		return command(post("/api/v1/games/" + gameId + "/diplomacy/conferences/" + conferenceId + "/cancel"), token,
+				"{}", idempotencyKey);
+	}
+
+	/** @param termsJson a JSON array of terms */
+	public MvcResult submitDraft(String token, String gameId, String conferenceId, int expectedRevision,
+			String termsJson, UUID idempotencyKey) throws Exception {
+		return command(post("/api/v1/games/" + gameId + "/diplomacy/conferences/" + conferenceId + "/drafts"), token,
+				"{\"expectedRevision\":" + expectedRevision + ",\"terms\":" + termsJson + "}", idempotencyKey);
+	}
+
+	/** {@code action}: approve or reject. */
+	public MvcResult decideDraft(String token, String gameId, String conferenceId, int revision, String action,
+			UUID idempotencyKey) throws Exception {
+		return command(post("/api/v1/games/" + gameId + "/diplomacy/conferences/" + conferenceId + "/revisions/"
+				+ revision + "/" + action), token, "{}", idempotencyKey);
+	}
+
+	public MvcResult conference(String token, String gameId, String conferenceId) throws Exception {
+		return perform(as(get("/api/v1/games/" + gameId + "/diplomacy/conferences/" + conferenceId), token));
 	}
 
 	// --- diplomacy (Phase 9) -------------------------------------------------------------------

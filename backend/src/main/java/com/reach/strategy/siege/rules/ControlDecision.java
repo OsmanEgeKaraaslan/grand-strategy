@@ -73,4 +73,35 @@ public final class ControlDecision {
 		return effectiveFortressLevel >= 1 ? new StartSiege(present) : new Occupy(present);
 	}
 
+	/**
+	 * Coalition rule (ruleset v6, Phase 10): several nations at war with the controller may stand
+	 * together in its province; when no nation present is at war with any of them, the one with the
+	 * most soldiers present (ties: lowest nation id) occupies or leads the siege. Without coalitions
+	 * this is exactly {@link #decide(UUID, Set, int, UUID, BiPredicate)}.
+	 *
+	 * @param manpowerByNation soldiers present per nation
+	 */
+	public static Action decide(UUID controllerNationId, java.util.Map<UUID, Integer> manpowerByNation,
+			int effectiveFortressLevel, UUID activeBesieger, BiPredicate<UUID, UUID> atWar, boolean coalitions) {
+		Set<UUID> present = manpowerByNation.keySet();
+		if (!coalitions || activeBesieger != null) {
+			return decide(controllerNationId, present, effectiveFortressLevel, activeBesieger, atWar);
+		}
+		List<UUID> hostile = present.stream().filter(n -> atWar.test(n, controllerNationId)).sorted().toList();
+		if (hostile.isEmpty()) {
+			return new None();
+		}
+		boolean opposed = present.stream().anyMatch(n -> hostile.stream().anyMatch(h -> atWar.test(n, h)));
+		if (opposed) {
+			return new None();
+		}
+		UUID leader = hostile.getFirst();
+		for (UUID nation : hostile) {
+			if (manpowerByNation.get(nation) > manpowerByNation.get(leader)) {
+				leader = nation;
+			}
+		}
+		return effectiveFortressLevel >= 1 ? new StartSiege(leader) : new Occupy(leader);
+	}
+
 }

@@ -15,9 +15,22 @@ package com.reach.strategy.diplomacy.rules;
  */
 public record DiplomacyRules(String version, int truceRounds, int proposalExpiryRounds, int maxPeaceTerms,
 		MilitaryAccess militaryAccess, WarScoreRules warScore, TributeRules tribute,
-		PopulationTransferRules populationTransfer, ReparationRules reparations, VictoryRules victory) {
+		PopulationTransferRules populationTransfer, ReparationRules reparations, VictoryRules victory, GiftRules gifts,
+		Features features) {
+
+	/** A ruleset without Phase 10 features (v5). */
+	public DiplomacyRules(String version, int truceRounds, int proposalExpiryRounds, int maxPeaceTerms,
+			MilitaryAccess militaryAccess, WarScoreRules warScore, TributeRules tribute,
+			PopulationTransferRules populationTransfer, ReparationRules reparations, VictoryRules victory) {
+		this(version, truceRounds, proposalExpiryRounds, maxPeaceTerms, militaryAccess, warScore, tribute,
+				populationTransfer, reparations, victory, null, null);
+	}
 
 	public DiplomacyRules {
+		features = features == null ? Features.NONE : features;
+		if (gifts != null && gifts.maxMg() < 1) {
+			throw invalid(version, "gifts");
+		}
 		if (version == null || version.isBlank()) {
 			throw invalid(version, "version");
 		}
@@ -102,9 +115,48 @@ public record DiplomacyRules(String version, int truceRounds, int proposalExpiry
 	/**
 	 * PROVISIONAL Q-T2: the game ends after round {@code maxRounds}; a nation scores
 	 * {@code provincePoints} per legally owned province plus {@code pointsPerThousandPopulation} per
-	 * full 1,000 people in its legally owned cities.
+	 * full 1,000 people in its legally owned cities, plus (v6) {@code pointsPerHundredGold} per full 100
+	 * gold in its treasury. With {@code domination} (v6) a game also ends as soon as only one nation is
+	 * not eliminated.
 	 */
-	public record VictoryRules(int maxRounds, int provincePoints, int pointsPerThousandPopulation) {
+	public record VictoryRules(int maxRounds, int provincePoints, int pointsPerThousandPopulation,
+			Integer pointsPerHundredGold, Boolean domination) {
+
+		public VictoryRules {
+			// Absent in rulesets before v6.
+			pointsPerHundredGold = pointsPerHundredGold == null ? 0 : pointsPerHundredGold;
+			domination = domination != null && domination;
+		}
+
+		public VictoryRules(int maxRounds, int provincePoints, int pointsPerThousandPopulation) {
+			this(maxRounds, provincePoints, pointsPerThousandPopulation, 0, false);
+		}
+
+	}
+
+	/**
+	 * Direct gold gifts (v6, PROVISIONAL): at most {@code maxMg} per gift; {@code allowToEnemies} false
+	 * forbids gifts to a nation the sender is at war with.
+	 */
+	public record GiftRules(long maxMg, boolean allowToEnemies) {
+	}
+
+	/**
+	 * Phase 10 behaviour switches (all false before v6, whose games keep Phase 9 rules).
+	 *
+	 * @param coalitionWarfare battles, occupation and sieges with several nations on a side
+	 * @param attachments battalions may be placed under an ally's command
+	 * @param callsToArms allies join a defensive war only by answering a call to arms (no automatic joining)
+	 * @param peaceConferences peace is negotiated in conferences with revisioned drafts and approvals
+	 * @param separatePeace non-leaders may leave a war through their own conference
+	 * @param capitalsCedable starting capitals may be ceded
+	 * @param elimination a nation owning no province is eliminated
+	 */
+	public record Features(boolean coalitionWarfare, boolean attachments, boolean callsToArms, boolean peaceConferences,
+			boolean separatePeace, boolean capitalsCedable, boolean elimination) {
+
+		public static final Features NONE = new Features(false, false, false, false, false, false, false);
+
 	}
 
 }

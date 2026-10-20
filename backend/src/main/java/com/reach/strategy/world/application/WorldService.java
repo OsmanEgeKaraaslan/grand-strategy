@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -14,8 +15,10 @@ import com.reach.strategy.world.domain.MapTemplate;
 import com.reach.strategy.world.domain.MapTemplateReader;
 import com.reach.strategy.world.domain.WorldStateRepository;
 import com.reach.strategy.world.rules.MapDefinition;
+import com.reach.strategy.world.rules.MapGeometry;
 import com.reach.strategy.world.rules.MapValidator;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -24,23 +27,33 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class WorldService implements WorldApi {
 
-	static final String DEFAULT_MAP_KEY = "sundered-reach";
-	static final int DEFAULT_MAP_VERSION = 1;
-
+	private final String defaultMapKey;
 	private final MapTemplateReader templates;
 	private final WorldStateRepository worldState;
 	// Templates are immutable once published, so caching them for the process lifetime is safe.
 	private final Map<UUID, MapTemplate> cache = new ConcurrentHashMap<>();
 
-	WorldService(MapTemplateReader templates, WorldStateRepository worldState) {
+	WorldService(MapTemplateReader templates, WorldStateRepository worldState,
+			@Value("${strategy.world.default-map:grand-campaign}") String defaultMapKey) {
+		this.defaultMapKey = defaultMapKey;
 		this.templates = templates;
 		this.worldState = worldState;
 	}
 
 	@Override
 	public UUID defaultMapId() {
-		return templates.findId(DEFAULT_MAP_KEY, DEFAULT_MAP_VERSION)
-			.orElseThrow(() -> new IllegalStateException("Default map " + DEFAULT_MAP_KEY + " v" + DEFAULT_MAP_VERSION + " is missing"));
+		return mapId(defaultMapKey)
+			.orElseThrow(() -> new IllegalStateException("Default map " + defaultMapKey + " is missing"));
+	}
+
+	@Override
+	public Optional<UUID> mapId(String key) {
+		return templates.findLatestId(key);
+	}
+
+	@Override
+	public List<MapSummary> maps() {
+		return templates.allMapIds().stream().map(this::mapSummary).toList();
 	}
 
 	@Override
@@ -49,9 +62,9 @@ public class WorldService implements WorldApi {
 		List<NationOption> nations = map.nations()
 			.stream()
 			.map(nation -> new NationOption(nation.id(), nation.key(), nation.name(), nation.color(),
-					nation.capitalProvinceKey(), nation.startProvinceKeys().size()))
+					nation.capitalProvinceKey(), nation.startProvinceKeys().size(), nation.tier().name(), nation.playable()))
 			.toList();
-		return new MapSummary(map.id(), map.name(), map.maxPlayers(), nations);
+		return new MapSummary(map.id(), map.key(), map.name(), map.maxPlayers(), nations);
 	}
 
 	public MapTemplate template(UUID mapId) {
@@ -65,6 +78,9 @@ public class WorldService implements WorldApi {
 		for (UUID mapId : templates.allMapIds()) {
 			MapTemplate template = template(mapId);
 			List<String> found = new ArrayList<>(MapValidator.validate(template.definition()));
+			Map<String, String> outlines = new HashMap<>();
+			template.geometry().provinces().forEach((key, shape) -> outlines.put(key, shape.svgPath()));
+			found.addAll(MapGeometry.validate(template.definition(), outlines));
 			template.definition()
 				.provinces()
 				.stream()
@@ -83,9 +99,9 @@ public class WorldService implements WorldApi {
 		MapDefinition map = template(mapId).definition();
 		Map<UUID, MapDefinition.Nation> nationsById = new HashMap<>();
 		map.nations().forEach(nation -> nationsById.put(nation.id(), nation));
-		if (!gamePlayerByNation.keySet().equals(nationsById.keySet())
+		if (!nationsById.keySet().containsAll(gamePlayerByNation.keySet())
 				|| new HashSet<>(gamePlayerByNation.values()).size() != gamePlayerByNation.size()) {
-			throw new IllegalArgumentException("Every nation of the map needs exactly one distinct player");
+			throw new IllegalArgumentException("Players must choose distinct nations of the map");
 		}
 		if (worldState.exists(gameId)) {
 			throw new IllegalStateException("World of game " + gameId + " already exists");
@@ -98,6 +114,7 @@ public class WorldService implements WorldApi {
 			nationIdByKey.put(nation.key(), id);
 			nations.add(new WorldStateRepository.NationRow(id, gameId, nation.id(), gamePlayerByNation.get(nation.id()),
 					nation.name(), nation.color()));
+			// Nations without a player are NPC-controlled (gamePlayerId null).
 		}
 
 		Map<String, String> owners = map.startingOwners();
@@ -122,7 +139,8 @@ public class WorldService implements WorldApi {
 	public WorldSnapshot snapshot(UUID gameId) {
 		List<NationState> nations = worldState.nations(gameId)
 			.stream()
-			.map(row -> new NationState(row.id(), row.nationTemplateId(), row.name(), row.color(), row.gamePlayerId()))
+			.map(row -> new NationState(row.id(), row.nationTemplateId(), row.name(), row.color(), row.gamePlayerId(),
+					row.gamePlayerId() == null ? "NPC" : "HUMAN", row.eliminatedRound()))
 			.toList();
 		List<ProvinceState> provinces = worldState.provinces(gameId)
 			.stream()
@@ -156,6 +174,12 @@ public class WorldService implements WorldApi {
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void transferOwnership(UUID gameId, String provinceKey, UUID fromNationId, UUID toNationId) {
 		worldState.transferOwnership(gameId, provinceKey, fromNationId, toNationId);
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.MANDATORY)
+	public void markEliminated(UUID gameId, UUID nationId, int round) {
+		worldState.markEliminated(gameId, nationId, round);
 	}
 
 	@Override

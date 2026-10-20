@@ -263,7 +263,33 @@ class DiplomacyHooks {
 			if (picture.isEmpty() || !Victory.due(completedRound, picture.get().rules().victory())) {
 				return Optional.empty();
 			}
-			WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
+			return Optional.of(outcome(gameId, picture.get(), completedRound, "ROUND_LIMIT", null));
+		}
+
+		/**
+		 * Ruleset v6: domination — the only nation not eliminated wins at once; and a game in which every
+		 * human player has been eliminated ends with the score standings (NPC nations cannot play on).
+		 */
+		@Override
+		@Transactional(propagation = Propagation.MANDATORY)
+		public Optional<Outcome> evaluateNow(UUID gameId, int currentRound, String rulesetVersion) {
+			Optional<DiplomacyState.Picture> picture = state.load(gameId);
+			if (picture.isEmpty() || !picture.get().rules().features().elimination()) {
+				return Optional.empty();
+			}
+			List<Victory.NationFacts> facts = facts(gameId, world.snapshot(gameId));
+			Optional<UUID> dominator = Victory.dominator(facts);
+			if (dominator.isPresent() && picture.get().rules().victory().domination()) {
+				return Optional.of(outcome(gameId, picture.get(), currentRound, "DOMINATION", dominator.get()));
+			}
+			boolean humansLeft = world.snapshot(gameId).nations().stream().anyMatch(n -> !n.npc() && !n.eliminated());
+			if (!humansLeft) {
+				return Optional.of(outcome(gameId, picture.get(), currentRound, "NO_HUMAN_PLAYERS", null));
+			}
+			return Optional.empty();
+		}
+
+		private List<Victory.NationFacts> facts(UUID gameId, WorldApi.WorldSnapshot snapshot) {
 			Map<UUID, int[]> provinces = new HashMap<>();
 			Map<UUID, Long> population = new HashMap<>();
 			snapshot.nations().forEach(n -> {
@@ -274,25 +300,32 @@ class DiplomacyHooks {
 				provinces.get(p.ownerNationId())[0]++;
 				population.merge(p.ownerNationId(), (long) p.population(), Long::sum);
 			});
-			List<Victory.NationFacts> facts = snapshot.nations()
+			return snapshot.nations()
 				.stream()
-				.map(n -> new Victory.NationFacts(n.id(), provinces.get(n.id())[0], population.get(n.id())))
+				.map(n -> new Victory.NationFacts(n.id(), provinces.get(n.id())[0], population.get(n.id()),
+						economy.treasury(n.id()).treasuryMg(), n.eliminated()))
 				.toList();
-			Victory.Outcome outcome = Victory.rank(facts, picture.get().rules().victory());
-			List<Standing> standings = outcome.standings()
+		}
+
+		/** @param winner forced winner (domination), or null to take the score ranking's */
+		private Outcome outcome(UUID gameId, DiplomacyState.Picture picture, int round, String reason, UUID winner) {
+			List<Victory.NationFacts> facts = facts(gameId, world.snapshot(gameId));
+			Victory.Outcome ranked = Victory.rank(facts, picture.rules().victory());
+			List<Standing> standings = ranked.standings()
 				.stream()
 				.map(r -> new Standing(r.nationId(), r.rank(), r.score(), r.ownedProvinces(), r.ownedPopulation(),
 						economy.treasury(r.nationId()).treasuryMg()))
 				.toList();
 			Map<String, Long> statistics = new LinkedHashMap<>();
-			statistics.put("roundsPlayed", (long) completedRound);
-			statistics.put("warsDeclared", (long) picture.get().wars().size());
+			statistics.put("roundsPlayed", (long) round);
+			statistics.put("warsDeclared", (long) picture.wars().size());
 			statistics.put("peaceTreaties", (long) treaties.treaties(gameId).size());
-			statistics.put("battlesInWars", relationsBattles(picture.get()));
+			statistics.put("battlesInWars", relationsBattles(picture));
 			statistics.put("provincesCeded", (long) events.count(gameId, "PROVINCE_CEDED"));
 			statistics.put("tributePaidMg",
 					treaties.payments(gameId).stream().mapToLong(TreatyRepository.PaymentRow::paidMg).sum());
-			return Optional.of(new Outcome("ROUND_LIMIT", outcome.winnerNationId(), standings, statistics));
+			statistics.put("nationsEliminated", facts.stream().filter(Victory.NationFacts::eliminated).count());
+			return new Outcome(reason, winner != null ? winner : ranked.winnerNationId(), standings, statistics);
 		}
 
 		private long relationsBattles(DiplomacyState.Picture picture) {

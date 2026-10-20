@@ -9,9 +9,12 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
+import com.reach.strategy.diplomacy.application.CallToArmsService;
+import com.reach.strategy.diplomacy.application.ConferenceService;
 import com.reach.strategy.diplomacy.application.DiplomacyQueries;
 import com.reach.strategy.diplomacy.application.DiplomacyService;
 import com.reach.strategy.diplomacy.application.DiplomacyViews;
+import com.reach.strategy.diplomacy.application.GiftService;
 import com.reach.strategy.diplomacy.application.PeaceService;
 import com.reach.strategy.diplomacy.rules.Diplomacy;
 import com.reach.strategy.identity.api.CurrentPlayer;
@@ -39,8 +42,15 @@ class DiplomacyController {
 	private final DiplomacyQueries queries;
 	private final DiplomacyService diplomacy;
 	private final PeaceService peace;
+	private final GiftService gifts;
+	private final CallToArmsService calls;
+	private final ConferenceService conferences;
 
-	DiplomacyController(DiplomacyQueries queries, DiplomacyService diplomacy, PeaceService peace) {
+	DiplomacyController(DiplomacyQueries queries, DiplomacyService diplomacy, PeaceService peace, GiftService gifts,
+			CallToArmsService calls, ConferenceService conferences) {
+		this.gifts = gifts;
+		this.calls = calls;
+		this.conferences = conferences;
 		this.queries = queries;
 		this.diplomacy = diplomacy;
 		this.peace = peace;
@@ -133,6 +143,92 @@ class DiplomacyController {
 		return diplomacy.endAlliance(me, gameId, allianceId, required(idempotencyKey));
 	}
 
+	// --- gifts --------------------------------------------------------------------------------
+
+	/** Sends gold to another nation (integer milligold); final, no approval needed. */
+	@PostMapping("/gifts")
+	ResponseEntity<DiplomacyViews.GiftResult> sendGold(CurrentPlayer me, @PathVariable UUID gameId,
+			@RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey,
+			@Valid @RequestBody GiftRequest request) {
+		return ResponseEntity.status(HttpStatus.CREATED)
+			.body(gifts.send(me, gameId, request.recipientNationId(), request.amountMg(), required(idempotencyKey)));
+	}
+
+	// --- calls to arms (ruleset v6) ------------------------------------------------------------
+
+	/** The attacked war leader calls an ally to arms (on its turn). */
+	@PostMapping("/wars/{warId}/calls")
+	ResponseEntity<DiplomacyViews.CallResult> callToArms(CurrentPlayer me, @PathVariable UUID gameId,
+			@PathVariable UUID warId, @RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey,
+			@Valid @RequestBody CallRequest request) {
+		return ResponseEntity.status(HttpStatus.CREATED)
+			.body(calls.call(me, gameId, warId, request.allyNationId(), required(idempotencyKey)));
+	}
+
+	/** The called ally honours (joins the war) or declines (the alliance ends), on its turn. */
+	@PostMapping("/calls/{callId}/answer")
+	DiplomacyViews.CallResult answerCall(CurrentPlayer me, @PathVariable UUID gameId, @PathVariable UUID callId,
+			@RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey,
+			@Valid @RequestBody AnswerRequest request) {
+		return calls.answer(me, gameId, callId, request.accept(), required(idempotencyKey));
+	}
+
+	// --- peace conferences (ruleset v6; allowed out of turn) -------------------------------------
+
+	@GetMapping("/conferences/{conferenceId}")
+	DiplomacyViews.ConferenceView conference(CurrentPlayer me, @PathVariable UUID gameId,
+			@PathVariable UUID conferenceId) {
+		return queries.conference(me, gameId, conferenceId);
+	}
+
+	@PostMapping("/wars/{warId}/conferences")
+	ResponseEntity<DiplomacyViews.ConferenceResult> requestConference(CurrentPlayer me, @PathVariable UUID gameId,
+			@PathVariable UUID warId, @RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey,
+			@Valid @RequestBody ConferenceRequest request) {
+		return ResponseEntity.status(HttpStatus.CREATED)
+			.body(conferences.request(me, gameId, warId, request.kind(), required(idempotencyKey)));
+	}
+
+	@PostMapping("/conferences/{conferenceId}/answer")
+	DiplomacyViews.ConferenceResult answerConference(CurrentPlayer me, @PathVariable UUID gameId,
+			@PathVariable UUID conferenceId,
+			@RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey,
+			@Valid @RequestBody AnswerRequest request) {
+		return conferences.answer(me, gameId, conferenceId, request.accept(), required(idempotencyKey));
+	}
+
+	@PostMapping("/conferences/{conferenceId}/cancel")
+	DiplomacyViews.ConferenceResult cancelConference(CurrentPlayer me, @PathVariable UUID gameId,
+			@PathVariable UUID conferenceId,
+			@RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey) {
+		return conferences.cancel(me, gameId, conferenceId, required(idempotencyKey));
+	}
+
+	/** A principal publishes a new revision of the draft, built on {@code expectedRevision}. */
+	@PostMapping("/conferences/{conferenceId}/drafts")
+	ResponseEntity<DiplomacyViews.ConferenceResult> submitDraft(CurrentPlayer me, @PathVariable UUID gameId,
+			@PathVariable UUID conferenceId,
+			@RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey,
+			@Valid @RequestBody DraftRequest request) {
+		return ResponseEntity.status(HttpStatus.CREATED)
+			.body(conferences.submit(me, gameId, conferenceId, request.expectedRevision(),
+					request.terms().stream().map(TermRequest::toTerm).toList(), required(idempotencyKey)));
+	}
+
+	@PostMapping("/conferences/{conferenceId}/revisions/{revision}/approve")
+	DiplomacyViews.ConferenceResult approveDraft(CurrentPlayer me, @PathVariable UUID gameId,
+			@PathVariable UUID conferenceId, @PathVariable int revision,
+			@RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey) {
+		return conferences.decide(me, gameId, conferenceId, revision, true, required(idempotencyKey));
+	}
+
+	@PostMapping("/conferences/{conferenceId}/revisions/{revision}/reject")
+	DiplomacyViews.ConferenceResult rejectDraft(CurrentPlayer me, @PathVariable UUID gameId,
+			@PathVariable UUID conferenceId, @PathVariable int revision,
+			@RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey) {
+		return conferences.decide(me, gameId, conferenceId, revision, false, required(idempotencyKey));
+	}
+
 	// --- peace ----------------------------------------------------------------------------------
 
 	@PostMapping("/peace-proposals")
@@ -180,6 +276,22 @@ class DiplomacyController {
 					"The Idempotency-Key header (a UUID) is required for game commands.");
 		}
 		return idempotencyKey;
+	}
+
+	record CallRequest(@NotNull UUID allyNationId) {
+	}
+
+	record AnswerRequest(@NotNull Boolean accept) {
+	}
+
+	record ConferenceRequest(@NotNull @Pattern(regexp = "GENERAL|SEPARATE") String kind) {
+	}
+
+	record DraftRequest(@NotNull Integer expectedRevision,
+			@NotNull @Size(max = 50) List<@Valid @NotNull TermRequest> terms) {
+	}
+
+	record GiftRequest(@NotNull UUID recipientNationId, @NotNull Long amountMg) {
 	}
 
 	record DeclareWarRequest(@NotNull UUID targetNationId) {

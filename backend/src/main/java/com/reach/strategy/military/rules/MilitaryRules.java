@@ -13,12 +13,26 @@ import java.util.Map;
  * @param minResidualPopulation civilians that must remain in the city after recruiting (ECONOMY §8)
  * @param startingForces battalions each nation receives in its capital at game start (Q-W3)
  * @param reinforcementPerTurn replacement soldiers one battalion may receive per player turn (500)
+ * @param startingForcesByTier v6+: starting forces per faction tier; a tier without an entry uses
+ * {@code startingForces}
+ * @param roundBasedMovement v6+: a battalion moves at most once per global round, whoever commands it
+ * (attached forces, Phase 10); before v6 eligibility is per player turn, which is the same for a
+ * battalion only ever commanded by its owner
  */
 public record MilitaryRules(String version, int battalionManpower, int minResidualPopulation,
 		Map<UnitType, UnitRules> units, CombatRules combat, Map<UnitType, Integer> startingForces,
-		int reinforcementPerTurn) {
+		int reinforcementPerTurn, Map<String, Map<UnitType, Integer>> startingForcesByTier, Boolean roundBasedMovement) {
+
+	public MilitaryRules(String version, int battalionManpower, int minResidualPopulation,
+			Map<UnitType, UnitRules> units, CombatRules combat, Map<UnitType, Integer> startingForces,
+			int reinforcementPerTurn) {
+		this(version, battalionManpower, minResidualPopulation, units, combat, startingForces, reinforcementPerTurn, null,
+				false);
+	}
 
 	public MilitaryRules {
+		startingForcesByTier = startingForcesByTier == null ? Map.of() : Map.copyOf(startingForcesByTier);
+		roundBasedMovement = roundBasedMovement != null && roundBasedMovement;
 		if (battalionManpower <= 0 || minResidualPopulation < 0 || reinforcementPerTurn <= 0 || units == null
 				|| combat == null
 				|| units.size() != UnitType.values().length) {
@@ -26,6 +40,11 @@ public record MilitaryRules(String version, int battalionManpower, int minResidu
 		}
 		units = Map.copyOf(new EnumMap<>(units));
 		startingForces = startingForces == null ? Map.of() : Map.copyOf(startingForces);
+	}
+
+	/** Starting battalions of a nation of this faction tier. */
+	public Map<UnitType, Integer> startingForces(String tier) {
+		return startingForcesByTier.getOrDefault(tier, startingForces);
 	}
 
 	public UnitRules unit(UnitType type) {

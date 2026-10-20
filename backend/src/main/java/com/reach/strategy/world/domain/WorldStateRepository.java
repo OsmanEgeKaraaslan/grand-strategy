@@ -20,7 +20,14 @@ public class WorldStateRepository {
 		this.jdbc = jdbc;
 	}
 
-	public record NationRow(UUID id, UUID gameId, UUID nationTemplateId, UUID gamePlayerId, String name, String color) {
+	/** @param gamePlayerId null for an NPC-controlled nation */
+	public record NationRow(UUID id, UUID gameId, UUID nationTemplateId, UUID gamePlayerId, String name, String color,
+			Integer eliminatedRound) {
+
+		public NationRow(UUID id, UUID gameId, UUID nationTemplateId, UUID gamePlayerId, String name, String color) {
+			this(id, gameId, nationTemplateId, gamePlayerId, name, color, null);
+		}
+
 	}
 
 	public record ProvinceRow(UUID id, UUID gameId, UUID provinceTemplateId, UUID ownerNationId, UUID controllerNationId) {
@@ -41,15 +48,16 @@ public class WorldStateRepository {
 
 	public void insertNations(List<NationRow> nations) {
 		jdbc.batchUpdate("""
-				INSERT INTO game.nation (id, game_id, nation_template_id, game_player_id, name, color)
-				VALUES (?, ?, ?, ?, ?, ?)
+				INSERT INTO game.nation (id, game_id, nation_template_id, game_player_id, name, color, control)
+				VALUES (?, ?, ?, ?, ?, ?, ?)
 				""", nations, nations.size(), (ps, n) -> {
 			ps.setObject(1, n.id());
 			ps.setObject(2, n.gameId());
 			ps.setObject(3, n.nationTemplateId());
-			ps.setObject(4, n.gamePlayerId());
+			ps.setObject(4, n.gamePlayerId(), java.sql.Types.OTHER);
 			ps.setString(5, n.name());
 			ps.setString(6, n.color());
+			ps.setString(7, n.gamePlayerId() == null ? "NPC" : "HUMAN");
 		});
 	}
 
@@ -81,11 +89,20 @@ public class WorldStateRepository {
 
 	public List<NationRow> nations(UUID gameId) {
 		return jdbc.query("""
-				SELECT id, game_id, nation_template_id, game_player_id, name, color
+				SELECT id, game_id, nation_template_id, game_player_id, name, color, eliminated_round
 				FROM game.nation WHERE game_id = ? ORDER BY name
 				""", (rs, row) -> new NationRow(rs.getObject("id", UUID.class), rs.getObject("game_id", UUID.class),
 				rs.getObject("nation_template_id", UUID.class), rs.getObject("game_player_id", UUID.class),
-				rs.getString("name"), rs.getString("color")), gameId);
+				rs.getString("name"), rs.getString("color"), (Integer) rs.getObject("eliminated_round")), gameId);
+	}
+
+	public void markEliminated(UUID gameId, UUID nationId, int round) {
+		int updated = jdbc.update(
+				"UPDATE game.nation SET eliminated_round = ? WHERE game_id = ? AND id = ? AND eliminated_round IS NULL", round,
+				gameId, nationId);
+		if (updated != 1) {
+			throw new IllegalStateException("Nation " + nationId + " of game " + gameId + " is unknown or already eliminated");
+		}
 	}
 
 	/** The map a game is played on (via its nations' templates); empty before the start. */

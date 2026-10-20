@@ -53,12 +53,14 @@ Movement access (`military.api.Hostility.Relations.mayEnter`): own territory (ow
 territory of a nation one is at war with, or territory whose controller grants access. **Neutral
 foreign territory is closed** (`422 NO_MILITARY_ACCESS`).
 
-### 2.3 Coalition limit (Phase 10)
+### 2.3 Coalitions
 
-The data model and the rules support any number of nations and two-sided coalitions. The battle
-engine still fights one nation against one nation: moving into a province held by battalions of
-**two or more enemy nations** is refused with `COALITION_BATTLE_UNSUPPORTED` (OPEN Q-D7, Phase 10).
-The only published map has two nations, so this cannot occur yet.
+The data model and the rules support any number of nations on two sides. Rulesets v1–v5 still fight
+one nation against one nation: a move into a province held by battalions of two or more enemy nations
+is refused with `COALITION_BATTLE_UNSUPPORTED`. Ruleset v6 fights **coalition battles**
+(COMBAT_AND_SIEGE §3a): every battalion keeps its own nation's technology and doctrine, losses are
+booked on the battalions that took them, and each nation gets its own report line. Q-D7 is decided
+for v6 (OPEN_QUESTIONS decision log, 2026-10-20).
 
 ## 3. Alliances
 
@@ -86,7 +88,7 @@ is in truce with it, is already at war with it, or fights on the attacker's side
 attacker; the ally's battalions may then fight the attacker under the normal rules. Deterministic:
 allies in nation id order. This replaces the earlier PROPOSED call-to-arms vote (GAME_DESIGN §11.1),
 which needs a turn-based answer flow not yet designed; offensive calls (normal allies of the
-attacker) are **not** implemented (Phase 10).
+attacker) are **not** implemented. **Ruleset v6 replaces this automatic response by calls to arms (§12).**
 
 ### 3.4 Ending an alliance — PROVISIONAL
 
@@ -225,7 +227,168 @@ symmetric map is a draw.
 
 ## 9. What is not in Phase 9
 
-Coalition battles and multi-nation terms (Phase 10), offensive calls to arms, a call-to-arms vote,
-term costs in war score, separate peace of a single coalition member, neutral nations without a
-player, other victory conditions, AI (Phase 11), profile statistics (Phase 12), stalled-game handling
-(Q-T3).
+Phase 10 (sections 10–16 below, ruleset v6) added coalition battles, multi-nation terms, calls to
+arms, peace conferences, separate peace and elimination. Still not implemented: offensive calls to
+arms, term costs in war score, neutral land (Q-W4), other victory conditions, AI (Phase 11),
+profile statistics (Phase 12), stalled-game handling (Q-T3).
+
+---
+
+# Phase 10 — coalitions (ruleset v6)
+
+Every rule below applies only to games created with ruleset **v6** (switched on by the
+`features` flags of `rulesets/v6/diplomacy.json`). Games of v1–v5 keep their rules unchanged:
+v5 games still use the defensive response of §3.3 and the turn-bound peace proposals of §5.
+All values are PROVISIONAL and versioned.
+
+## 10. Gold gifts — PROVISIONAL (Phase 10A)
+
+- On its turn a nation may send gold to any other nation that is not eliminated: an integer amount
+  of milligold, `0 < amount ≤ gifts.maxMg` (v6: **500 gold**), not above its treasury.
+- Gifts to a nation one is at war with are refused (`GIFT_TO_ENEMY`) unless
+  `gifts.allowToEnemies` (v6: false).
+- One command `SEND_GOLD`: atomic (both treasuries in one transaction) and idempotent (same key =
+  same gift). Public history: `gold_gift` table and event `GOLD_GIFT`; no gold is created or lost.
+
+## 11. Nations without a player (NPC placeholder) — PROVISIONAL (Phase 10A)
+
+On the Grand Campaign map only four nations are playable; every other nation (and every playable
+nation nobody chose) is **controlled by the game**. Until Phase 11 adds an AI, such a nation is a
+passive placeholder — it is not presented as an AI:
+
+- it takes no turns (turn order skips it), never recruits, moves, declares war or proposes anything;
+- it defends with the battalions it has and can be attacked, occupied and besieged normally;
+- alliance proposals to it are refused (`NPC_NOT_NEGOTIABLE`); it is never called to arms;
+- asked to a peace conference it **always agrees to talk** (the conference opens at once);
+- in a draft it **approves only if everything it gives up is provinces the other side already
+  controls militarily**; it never pays gold or tribute and never gives up people
+  (`PeaceTerms.npcApproves`). Receiving costs it nothing.
+
+These rules exist only so wars against NPC nations can end deterministically; Phase 11 replaces
+them by an AI that uses the same services.
+
+## 12. Calls to arms — PROVISIONAL (replaces §3.3 in v6)
+
+- Declaring war brings **nobody** in automatically. The attacked **war leader** may, on its turn,
+  call any nation it has an active alliance with (normal or defensive) and which does not already
+  fight in that war (`POST /diplomacy/wars/{warId}/calls`). One pending call per war and ally.
+- The ally answers **on its own turn**:
+  - **Honour**: it joins the defending side (`join_reason = CALL_TO_ARMS`) and fights every
+    attacking nation. Re-checked now: it must not be allied with, in truce with, already at war
+    with, or fighting on the same side as any attacking nation.
+  - **Decline**: the alliance with the caller **ends** (`end_reason = CALL_DECLINED`); attachments
+    it no longer allows end and battalions without access withdraw. There is no other penalty — no
+    reputation or opinion exists yet.
+- A call has no deadline and is never answered automatically; it is cancelled when the war ends or
+  either nation is eliminated. Calls are public (`CALL_TO_ARMS`, `CALL_HONORED`, `CALL_DECLINED`).
+- Only defensive calls exist. Offensive calls (the attacker's allies) are not implemented.
+
+## 13. War leaders
+
+The nation that declared the war leads the attackers; the attacked nation leads the defenders.
+Only the two leaders negotiate the general peace. A leader cannot leave its coalition by separate
+peace. If a leader is eliminated (§16), the remaining nation of its side with the most legally owned
+provinces (ties: lowest nation id) becomes leader (`WAR_LEADER_CHANGED`); a side left empty ends the
+war (`end_reason = ELIMINATION`).
+
+## 14. Peace conferences — PROVISIONAL (replaces §5 in v6)
+
+### 14.1 Request and answer
+
+- **General peace:** a war leader asks the other leader.
+- **Separate peace:** a nation that fights the war but does not lead its side asks the **opposing**
+  war leader. Leaders get `LEADER_CANNOT_LEAVE`.
+- The counterpart **accepts or refuses at any time**, also outside its turn. A refused request changes
+  nothing. The requester may withdraw an unanswered request.
+- At most **one conference is active** in a game (`CONFERENCE_IN_PROGRESS`); one open request per war,
+  requester and kind.
+
+### 14.2 The game pauses
+
+While a conference is **ACTIVE** the whole game is paused (`game.paused_conference_id`):
+
+- no turn can end (`409 GAME_PAUSED_FOR_CONFERENCE`) and no normal command is accepted, from anyone;
+- the round, the turn number and the active seat are kept exactly; when the conference ends, play
+  resumes with the same player;
+- conference commands (answer, revise, approve, reject, cancel) are accepted from any member, in or
+  out of turn — they go through the command pipeline with lock, membership, idempotency and
+  authorization, but without the active-player check.
+
+There are **no timeouts, no cooldowns and no automatic acceptance**. Either principal may end the
+conference at any time (`CANCELLED`); play then resumes.
+
+### 14.3 Revisions
+
+- Opening the conference creates **revision 1**: a white peace (no terms), authored by the requester.
+- Either principal publishes a new revision — the complete list of terms — naming the revision it
+  builds on (`expectedRevision`); if the draft changed meanwhile the request fails with
+  `STALE_REVISION`. Revisions are numbered, immutable and kept (`conference_revision`).
+- Terms are the four approved types (§5.2) with the v6 limits. Who may give or receive:
+  - general peace: **every nation still fighting the war**, giving only to nations of the other side;
+  - separate peace: the leaving nation and the nations of the opposing side.
+  A term between two nations of the same side, or with an outsider, is `NOT_A_PARTY`.
+- In v6 capitals are **cedable** (`features.capitalsCedable`); v5 keeps them uncedable.
+
+### 14.4 Required approvals
+
+Every revision stores the nations whose approval it needs:
+
+- **both principals** (the two leaders, or the leaving nation and the opposing leader), and
+- **every nation that gives something up** in it — a province, gold, tribute or people.
+
+A nation that only **receives** needs no approval. Restoring control of occupied provinces after
+peace (§6.3) is not a term and needs no approval from the occupier.
+
+An approval or rejection names its revision and counts only for it (`STALE_REVISION` for an earlier
+one). Publishing a new revision therefore voids every earlier approval. A nation decides once per
+revision (`ALREADY_DECIDED`). A rejection is recorded and shown; the principals may revise or end
+the conference.
+
+### 14.5 Settlement
+
+When the last required approval of the current revision arrives, the treaty is settled **in the same
+transaction**:
+
+1. The terms are validated again against the current state; if they no longer hold, nothing at all
+   is recorded — not even the approval — (`PEACE_TERMS_NO_LONGER_VALID`) and the principals revise.
+2. The conference is `CONCLUDED` and the treaty is stored (`peace_treaty` with `conference_id`,
+   `revision`, `kind`, `exiting_nation_id`).
+3. Terms are applied in the order of §5.3 (reparations, cessions, population, tribute).
+4. **General:** the war ends for everyone; truces between every attacker and every defender
+   (`truceRounds`, v6: 10); pending calls and other requests for this war are cancelled.
+   **Separate:** the leaving nation leaves the war (`left_reason = SEPARATE_PEACE`), with truces with
+   every nation of the other side; the war goes on for the others.
+5. Landless nations are eliminated (§16); control of occupied provinces returns where war ended;
+   every attachment of the leaving nation (lent or commanded) ends, and attachments the new relations
+   no longer allow end; battalions without access withdraw and sieges are re-judged.
+6. If one nation is left the game ends by domination (§16); otherwise play resumes.
+
+Concurrent final approvals settle exactly once (game row lock and conditional status updates).
+
+## 15. Separate peace
+
+A separate peace is a conference of kind `SEPARATE` (§14). The leaving nation keeps its alliances; it
+stops fighting this war only. Its battalions in territory it may no longer enter withdraw; any of its
+battalions lent to coalition partners, and partner battalions it commanded, return to their owners.
+
+## 16. Elimination and domination — PROVISIONAL
+
+- Under v6 a nation that **legally owns no province** after a settlement is **eliminated**
+  (`features.elimination`). Losing battles or having every province occupied never eliminates.
+- Deterministic policy, in nation id order: the nation is marked eliminated (the row stays for
+  history); its battalions dissolve and their soldiers return as civilians to the cities they were
+  raised in, whoever owns them now, so no person is created or lost; its armies are deleted;
+  battalions attached to it return to their owners; its alliances end, its proposals, calls and
+  conference requests are cancelled, tributes it pays or receives are cancelled; it leaves every war
+  (§13 for leaders); a human player takes no more turns and gives no more orders
+  (`NATION_ELIMINATED`). Its treasury stays and can no longer be used.
+- **Domination** (`victory.domination`, v6: on): when only one nation is not eliminated, the game
+  ends at once with reason `DOMINATION` and that nation as winner. If no human player is left the game
+  ends with reason `NO_HUMAN_PLAYERS` and the score standings.
+- **Score at the round cap** (`victory.maxRounds`, v6: 30): v6 adds
+  `floor(treasury / 100 gold) × pointsPerHundredGold` (v6: 1) to the §8 score. Eliminated nations
+  rank after every surviving nation and cannot win; a tie with an eliminated nation is no draw.
+- The result is stored exactly once (`game_result`); there is no concede button.
+
+**Worked example.** At the round cap Castavar owns 9 provinces with 52,400 people and 340.5 gold:
+`9 × 20 + 52 + 3 = 235`.

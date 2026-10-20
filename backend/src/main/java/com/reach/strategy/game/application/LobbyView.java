@@ -26,8 +26,9 @@ public record LobbyView(UUID id, String name, GameStatus status, UUID mapId, Str
 	}
 
 	/** A selectable nation; {@code chosenBySeat} is null while nobody has picked it. */
+	/** @param tier starting profile; @param playable whether a human may choose it (others become NPC nations) */
 	public record NationChoice(UUID id, String key, String name, String color, int provinceCount, Integer chosenBySeat,
-			boolean chosenByYou) {
+			boolean chosenByYou, String tier, boolean playable) {
 	}
 
 	static LobbyView of(Game game, List<GamePlayer> members, Map<UUID, String> names, UUID myPlayerId,
@@ -44,7 +45,8 @@ public record LobbyView(UUID id, String name, GameStatus status, UUID mapId, Str
 				.findFirst()
 				.orElse(null);
 			return new NationChoice(nation.id(), nation.key(), nation.name(), nation.color(), nation.provinceCount(),
-					chooser == null ? null : chooser.seatOrder(), chooser != null && chooser == mine);
+					chooser == null ? null : chooser.seatOrder(), chooser != null && chooser == mine, nation.tier(),
+					nation.playable());
 		}).toList();
 		return new LobbyView(game.id(), game.name(), game.status(), map.id(), map.name(), game.maxPlayers(),
 				game.playerCount(), game.availableSlots(), game.inviteCode().formatted(), mine.seatOrder(),
@@ -61,10 +63,13 @@ public record LobbyView(UUID id, String name, GameStatus status, UUID mapId, Str
 			.map(GamePlayer::nationTemplateId)
 			.filter(Objects::nonNull)
 			.collect(Collectors.toSet());
-		Set<UUID> available = map.nations().stream().map(WorldApi.NationOption::id).collect(Collectors.toSet());
-		// Every player needs a distinct nation, and (until neutral land exists, Q-W4) every nation of
-		// the map needs a player.
-		if (chosen.size() != members.size() || !chosen.equals(available)) {
+		Set<UUID> playable = map.nations()
+			.stream()
+			.filter(WorldApi.NationOption::playable)
+			.map(WorldApi.NationOption::id)
+			.collect(Collectors.toSet());
+		// Every player needs a distinct playable nation; nations nobody chose are NPC-controlled (Phase 10).
+		if (chosen.size() != members.size() || !playable.containsAll(chosen)) {
 			return StartBlocker.NATIONS_NOT_SELECTED;
 		}
 		return null;

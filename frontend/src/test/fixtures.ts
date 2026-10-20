@@ -31,8 +31,8 @@ export function lobbyFixture(overrides: Partial<Lobby> = {}): Lobby {
       { seat: 0, displayName: 'Aldric', host: true, you: true, nationId: null, joinedAt: '2026-10-17T12:00:00Z' },
     ],
     nations: [
-      { id: VARN, key: 'varn', name: 'Kingdom of Varn', color: '#3f6fb5', provinceCount: 6, chosenBySeat: null, chosenByYou: false },
-      { id: OSTRA, key: 'ostra', name: 'Ostran Confederacy', color: '#b5503a', provinceCount: 6, chosenBySeat: null, chosenByYou: false },
+      { id: VARN, key: 'varn', name: 'Kingdom of Varn', color: '#3f6fb5', provinceCount: 6, chosenBySeat: null, chosenByYou: false, tier: 'POWER', playable: true },
+      { id: OSTRA, key: 'ostra', name: 'Ostran Confederacy', color: '#b5503a', provinceCount: 6, chosenBySeat: null, chosenByYou: false, tier: 'POWER', playable: true },
     ],
     canStart: false,
     stateVersion: 1,

@@ -190,6 +190,43 @@ Movement (`POST /moves`) adds 422 `NO_MILITARY_ACCESS` (neutral territory) and 4
 "battalions of a nation at war with you". End turn adds `finished` to its response. After a game
 has finished every command answers 409 `GAME_FINISHED`; game state shows `status: FINISHED`.
 
+### 2.4g Maps, gifts, coalitions and peace conferences (Phase 10 — implemented)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/v1/maps` | Published maps: key, name, max players, nations, playable nations |
+| POST | `/api/v1/games` | Body gains `maxPlayers` (2 – map maximum) and `mapKey` (default `grand-campaign`) |
+| POST | `/games/{id}/diplomacy/gifts` | `{recipientNationId, amountMg}` → 201 `{gift, treasuryMg}`; on your turn |
+| POST | `/games/{id}/attachments` | `{battalionIds, commanderNationId}`; on your turn, owner only |
+| POST | `/games/{id}/attachments/release` | `{battalionIds}`; on your turn, owner only |
+| POST | `/games/{id}/diplomacy/wars/{warId}/calls` | `{allyNationId}` → 201 `{call}`; attacked leader, on its turn |
+| POST | `/games/{id}/diplomacy/calls/{callId}/answer` | `{accept}` (true = honour); the called ally, on its turn |
+| GET | `/games/{id}/diplomacy/conferences/{conferenceId}` | Conference view (members) |
+| POST | `/games/{id}/diplomacy/wars/{warId}/conferences` | `{kind: GENERAL\|SEPARATE}` → 201 `{conference, treaty, withdrawals}`; out of turn |
+| POST | `/games/{id}/diplomacy/conferences/{conferenceId}/answer` | `{accept}`; the counterpart, out of turn |
+| POST | `/games/{id}/diplomacy/conferences/{conferenceId}/cancel` | Either principal, out of turn |
+| POST | `/games/{id}/diplomacy/conferences/{conferenceId}/drafts` | `{expectedRevision, terms}` → 201; a principal, out of turn |
+| POST | `/games/{id}/diplomacy/conferences/{conferenceId}/revisions/{n}/approve` | A required nation; the last approval settles |
+| POST | `/games/{id}/diplomacy/conferences/{conferenceId}/revisions/{n}/reject` | A required nation |
+
+All commands need `Idempotency-Key`. The diplomacy overview gains `gifts`, `calls` and
+`conferences`; war participants gain `leftRound`/`leftReason`; the rules view gains the gift
+limits, `features`, `victoryPointsPerHundredGold` and `domination`. The game state gains
+`pausedConferenceId`, `youAreEliminated` and per nation `control`, `eliminatedRound` and a nullable
+`seat`. Battalions gain `commanderNationId`; battle details gain `nations` (one line per nation) and
+participants a `nationId`. Ruleset v6 answers the Phase 9 proposal endpoints with
+`409 USE_PEACE_CONFERENCE`; older games answer the new endpoints with `409 CONFERENCES_NOT_AVAILABLE`,
+`CALLS_TO_ARMS_NOT_AVAILABLE` or `ATTACHMENT_NOT_AVAILABLE`.
+
+New stable error codes: `GAME_PAUSED_FOR_CONFERENCE`, `NATION_ELIMINATED`, `NATION_NOT_PLAYABLE`,
+`INVALID_PLAYER_COUNT`, `MAP_NOT_FOUND`, `NPC_NOT_NEGOTIABLE`, `INVALID_GIFT_AMOUNT`, `GIFT_TO_ENEMY`,
+`GIFTS_NOT_AVAILABLE`, `NOT_DEFENDING_LEADER`, `NOT_ALLIED`, `ALREADY_IN_WAR`, `CALL_ALREADY_PENDING`,
+`NOT_CALLED_NATION`, `CALL_NOT_PENDING`, `ALLIED_WITH_ENEMY`, `CONFERENCE_IN_PROGRESS`,
+`CONFERENCE_ALREADY_REQUESTED`, `CONFERENCE_NOT_OPEN`, `NOT_CONFERENCE_COUNTERPART`,
+`NOT_CONFERENCE_PRINCIPAL`, `LEADER_CANNOT_LEAVE`, `STALE_REVISION`, `APPROVAL_NOT_REQUIRED`,
+`ALREADY_DECIDED`, `ATTACHMENT_NOT_ALLOWED`, `BATTALION_ATTACHED`, `BATTALION_NOT_ATTACHED`,
+`ATTACHED_NOT_AT_WAR`.
+
 ### 2.4d Fortifications and sieges (Phase 7 — implemented)
 
 Members of a started game only. No fog of war: every member sees all fortresses and sieges.

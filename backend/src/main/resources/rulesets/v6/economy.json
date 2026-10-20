@@ -1,0 +1,21 @@
+{
+  "version": "v6",
+  "agricultureMgPerWorker": 1,
+  "workshopCapacity": 4000,
+  "maxWorkshopsPerCity": 6,
+  "startingTreasuryMg": 50000,
+  "startingCapitalWorkshops": 1,
+  "workshopTiers": {
+    "1": { "mgPerWorker": 3, "buildCostMg": 40000, "buildDurationRounds": 1, "constructible": true },
+    "2": { "mgPerWorker": 5, "buildCostMg": 100000, "buildDurationRounds": 1, "constructible": false }
+  },
+  "workshopRepair": { "costBps": 3000, "durationRounds": 1 },
+  "workshopUpgrade": { "fromTier": 1, "toTier": 2, "costMg": 60000, "durationRounds": 1 },
+  "populationGrowth": { "baseBps": 50 },
+  "startingByTier": {
+    "POWER":    { "treasuryMg": 50000, "capitalWorkshops": 1 },
+    "MAJOR":    { "treasuryMg": 80000, "capitalWorkshops": 2 },
+    "REGIONAL": { "treasuryMg": 50000, "capitalWorkshops": 1 },
+    "MINOR":    { "treasuryMg": 30000, "capitalWorkshops": 1 }
+  }
+}

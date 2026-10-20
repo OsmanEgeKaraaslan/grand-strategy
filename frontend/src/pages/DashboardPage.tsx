@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { describeError } from '../api/client'
-import { useCreateGame, useJoinGame, useMe, useMyGames } from '../api/queries'
+import { useCreateGame, useJoinGame, useMaps, useMe, useMyGames } from '../api/queries'
 import { Alert } from '../components/Alert'
 import { AppShell } from '../components/AppShell'
 import { Spinner } from '../components/Spinner'
@@ -63,11 +63,21 @@ function MyGames() {
 function CreateGameCard() {
   const navigate = useNavigate()
   const createGame = useCreateGame()
+  const maps = useMaps()
   const [name, setName] = useState('')
+  const [mapKey, setMapKey] = useState('')
+  const [players, setPlayers] = useState(2)
+  // Until a map is picked, show the Grand Campaign (the server's default) or the first published map.
+  const selectedMap =
+    maps.data?.find((m) => m.key === mapKey) ?? maps.data?.find((m) => m.key === 'grand-campaign') ?? maps.data?.[0]
+  const maxPlayers = selectedMap?.maxPlayers ?? 2
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    createGame.mutate(name.trim() || 'New campaign', { onSuccess: (lobby) => navigate(`/games/${lobby.id}`) })
+    createGame.mutate(
+      { name: name.trim() || 'New campaign', maxPlayers: Math.min(players, maxPlayers), mapKey: selectedMap?.key },
+      { onSuccess: (lobby) => navigate(`/games/${lobby.id}`) },
+    )
   }
 
   return (
@@ -83,6 +93,31 @@ function CreateGameCard() {
             onChange={(event) => setName(event.target.value)}
           />
         </label>
+        {maps.data && maps.data.length > 0 && (
+          <label className="field">
+            <span>Map</span>
+            <select value={selectedMap?.key ?? ''} onChange={(event) => setMapKey(event.target.value)}>
+              {maps.data.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.name} — {m.nations} nations, up to {m.maxPlayers} players
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="field">
+          <span>Human players</span>
+          <select value={Math.min(players, maxPlayers)} onChange={(event) => setPlayers(Number(event.target.value))}>
+            {Array.from({ length: maxPlayers - 1 }, (_, i) => i + 2).map((n) => (
+              <option key={n} value={n}>
+                {n} players
+              </option>
+            ))}
+          </select>
+        </label>
+        {selectedMap && selectedMap.nations > maxPlayers && (
+          <p className="muted">Nations nobody chooses are controlled by the game (passive until AI arrives).</p>
+        )}
         {createGame.error && <Alert>{describeError(createGame.error)}</Alert>}
         <button type="submit" className="button button--primary" disabled={createGame.isPending}>
           {createGame.isPending ? 'Creating…' : 'Create game'}

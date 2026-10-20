@@ -37,6 +37,10 @@ public class GamePlayer implements Persistable<UUID> {
 	@Column(name = "nation_template_id")
 	private UUID nationTemplateId;
 
+	/** Round in which this player's nation was eliminated (Phase 10); it takes no more turns. */
+	@Column(name = "eliminated_round")
+	private Integer eliminatedRound;
+
 	// Ids are assigned by the application, so tell Spring Data when a row is new (insert, no merge).
 	@Transient
 	private boolean isNew = true;
@@ -92,6 +96,20 @@ public class GamePlayer implements Persistable<UUID> {
 
 	public UUID nationTemplateId() {
 		return nationTemplateId;
+	}
+
+	public boolean eliminated() {
+		return eliminatedRound != null;
+	}
+
+	public Integer eliminatedRound() {
+		return eliminatedRound;
+	}
+
+	public void eliminate(int round) {
+		if (eliminatedRound == null) {
+			eliminatedRound = round;
+		}
 	}
 
 	public void chooseNation(UUID nationTemplateId) {

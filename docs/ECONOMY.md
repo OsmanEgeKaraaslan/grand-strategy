@@ -421,6 +421,25 @@ Rules in [DIPLOMACY.md](DIPLOMACY.md) §5–6; the economy only moves gold.
 
 ---
 
+## 10b. Starting values per faction tier and gold gifts — PROVISIONAL (Phase 10, ruleset v6)
+
+Starting values depend on the faction's tier (`startingByTier` in `economy.json`,
+`startingForcesByTier` in `military.json`); no gold or person is created later by the start.
+
+| Tier | Treasury | Workshops in the capital | Starting forces |
+|---|---|---|---|
+| POWER | 50 gold | 1 | 3 infantry, 1 cavalry |
+| MAJOR | 80 gold | 2 | 5 infantry, 1 cavalry, 1 artillery |
+| REGIONAL | 50 gold | 1 | 3 infantry, 1 cavalry |
+| MINOR | 30 gold | 1 | 2 infantry |
+
+Starting soldiers are taken from the capital's population as before. Starting fortresses are listed per
+map in `siege.json` (`startingFortressesByMap`). Rulesets v1–v5 keep their single values.
+
+**Gold gifts** (DIPLOMACY §10) move integer milligold from one treasury to another in one
+transaction: the sender's treasury falls by exactly the amount the recipient's rises. No rounding is
+involved.
+
 ## 11. Invariants (enforced by tests)
 
 - `population ≥ 0`, `treasury_mg ≥ 0` at all times (DB CHECK + domain checks).

@@ -305,3 +305,26 @@ the image without rolling back the schema.
 | AD-10 | Supabase for Auth + Postgres only; game schema not exposed; RLS deny-all | Backend remains the only authority |
 | AD-11 | Polling with ETags first, SSE later; no WebSockets | Turn-based traffic is tiny |
 | AD-12 | Outbox table + scheduled worker for email; no broker | Reliable, retryable, duplicate-safe with plain PostgreSQL |
+
+## 10. Phase 10 additions
+
+- **game.api** gains `GameControl` (pause and resume for a conference, eliminate a player, finish if
+  decided) implemented by `GameControlService`; turn advancing is shared by `TurnService` and
+  `GameControlService` through `TurnAdvancer`. `GameCommands.executeOutOfTurn` is the conference
+  path of the command pipeline (same lock, membership, idempotency and recording; no active-player
+  check). `VictoryCondition.evaluateNow` lets diplomacy end a game by domination inside a command.
+- **military.api.Hostility.Relations** gains `coalitions` and `partners` (`mayCommand`);
+  **ForceWithdrawal** gains `endInvalidAttachments`, `endAttachmentsOf` and `dissolveNation`. The
+  diplomacy module calls them inside its command transaction; military never depends on diplomacy.
+- **world** validates map geometry (`world.rules.MapGeometry`, pure) at startup and instantiates
+  nations with or without a player (`control` HUMAN/NPC).
+- **diplomacy** gains `GiftService`, `CallToArmsService`, `ConferenceService` and
+  `EliminationService`; pure rules stay in `diplomacy.rules` (`PeaceTerms` sides, required approvers,
+  the NPC placeholder; `Victory` gold, domination, elimination ranking).
+- **Future AI (Phase 11)** plugs in by calling the same application services as a player
+  (`CallToArmsService.answer`, `ConferenceService.answer/submit/decide`, `AttachmentService`,
+  `MilitaryService.move`, `GiftService.send`) through the same pipeline; the NPC placeholder rules
+  (`PeaceTerms.npcApproves`, automatic conference acceptance in `ConferenceService`) are the only
+  places to replace. No strategic AI exists yet.
+- No new infrastructure or dependency; the module boundary test (cycles, `api`-only access, pure
+  rules) covers the new code.

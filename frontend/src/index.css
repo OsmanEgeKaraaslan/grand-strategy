@@ -1441,3 +1441,39 @@ input:focus-visible {
   border-color: rgb(124 192 138 / 0.5);
   background: rgb(124 192 138 / 0.1);
 }
+
+/* --- Phase 10: larger maps -------------------------------------------------------------------- */
+
+.province-map__frame {
+  position: relative;
+}
+
+.province-map__frame .province-map {
+  touch-action: none;
+  cursor: grab;
+}
+
+.province-map__controls {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 0.25rem;
+  z-index: 1;
+}
+
+.province-map__controls .button {
+  min-width: 2rem;
+  padding: 0.2rem 0.5rem;
+}
+
+.province-map__city {
+  fill: #f4efe4;
+  stroke: #0d1117;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.province-map__city--capital {
+  fill: var(--accent-strong);
+}

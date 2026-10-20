@@ -18,6 +18,14 @@ public interface GameCommands {
 	 */
 	<T> T execute(CurrentPlayer me, UUID gameId, UUID idempotencyKey, String commandType, Handler<T> handler);
 
+	/**
+	 * Like {@link #execute}, but for actions that do not follow turn order (Phase 10: peace
+	 * conference actions): lock, membership, idempotency and an in-progress game are still required;
+	 * the caller need not be the active player, and the command is allowed while play is paused for
+	 * a conference. Eliminated players can never act.
+	 */
+	<T> T executeOutOfTurn(CurrentPlayer me, UUID gameId, UUID idempotencyKey, String commandType, Handler<T> handler);
+
 	interface Handler<T> {
 
 		/** Validates and applies the command. Throwing rolls everything back. */

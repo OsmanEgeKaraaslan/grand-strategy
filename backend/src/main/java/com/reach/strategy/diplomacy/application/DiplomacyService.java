@@ -74,6 +74,9 @@ public class DiplomacyService {
 				if (!blockers.isEmpty()) {
 					throw DiplomacyErrors.war(blockers.getFirst());
 				}
+				if (eliminated(snapshot, targetNationId)) {
+					throw DiplomacyErrors.conflict("NATION_ELIMINATED", "That nation has been eliminated.");
+				}
 				UUID warId = UUID.randomUUID();
 				relations.insertWar(gameId, new RelationsRepository.WarRow(warId, attacker, targetNationId, "ACTIVE",
 						context.round(), context.turnNumber(), null, null, null), context.now());
@@ -83,7 +86,9 @@ public class DiplomacyService {
 						"DEFENDER", context.round(), "ATTACKED"));
 				relations.insertFront(gameId, warId, attacker, targetNationId);
 				event(gameId, context, "WAR_DECLARED", attacker, targetNationId, warId, Map.of());
-				List<UUID> joiners = Diplomacy.defensiveJoiners(attacker, targetNationId, standing, context.round());
+				// Ruleset v6: allies join only by answering a call to arms; before v6 they join at once (Q-D6).
+				List<UUID> joiners = picture.rules().features().callsToArms() ? List.of()
+						: Diplomacy.defensiveJoiners(attacker, targetNationId, standing, context.round());
 				for (UUID ally : joiners) {
 					relations.insertParticipant(gameId, new RelationsRepository.ParticipantRow(warId, ally, "DEFENDER",
 							context.round(), "DEFENSIVE_RESPONSE"));
@@ -118,7 +123,7 @@ public class DiplomacyService {
 	 * Two nations now at war keep no peaceful obligations towards each other: a running tribute
 	 * between them is cancelled (PROVISIONAL) and a pending alliance proposal is withdrawn.
 	 */
-	private void endPeacefulTies(UUID gameId, GameCommands.CommandContext context, UUID x, UUID y, UUID warId) {
+	void endPeacefulTies(UUID gameId, GameCommands.CommandContext context, UUID x, UUID y, UUID warId) {
 		for (TreatyRepository.TributeRow t : treaties.tributes(gameId)) {
 			boolean between = (t.payer().equals(x) && t.receiver().equals(y))
 					|| (t.payer().equals(y) && t.receiver().equals(x));
@@ -158,6 +163,15 @@ public class DiplomacyService {
 						picture.standing(), true);
 				if (!blockers.isEmpty()) {
 					throw DiplomacyErrors.alliance(blockers.getFirst());
+				}
+				WorldApi.NationState target = snapshot.nations().stream().filter(n -> n.id().equals(targetNationId)).findFirst().orElseThrow();
+				if (target.eliminated()) {
+					throw DiplomacyErrors.conflict("NATION_ELIMINATED", "That nation has been eliminated.");
+				}
+				if (target.npc()) {
+					// PROVISIONAL until AI exists (Phase 11): nations without a player make no alliances.
+					throw DiplomacyErrors.conflict("NPC_NOT_NEGOTIABLE",
+							"This nation is controlled by the game and does not make alliances yet.");
 				}
 				UUID id = UUID.randomUUID();
 				relations.insertAlliance(gameId, new RelationsRepository.AllianceRow(id, kind.name(), proposer,
@@ -320,10 +334,19 @@ public class DiplomacyService {
 		return allianceResult(gameId, viewer, context, resultRef, List.of());
 	}
 
+	static boolean eliminated(WorldApi.WorldSnapshot snapshot, UUID nationId) {
+		return snapshot.nations().stream().anyMatch(n -> n.id().equals(nationId) && n.eliminated());
+	}
+
 	// --- shared ---------------------------------------------------------------------------------
 
 	/** Withdraws every battalion that lost access and records it publicly. */
 	List<DiplomacyViews.Withdrawal> withdraw(UUID gameId, GameCommands.CommandContext context, UUID actor, UUID warId) {
+		// Attachments the new relations no longer allow end first, so their battalions withdraw with their owners.
+		int detached = withdrawal.endInvalidAttachments(gameId);
+		if (detached > 0) {
+			event(gameId, context, "ATTACHMENTS_ENDED", actor, null, warId, Map.of("battalions", detached));
+		}
 		List<DiplomacyViews.Withdrawal> moved = withdrawal
 			.withdrawWithoutAccess(gameId, context.round(), context.turnNumber(), context.now())
 			.stream()

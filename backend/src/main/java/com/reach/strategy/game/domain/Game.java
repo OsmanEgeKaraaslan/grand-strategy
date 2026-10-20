@@ -84,6 +84,10 @@ public class Game implements Persistable<UUID> {
 	@Column(name = "last_action_at")
 	private Instant lastActionAt;
 
+	/** The peace conference that pauses normal play (Phase 10), or null. The turn state is untouched. */
+	@Column(name = "paused_conference_id")
+	private UUID pausedConferenceId;
+
 	// Ids are assigned by the application, so tell Spring Data when a row is new (insert, no merge).
 	@Transient
 	private boolean isNew = true;
@@ -188,10 +192,15 @@ public class Game implements Persistable<UUID> {
 
 	/** The turn change that ending the active player's turn would cause. */
 	public TurnOrder.Advance nextTurn() {
+		return nextTurn(java.util.Set.of());
+	}
+
+	/** @param skippedSeats seats of eliminated players, which take no turn */
+	public TurnOrder.Advance nextTurn(java.util.Set<Integer> skippedSeats) {
 		if (status != GameStatus.IN_PROGRESS) {
 			throw new IllegalStateException("Game is not in progress");
 		}
-		return TurnOrder.next(currentRound, activeSeat, playerCount);
+		return TurnOrder.next(currentRound, activeSeat, playerCount, skippedSeats);
 	}
 
 	public void applyTurnAdvance(TurnOrder.Advance advance, Instant now) {
@@ -213,8 +222,35 @@ public class Game implements Persistable<UUID> {
 			throw new IllegalStateException("Only a game in progress can finish, status is " + status);
 		}
 		status = GameStatus.FINISHED;
+		pausedConferenceId = null;
 		lastActionAt = now;
 		touch(now);
+	}
+
+	/** Normal play pauses for a peace conference; round, seat and turn number are preserved. */
+	public void pause(UUID conferenceId, Instant now) {
+		if (status != GameStatus.IN_PROGRESS || pausedConferenceId != null) {
+			throw new IllegalStateException("Game " + id + " cannot pause now");
+		}
+		pausedConferenceId = conferenceId;
+		touch(now);
+	}
+
+	/** Play resumes exactly where it was paused. */
+	public void resume(UUID conferenceId, Instant now) {
+		if (!conferenceId.equals(pausedConferenceId)) {
+			throw new IllegalStateException("Game " + id + " is not paused by conference " + conferenceId);
+		}
+		pausedConferenceId = null;
+		touch(now);
+	}
+
+	public boolean paused() {
+		return pausedConferenceId != null;
+	}
+
+	public UUID pausedConferenceId() {
+		return pausedConferenceId;
 	}
 
 	public boolean finished() {

@@ -71,6 +71,22 @@ export interface NationChoice {
   /** Seat of the player who chose it, or null while unchosen. */
   chosenBySeat: number | null
   chosenByYou: boolean
+  /** Starting profile: POWER (balanced human nations), MAJOR, REGIONAL or MINOR. */
+  tier: NationTier
+  /** Only playable nations can be chosen; the others are controlled by the game. */
+  playable: boolean
+}
+
+export type NationTier = 'POWER' | 'MAJOR' | 'REGIONAL' | 'MINOR'
+
+/** A published map new games can be created on. */
+export interface MapChoice {
+  id: string
+  key: string
+  name: string
+  maxPlayers: number
+  nations: number
+  playableNations: number
 }
 
 export type Terrain = 'PLAINS' | 'MOUNTAINS'
@@ -85,7 +101,16 @@ export interface GameMap {
   viewBox: string
   provinces: MapProvince[]
   rivers: { a: string; b: string; svgPath: string }[]
-  nations: { id: string; key: string; name: string; color: string; capitalProvinceKey: string; startProvinceKeys: string[] }[]
+  nations: {
+    id: string
+    key: string
+    name: string
+    color: string
+    capitalProvinceKey: string
+    startProvinceKeys: string[]
+    tier?: NationTier
+    playable?: boolean
+  }[]
 }
 
 export interface MapProvince {
@@ -95,6 +120,9 @@ export interface MapProvince {
   cityName: string
   svgPath: string
   labelX: number
+  /** City point inside the province (equal to the label anchor on older maps). */
+  cityX?: number
+  cityY?: number
   labelY: number
   neighbours: { provinceKey: string; crossing: Crossing }[]
 }
@@ -111,8 +139,13 @@ export interface GameState {
   stateVersion: number
   yourSeat: number
   yourTurn: boolean
+  /** Set while a peace conference pauses the whole game (ruleset v6): no turn passes, no normal command. */
+  pausedConferenceId?: string | null
+  /** Your nation has been eliminated: you can still watch, but give no more orders. */
+  youAreEliminated?: boolean
   players: { seat: number; displayName: string; host: boolean; you: boolean; nationId: string }[]
-  nations: { id: string; name: string; color: string; seat: number }[]
+  /** seat is null for nations without a human player (NPC-controlled until AI exists). */
+  nations: { id: string; name: string; color: string; seat: number | null; control?: 'HUMAN' | 'NPC'; eliminatedRound?: number | null }[]
   provinces: ProvinceState[]
 }
 
@@ -304,8 +337,10 @@ export interface Battalion {
   armyId: string | null
   originCityId: string
   recruitedRound: number
-  /** Only for your own battalions; null for other nations'. */
+  /** For battalions you command (your own, or an ally's attached to you); null otherwise. */
   eligibility: Eligibility | null
+  /** The ally commanding this battalion while it is attached (Phase 10), or null. */
+  commanderNationId?: string | null
   upkeepMg: number
 }
 
@@ -430,7 +465,19 @@ export interface BattleReport {
     /** Each side's technology and doctrine at the time (null before Phase 8). */
     attackerModifiers?: SideTechnology | null
     defenderModifiers?: SideTechnology | null
+    /** Coalition battles (Phase 10): one entry per nation, each with its own modifiers and losses. */
+    nations?: BattleNation[]
   }
+}
+
+export interface BattleNation {
+  nationId: string
+  side: 'ATTACKER' | 'DEFENDER'
+  manpowerBefore: number
+  losses: number
+  retreatProvinceKey: string | null
+  destroyed: boolean
+  modifiers: SideTechnology | null
 }
 
 export interface BattleParticipant {
@@ -440,6 +487,8 @@ export interface BattleParticipant {
   losses: number
   manpowerAfter: number
   fate: BattleFate
+  /** The battalion's nation (coalition battles; absent in older reports). */
+  nationId?: string | null
 }
 
 export interface RecruitResult {
@@ -777,6 +826,22 @@ export interface DiplomacyRules {
   normalAllianceGrantsAccess: boolean
   defensiveAllianceGrantsAccess: boolean
   coBelligerentAccess: boolean
+  /** Largest gift, or null when the ruleset has no gifts. */
+  giftMaxMg?: number | null
+  giftsToEnemies?: boolean
+  features?: DiplomacyFeatures
+  victoryPointsPerHundredGold?: number
+  domination?: boolean
+}
+
+export interface DiplomacyFeatures {
+  coalitionWarfare: boolean
+  attachments: boolean
+  callsToArms: boolean
+  peaceConferences: boolean
+  separatePeace: boolean
+  capitalsCedable: boolean
+  elimination: boolean
 }
 
 export interface NationRelation {
@@ -811,7 +876,16 @@ export interface WarView {
   status: 'ACTIVE' | 'ENDED'
   attackerLeaderId: string
   defenderLeaderId: string
-  participants: { nationId: string; name: string; side: WarSide; joinReason: string; joinedRound: number }[]
+  /** Everyone who fought; leftRound is set for nations that left by separate peace or elimination. */
+  participants: {
+    nationId: string
+    name: string
+    side: WarSide
+    joinReason: string
+    joinedRound: number
+    leftRound?: number | null
+    leftReason?: string | null
+  }[]
   declaredRound: number
   endedRound: number | null
   endReason: string | null
@@ -925,6 +999,81 @@ export interface DiplomacyOverview {
   treaties: Treaty[]
   tributes: TributeView[]
   events: DiplomacyEvent[]
+  /** Gold gifts, newest first (public history). */
+  gifts: Gift[]
+  /** Defensive calls to arms (ruleset v6). */
+  calls?: CallToArms[]
+  /** Peace conferences (ruleset v6). */
+  conferences?: Conference[]
+}
+
+export type CallStatus = 'PENDING' | 'HONORED' | 'DECLINED' | 'CANCELLED'
+
+export interface CallToArms {
+  id: string
+  warId: string
+  callerNationId: string
+  allyNationId: string
+  status: CallStatus
+  createdRound: number
+  answeredRound: number | null
+  canAnswer: boolean
+}
+
+export type ConferenceKind = 'GENERAL' | 'SEPARATE'
+export type ConferenceStatus = 'REQUESTED' | 'ACTIVE' | 'CONCLUDED' | 'REJECTED' | 'CANCELLED'
+
+export interface Conference {
+  id: string
+  warId: string
+  kind: ConferenceKind
+  requesterNationId: string
+  counterpartNationId: string
+  status: ConferenceStatus
+  requestedRound: number
+  currentRevision: number
+  /** The current revision's terms. */
+  terms: PeaceTerm[]
+  /** Every nation whose approval the current revision needs; decision null = not yet decided. */
+  approvals: { nationId: string; name: string; npc: boolean; decision: 'APPROVED' | 'REJECTED' | null }[]
+  revisions: { revision: number; authorNationId: string; termCount: number; createdAt: string }[]
+  /** Why the current revision could not be settled now (empty = it could). */
+  violations: string[]
+  youArePrincipal: boolean
+  canAnswer: boolean
+  canCancel: boolean
+  canRevise: boolean
+  youMustDecide: boolean
+}
+
+export interface CallResult {
+  call: CallToArms
+}
+
+export interface ConferenceResult {
+  conference: Conference
+  /** Set when this command settled the treaty. */
+  treaty: Treaty | null
+  withdrawals: Withdrawal[]
+}
+
+export interface AttachmentResult {
+  battalions: Battalion[]
+}
+
+export interface Gift {
+  id: string
+  senderNationId: string
+  recipientNationId: string
+  amountMg: number
+  round: number
+  createdAt: string
+}
+
+export interface GiftResult {
+  gift: Gift
+  /** The sender's treasury after the gift. */
+  treasuryMg: number
 }
 
 export interface Withdrawal {

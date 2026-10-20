@@ -105,20 +105,22 @@ class MilitaryHooks {
 		@Transactional(propagation = Propagation.MANDATORY)
 		public void initialize(UUID gameId, UUID mapId, String rulesetVersion) {
 			MilitaryRules rules = rulesets.rules(rulesetVersion);
-			if (rules.startingForces().isEmpty()) {
-				return;
-			}
 			WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
-			Map<UUID, String> capitalByTemplate = world.mapSummary(mapId)
+			Map<UUID, WorldApi.NationOption> templates = world.mapSummary(mapId)
 				.nations()
 				.stream()
-				.collect(Collectors.toMap(WorldApi.NationOption::id, WorldApi.NationOption::capitalProvinceKey));
+				.collect(Collectors.toMap(WorldApi.NationOption::id, n -> n));
 			snapshot.nations().stream().sorted(Comparator.comparing(n -> n.id().toString())).forEach(nation -> {
-				WorldApi.ProvinceState capital = snapshot.province(capitalByTemplate.get(nation.nationTemplateId()))
-					.orElseThrow();
+				WorldApi.NationOption template = templates.get(nation.nationTemplateId());
+				// Ruleset v6: forces per faction tier; earlier rulesets give every nation the same.
+				Map<UnitType, Integer> forces = rules.startingForces(template.tier());
+				if (forces.isEmpty()) {
+					return;
+				}
+				WorldApi.ProvinceState capital = snapshot.province(template.capitalProvinceKey()).orElseThrow();
 				int soldiers = 0;
 				for (UnitType type : UnitType.values()) {
-					int count = rules.startingForces().getOrDefault(type, 0);
+					int count = forces.getOrDefault(type, 0);
 					for (int i = 0; i < count; i++) {
 						// Turn 0: starting forces are ready to move in the first player turn.
 						Battalion battalion = battalions.saveAndFlush(Battalion.recruit(gameId, nation.id(), type,

@@ -18,7 +18,8 @@ public record MapTemplate(MapDefinition definition, Geometry geometry) {
 
 	}
 
-	public record ProvinceShape(String svgPath, int labelX, int labelY) {
+	/** @param cityX x of the city point inside the province (the label anchor on older maps) */
+	public record ProvinceShape(String svgPath, int labelX, int labelY, int cityX, int cityY) {
 	}
 
 	public record RiverShape(String a, String b, String svgPath) {

@@ -21,6 +21,31 @@ public interface ForceWithdrawal {
 	 */
 	List<Withdrawn> withdrawWithoutAccess(UUID gameId, int round, int turnNumber, Instant now);
 
+	/**
+	 * Returns battalions to their owner's command where the owner and the commander may no longer
+	 * command each other (alliance ended, peace, separate peace, elimination). Phase 10.
+	 *
+	 * @return the number of battalions detached
+	 */
+	int endInvalidAttachments(UUID gameId);
+
+	/**
+	 * Returns every battalion the nation lent or commands to its owner (the nation left a war by
+	 * separate peace, so none of its soldiers may fight there any more). Phase 10.
+	 *
+	 * @return the number of battalions detached
+	 */
+	int endAttachmentsOf(UUID gameId, UUID nationId);
+
+	/**
+	 * Dissolves every battalion of an eliminated nation (Phase 10): its soldiers return as civilians to
+	 * their cohorts' origin cities, whoever owns them now, so no person is lost or created; its armies
+	 * are deleted and battalions attached to it go back to their owners. Battle reports keep the nation.
+	 *
+	 * @return the soldiers returned to cities
+	 */
+	int dissolveNation(UUID gameId, UUID nationId);
+
 	record Withdrawn(UUID battalionId, UUID nationId, String fromProvinceKey, String toProvinceKey) {
 	}
 

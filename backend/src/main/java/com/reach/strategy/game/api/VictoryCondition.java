@@ -17,6 +17,14 @@ public interface VictoryCondition {
 	Optional<Outcome> evaluate(UUID gameId, int completedRound, String rulesetVersion);
 
 	/**
+	 * Whether the game ends right now, outside a round end (Phase 10: only one nation left, or no human
+	 * player left). Without such a rule: empty.
+	 */
+	default Optional<Outcome> evaluateNow(UUID gameId, int currentRound, String rulesetVersion) {
+		return Optional.empty();
+	}
+
+	/**
 	 * @param reason stable code, e.g. {@code ROUND_LIMIT}
 	 * @param winnerNationId null for a draw
 	 * @param standings every nation, best first

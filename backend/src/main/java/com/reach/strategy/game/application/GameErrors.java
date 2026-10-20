@@ -34,6 +34,16 @@ final class GameErrors {
 				"The game has finished; its final state can be viewed but not changed.");
 	}
 
+	static ApiException pausedForConference() {
+		return new ApiException(HttpStatus.CONFLICT, "GAME_PAUSED_FOR_CONFERENCE",
+				"A peace conference is in progress; normal play resumes when it is concluded or cancelled.");
+	}
+
+	static ApiException eliminated() {
+		return new ApiException(HttpStatus.CONFLICT, "NATION_ELIMINATED",
+				"Your nation has been eliminated; you can follow the game but no longer act.");
+	}
+
 	/** Commands need a running game: not started yet, or already finished. */
 	static ApiException notPlayable(GameStatus status) {
 		return status == GameStatus.FINISHED ? finished() : notInProgress();

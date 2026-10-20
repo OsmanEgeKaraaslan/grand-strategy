@@ -42,7 +42,7 @@ battalions at war with the retreating nation stand (other foreign battalions do 
 occupation, starting and continuing a siege all require war with the controller (`ControlDecision`
 with an `atWar` predicate); after a peace treaty sieges are lifted and battalions without access
 withdraw (DIPLOMACY.md §6.3). Battles with two or more enemy nations in one province are refused
-(`COALITION_BATTLE_UNSUPPORTED`, Phase 10). Rulesets v1–v4 keep the old rule: every other nation is
+(`COALITION_BATTLE_UNSUPPORTED`) in rulesets v1–v5; v6 fights coalition battles (§3a). Rulesets v1–v4 keep the old rule: every other nation is
 hostile.
 
 Temporary balancing assumptions (all PROVISIONAL, change by adding a ruleset version):
@@ -313,6 +313,56 @@ Phase 1: B loses 1,109 (27.7%), A loses 155. Phase 2: B reaches 2,209 (55.2%)
 → **B breaks after phase 2**, retreats with 1,791 soldiers. A lost 266 (1.5%).
 
 ---
+
+## 3a. Coalition battles, attached battalions and movement per round (Phase 10, ruleset v6) — PROVISIONAL
+
+**Who fights.** A move into a province is an attack when battalions of nations **at war with the
+commanding nation** stand there. All of them defend together, whichever nation they belong to —
+allies need no attachment to defend side by side. Battalions of nations not at war with the
+commander stay out of the battle. Rulesets v1–v5 keep the one-against-one rule
+(`COALITION_BATTLE_UNSUPPORTED`).
+
+**No merged nation.** Each battalion fights with **its own nation's** technology and doctrine
+(§2.5). The side's damage is computed per group of battalions sharing the same modifiers:
+
+```
+D_side = Σ_groups (base_g × terrainMod_g) × (1 + flank_side)
+```
+
+where `base_g` is the group's unit damage (with its technology bonus) and `terrainMod_g` its river and
+mountain multipliers (with its doctrines); flanking and protection are judged for the whole side. A
+side of one nation, or of nations with equal modifiers, is exactly the formula of §2.5, so every
+golden example above is unchanged. Losses are distributed to battalions by the existing rules and
+booked on the battalion that took them; cohorts shrink with their battalion (§4, GAME_DESIGN §7.6), so soldiers
+always stay attributed to their origin cities.
+
+**Outcome per nation.** After the battle each nation's surviving battalions retreat or are destroyed
+by the normal rules, nation by nation (a nation retreats to a province it may enter). The report
+lists every battalion with its nation and one line per nation: soldiers before, losses, retreat
+province or destruction, modifiers. The report's `attackerNationId` is the commanding nation; its
+`defenderNationId` is the defending nation with most soldiers (ties: lowest id) — only a label.
+
+**Occupation and sieges.** Several nations at war with the controller may stand in its province
+together; if no nation present is at war with any of them, the nation with most soldiers present
+(ties: lowest id) occupies or leads the siege (`ControlDecision`, coalition rule). Siege artillery
+counts only the besieger's own battalions.
+
+**Attached battalions.** On its turn an owner may lend battalions to a nation it has an active
+alliance with or fights beside in an active war (`POST /attachments`; `features.attachments`):
+
+- the **commander** may only **move and attack** with them, together with its own battalions; it
+  cannot recruit, reinforce, disband or regroup them; a lent battalion only fights nations its own
+  nation is at war with (`ATTACHED_NOT_AT_WAR`);
+- the **owner** keeps paying upkeep, cannot move it while lent (`BATTALION_ATTACHED`), and may recall
+  it on its own turn (`POST /attachments/release`);
+- an attachment ends by itself when owner and commander are no longer allied or fighting together,
+  when either leaves the war by separate peace, or when either is eliminated.
+
+**Movement per global round.** In v6 (`military.roundBasedMovement`) a battalion moves **at most once
+per global round, whoever commands it**: moving, attaching, detaching or recalling never gives it a
+second move in the same round. Recruited or reinforced battalions wait for the next round. Rulesets
+v1–v5 keep eligibility per player turn (§9a of TURN_SYSTEM), which is the same for a battalion only
+its owner commands.
 
 ## 4. Reinforcement — implemented in Phase 6 (option A, rules accepted 2026-10-19)
 

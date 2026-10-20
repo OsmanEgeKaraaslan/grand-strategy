@@ -1,9 +1,20 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { describeError } from '../api/client'
-import { useAcceptPeace, useAllianceAction, useDeclareWar, usePeaceAction, useProposeAlliance } from '../api/queries'
+import {
+  useAcceptPeace,
+  useAllianceAction,
+  useAnswerCall,
+  useCallToArms,
+  useDeclareWar,
+  usePeaceAction,
+  useProposeAlliance,
+  useRequestConference,
+} from '../api/queries'
 import type {
   AllianceKind,
   AllianceView,
+  CallToArms,
+  ConferenceKind,
   DiplomacyOverview,
   GameState,
   NationRelation,
@@ -14,13 +25,21 @@ import type {
 import { BLOCKER_TEXT, describeEvent, describeTerm, isMajorSettlement, settlementSummary, type Names } from '../lib/diplomacy'
 import { formatGold } from '../lib/gold'
 import { Alert } from './Alert'
+import { ConferenceCard } from './PeaceConference'
 import { PeaceNegotiation, SettlementSummary } from './PeaceNegotiation'
+import { SendGold } from './SendGold'
 
 const STATUS_LABELS: Record<string, string> = { WAR: 'At war', ALLIED: 'Allied', PEACE: 'At peace' }
 const JOIN_LABELS: Record<string, string> = {
   DECLARED: 'declared the war',
   ATTACKED: 'was attacked',
   DEFENSIVE_RESPONSE: 'joined to defend an ally',
+  CALL_TO_ARMS: 'answered a call to arms',
+}
+
+const LEFT_LABELS: Record<string, string> = {
+  SEPARATE_PEACE: 'left by separate peace',
+  ELIMINATED: 'eliminated',
 }
 
 interface DiplomacyPanelProps {
@@ -29,6 +48,8 @@ interface DiplomacyPanelProps {
   state: GameState
   names: Names
   capitalKeys: Set<string>
+  /** The caller's treasury (from the economy view), for the gift preview. */
+  treasuryMg?: number
 }
 
 /**
@@ -36,7 +57,7 @@ interface DiplomacyPanelProps {
  * and the public history. Buttons only express intents; the server decides what is allowed (the
  * blockers shown come from it) and computes every number.
  */
-export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys }: DiplomacyPanelProps) {
+export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys, treasuryMg }: DiplomacyPanelProps) {
   const [negotiating, setNegotiating] = useState<{ war: WarView; counterOf?: PeaceProposal } | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   if (!overview.available || !overview.rules) {
@@ -52,6 +73,14 @@ export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys }: 
   const finished = state.status === 'FINISHED'
   const activeWars = overview.wars.filter((w) => w.status === 'ACTIVE')
   const endedWars = overview.wars.filter((w) => w.status === 'ENDED')
+  const features = rules.features
+  const conferencesMode = Boolean(features?.peaceConferences)
+  const conferences = overview.conferences ?? []
+  const openConferences = conferences.filter((c) => c.status === 'REQUESTED' || c.status === 'ACTIVE')
+  const pastConferences = conferences.filter((c) => c.status !== 'REQUESTED' && c.status !== 'ACTIVE')
+  const calls = overview.calls ?? []
+  const paused = Boolean(state.pausedConferenceId)
+  const allies = overview.nations.filter((n) => n.status === 'ALLIED').map((n) => n.nationId)
   const pending = overview.proposals.filter((p) => p.status === 'PENDING')
   const past = overview.proposals.filter((p) => p.status !== 'PENDING').slice(0, 5)
 
@@ -76,6 +105,8 @@ export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys }: 
           ))}
       </ul>
 
+      <SendGold gameId={gameId} overview={overview} names={names} treasuryMg={treasuryMg} yourTurn={overview.yourTurn && !finished} />
+
       <h3>Wars</h3>
       {activeWars.length === 0 && <p className="muted">No war is being fought.</p>}
       {activeWars.map((w) => (
@@ -83,10 +114,72 @@ export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys }: 
           key={w.id}
           war={w}
           names={names}
-          canNegotiate={w.youLead && overview.yourTurn && !finished}
+          canNegotiate={!conferencesMode && w.youLead && overview.yourTurn && !finished}
           onNegotiate={() => setNegotiating({ war: w })}
-        />
+          coalitions={Boolean(features?.coalitionWarfare)}
+        >
+          {conferencesMode && !finished && (
+            <WarActions
+              gameId={gameId}
+              war={w}
+              you={you}
+              names={names}
+              yourTurn={overview.yourTurn}
+              paused={paused}
+              separatePeace={Boolean(features?.separatePeace)}
+              callsToArms={Boolean(features?.callsToArms)}
+              allies={allies}
+              calls={calls}
+              alreadyRequested={openConferences.some((c) => c.warId === w.id && c.requesterNationId === you)}
+              onMessage={setMessage}
+            />
+          )}
+        </WarCard>
       ))}
+
+      {calls.length > 0 && (
+        <CallsToArms gameId={gameId} calls={calls} names={names} you={you} yourTurn={overview.yourTurn && !finished} onMessage={setMessage} />
+      )}
+
+      {conferencesMode && (
+        <>
+          <h3>Peace conferences</h3>
+          {openConferences.length === 0 && (
+            <p className="muted">
+              No conference is open. A war leader may request the general peace; another nation fighting a war may ask the
+              opposing leader for a separate peace.
+            </p>
+          )}
+          {openConferences.map((c) => (
+            <ConferenceCard
+              key={c.id}
+              gameId={gameId}
+              conference={c}
+              war={overview.wars.find((w) => w.id === c.warId)}
+              yourNationId={you}
+              state={state}
+              names={names}
+              capitalKeys={capitalKeys}
+              rules={rules}
+              onMessage={setMessage}
+            />
+          ))}
+          {pastConferences.length > 0 && (
+            <details>
+              <summary>Earlier conferences ({pastConferences.length})</summary>
+              <ul className="battle-list">
+                {pastConferences.map((c) => (
+                  <li key={c.id}>
+                    {c.kind === 'GENERAL' ? 'General peace' : 'Separate peace'}: {names.nation(c.requesterNationId)} and{' '}
+                    {names.nation(c.counterpartNationId)} · <strong>{c.status.toLowerCase()}</strong>
+                    {c.currentRevision > 0 ? ` after ${c.currentRevision} revision(s)` : ''}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
       {negotiating && (
         <PeaceNegotiation
           key={negotiating.counterOf?.id ?? negotiating.war.id}
@@ -106,8 +199,8 @@ export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys }: 
         />
       )}
 
-      <h3>Peace proposals</h3>
-      {pending.length === 0 && <p className="muted">No proposal is waiting for an answer.</p>}
+      {!conferencesMode && <h3>Peace proposals</h3>}
+      {!conferencesMode && pending.length === 0 && <p className="muted">No proposal is waiting for an answer.</p>}
       {pending.map((p) => (
         <ProposalCard
           key={p.id}
@@ -307,12 +400,20 @@ function WarCard({
   names,
   canNegotiate,
   onNegotiate,
+  coalitions = false,
+  children,
 }: {
   war: WarView
   names: Names
   canNegotiate: boolean
   onNegotiate: () => void
+  coalitions?: boolean
+  children?: ReactNode
 }) {
+  const describe = (p: WarView['participants'][number]) =>
+    `${p.name} (${JOIN_LABELS[p.joinReason] ?? p.joinReason}${
+      p.leftRound != null ? `; ${LEFT_LABELS[p.leftReason ?? ''] ?? 'left'} in round ${p.leftRound}` : ''
+    })`
   const attackers = war.participants.filter((p) => p.side === 'ATTACKER')
   const defenders = war.participants.filter((p) => p.side === 'DEFENDER')
   const max = war.score.maxScore
@@ -328,10 +429,9 @@ function WarCard({
         {war.yourSide ? ` · you are the ${war.yourSide === 'ATTACKER' ? 'attacker' : 'defender'}` : ''}
       </p>
       <p className="muted">
-        Attackers: {attackers.map((p) => `${p.name} (${JOIN_LABELS[p.joinReason] ?? p.joinReason})`).join(', ')} · Defenders:{' '}
-        {defenders.map((p) => `${p.name} (${JOIN_LABELS[p.joinReason] ?? p.joinReason})`).join(', ')}
+        Attackers: {attackers.map(describe).join(', ')} · Defenders: {defenders.map(describe).join(', ')}
       </p>
-      {defenders.some((p) => p.joinReason === 'DEFENSIVE_RESPONSE') && (
+      {!coalitions && defenders.some((p) => p.joinReason === 'DEFENSIVE_RESPONSE') && (
         <p className="muted">
           Allies who joined are legally at war; battles with several nations on one side arrive in a later phase.
         </p>
@@ -352,6 +452,7 @@ function WarCard({
           Negotiate peace
         </button>
       )}
+      {children}
     </article>
   )
 }
@@ -546,6 +647,196 @@ function Alliances({
         ))}
       </ul>
       {action.error && <Alert>{describeError(action.error)}</Alert>}
+    </>
+  )
+}
+
+/**
+ * Phase 10 actions on one war: the attacked leader calls allies to arms (on its turn); a leader asks
+ * for the general peace and any other nation fighting asks for a separate peace (at any time, as long
+ * as no conference is in session).
+ */
+function WarActions({
+  gameId,
+  war,
+  you,
+  names,
+  yourTurn,
+  paused,
+  separatePeace,
+  callsToArms,
+  allies,
+  calls,
+  alreadyRequested,
+  onMessage,
+}: {
+  gameId: string
+  war: WarView
+  you: string
+  names: Names
+  yourTurn: boolean
+  paused: boolean
+  separatePeace: boolean
+  callsToArms: boolean
+  allies: string[]
+  calls: CallToArms[]
+  alreadyRequested: boolean
+  onMessage: (text: string) => void
+}) {
+  const request = useRequestConference(gameId)
+  const call = useCallToArms(gameId)
+  const fighting = new Set(war.participants.filter((p) => p.leftRound == null).map((p) => p.nationId))
+  const callable = allies.filter(
+    (a) => !fighting.has(a) && !calls.some((c) => c.status === 'PENDING' && c.warId === war.id && c.allyNationId === a),
+  )
+  const [ally, setAlly] = useState('')
+  const chosen = callable.includes(ally) ? ally : (callable[0] ?? '')
+  const youFight = fighting.has(you)
+  const kind: ConferenceKind | null = !youFight ? null : war.youLead ? 'GENERAL' : separatePeace ? 'SEPARATE' : null
+  const counterpart = war.yourSide === 'ATTACKER' ? war.defenderLeaderId : war.attackerLeaderId
+
+  return (
+    <div className="diplomacy__actions">
+      {kind && !paused && !alreadyRequested && (
+        <button
+          type="button"
+          className="button button--primary"
+          disabled={request.isPending}
+          onClick={() =>
+            request.mutate(
+              { warId: war.id, kind, idempotencyKey: crypto.randomUUID() },
+              {
+                onSuccess: (r) =>
+                  onMessage(
+                    r.conference.status === 'ACTIVE'
+                      ? 'The peace conference is open. Normal play is paused.'
+                      : `${names.nation(counterpart)} has been asked to a peace conference.`,
+                  ),
+              },
+            )
+          }
+        >
+          {kind === 'GENERAL' ? 'Request peace conference' : `Ask ${names.nation(counterpart)} for a separate peace`}
+        </button>
+      )}
+      {callsToArms && war.defenderLeaderId === you && yourTurn && !paused && callable.length > 0 && (
+        <span className="diplomacy__alliance">
+          <select aria-label="Ally to call to arms" value={chosen} onChange={(e) => setAlly(e.target.value)}>
+            {callable.map((a) => (
+              <option key={a} value={a}>
+                {names.nation(a)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="button"
+            disabled={call.isPending || !chosen}
+            onClick={() =>
+              call.mutate(
+                { warId: war.id, allyNationId: chosen, idempotencyKey: crypto.randomUUID() },
+                { onSuccess: () => onMessage(`${names.nation(chosen)} has been called to arms. It answers on its turn.`) },
+              )
+            }
+          >
+            Call to arms
+          </button>
+        </span>
+      )}
+      {request.error && <Alert>{describeError(request.error)}</Alert>}
+      {call.error && <Alert>{describeError(call.error)}</Alert>}
+    </div>
+  )
+}
+
+/** Calls to arms: answer those addressed to you (on your turn); see the others. */
+function CallsToArms({
+  gameId,
+  calls,
+  names,
+  you,
+  yourTurn,
+  onMessage,
+}: {
+  gameId: string
+  calls: CallToArms[]
+  names: Names
+  you: string
+  yourTurn: boolean
+  onMessage: (text: string) => void
+}) {
+  const answer = useAnswerCall(gameId)
+  const [declining, setDeclining] = useState<string | null>(null)
+  const pending = calls.filter((c) => c.status === 'PENDING')
+  const answered = calls.filter((c) => c.status !== 'PENDING')
+  return (
+    <>
+      <h3>Calls to arms</h3>
+      {pending.length === 0 && <p className="muted">No call to arms is waiting for an answer.</p>}
+      <ul className="battle-list">
+        {pending.map((c) => (
+          <li key={c.id}>
+            {names.nation(c.callerNationId)} calls {c.allyNationId === you ? 'you' : names.nation(c.allyNationId)} to arms
+            (round {c.createdRound}).
+            {c.canAnswer && yourTurn && (
+              <span className="diplomacy__actions">
+                {declining === c.id ? (
+                  <>
+                    <span>Declining ends your alliance with {names.nation(c.callerNationId)}.</span>
+                    <button
+                      type="button"
+                      className="button button--danger"
+                      disabled={answer.isPending}
+                      onClick={() =>
+                        answer.mutate(
+                          { callId: c.id, accept: false, idempotencyKey: crypto.randomUUID() },
+                          {
+                            onSuccess: () => {
+                              setDeclining(null)
+                              onMessage(`You declined. Your alliance with ${names.nation(c.callerNationId)} has ended.`)
+                            },
+                          },
+                        )
+                      }
+                    >
+                      Confirm: decline
+                    </button>
+                    <button type="button" className="button" onClick={() => setDeclining(null)}>
+                      Back
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="button button--primary"
+                      disabled={answer.isPending}
+                      onClick={() =>
+                        answer.mutate(
+                          { callId: c.id, accept: true, idempotencyKey: crypto.randomUUID() },
+                          { onSuccess: () => onMessage(`You joined the war on the side of ${names.nation(c.callerNationId)}.`) },
+                        )
+                      }
+                    >
+                      Honour — join the war
+                    </button>
+                    <button type="button" className="button" onClick={() => setDeclining(c.id)}>
+                      Decline
+                    </button>
+                  </>
+                )}
+              </span>
+            )}
+          </li>
+        ))}
+        {answered.slice(0, 5).map((c) => (
+          <li key={c.id} className="muted">
+            Round {c.createdRound}: {names.nation(c.callerNationId)} called {names.nation(c.allyNationId)} ·{' '}
+            {c.status.toLowerCase()}
+          </li>
+        ))}
+      </ul>
+      {answer.error && <Alert>{describeError(answer.error)}</Alert>}
     </>
   )
 }

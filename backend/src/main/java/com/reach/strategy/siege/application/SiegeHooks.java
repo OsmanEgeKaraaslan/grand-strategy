@@ -219,7 +219,7 @@ class SiegeHooks {
 				return;
 			}
 			WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
-			rules.startingFortresses()
+			rules.startingFortresses(world.mapSummary(mapId).key())
 				.entrySet()
 				.stream()
 				.sorted(Map.Entry.comparingByKey(Comparator.naturalOrder()))

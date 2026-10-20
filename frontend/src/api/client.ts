@@ -1,4 +1,11 @@
 import type {
+  AttachmentResult,
+  CallResult,
+  Conference,
+  ConferenceKind,
+  ConferenceResult,
+  GiftResult,
+  MapChoice,
   AllianceKind,
   AllianceResult,
   DiplomacyEvent,
@@ -115,7 +122,10 @@ export function createApiClient({ baseUrl, accessToken, onUnauthorized, fetch: f
     updateMe: (displayName: string) => request<PlayerProfile>('PATCH', '/me', { displayName }),
     listGames: () => request<GameSummary[]>('GET', '/games'),
     getGame: (gameId: string) => request<Lobby>('GET', `/games/${encodeURIComponent(gameId)}`),
-    createGame: (name: string) => request<Lobby>('POST', '/games', { name }),
+    /** maxPlayers: humans (2 up to the map's maximum); mapKey: omitted for the default map. */
+    createGame: ({ name, maxPlayers, mapKey }: { name: string; maxPlayers?: number; mapKey?: string }) =>
+      request<Lobby>('POST', '/games', { name, maxPlayers, mapKey }),
+    listMaps: () => request<MapChoice[]>('GET', '/maps'),
     joinGame: (inviteCode: string) => request<Lobby>('POST', '/games/join', { inviteCode }),
     chooseNation: (gameId: string, nationId: string) =>
       request<Lobby>('PUT', `/games/${encodeURIComponent(gameId)}/players/me/nation`, { nationId }),
@@ -271,6 +281,65 @@ export function createApiClient({ baseUrl, accessToken, onUnauthorized, fetch: f
         'POST',
         diplomacyPath(gameId, `/peace-proposals/${encodeURIComponent(proposalId)}/counter`),
         { terms },
+        { 'Idempotency-Key': idempotencyKey },
+      ),
+    /** A voluntary, final gold transfer to another nation (integer milligold). */
+    sendGold: (gameId: string, recipientNationId: string, amountMg: number, idempotencyKey: string) =>
+      request<GiftResult>('POST', diplomacyPath(gameId, '/gifts'), { recipientNationId, amountMg }, {
+        'Idempotency-Key': idempotencyKey,
+      }),
+    /** Lend battalions to an ally, which commands them (moves and attacks) until you release them. */
+    attach: (gameId: string, battalionIds: string[], commanderNationId: string, idempotencyKey: string) =>
+      request<AttachmentResult>('POST', `/games/${encodeURIComponent(gameId)}/attachments`, { battalionIds, commanderNationId }, {
+        'Idempotency-Key': idempotencyKey,
+      }),
+    release: (gameId: string, battalionIds: string[], idempotencyKey: string) =>
+      request<AttachmentResult>('POST', `/games/${encodeURIComponent(gameId)}/attachments/release`, { battalionIds }, {
+        'Idempotency-Key': idempotencyKey,
+      }),
+    callToArms: (gameId: string, warId: string, allyNationId: string, idempotencyKey: string) =>
+      request<CallResult>('POST', diplomacyPath(gameId, `/wars/${encodeURIComponent(warId)}/calls`), { allyNationId }, {
+        'Idempotency-Key': idempotencyKey,
+      }),
+    /** accept true honours the call (your nation joins the war); false declines it (the alliance ends). */
+    answerCall: (gameId: string, callId: string, accept: boolean, idempotencyKey: string) =>
+      request<CallResult>('POST', diplomacyPath(gameId, `/calls/${encodeURIComponent(callId)}/answer`), { accept }, {
+        'Idempotency-Key': idempotencyKey,
+      }),
+    getConference: (gameId: string, conferenceId: string) =>
+      request<Conference>('GET', diplomacyPath(gameId, `/conferences/${encodeURIComponent(conferenceId)}`)),
+    requestConference: (gameId: string, warId: string, kind: ConferenceKind, idempotencyKey: string) =>
+      request<ConferenceResult>('POST', diplomacyPath(gameId, `/wars/${encodeURIComponent(warId)}/conferences`), { kind }, {
+        'Idempotency-Key': idempotencyKey,
+      }),
+    answerConference: (gameId: string, conferenceId: string, accept: boolean, idempotencyKey: string) =>
+      request<ConferenceResult>(
+        'POST',
+        diplomacyPath(gameId, `/conferences/${encodeURIComponent(conferenceId)}/answer`),
+        { accept },
+        { 'Idempotency-Key': idempotencyKey },
+      ),
+    cancelConference: (gameId: string, conferenceId: string, idempotencyKey: string) =>
+      request<ConferenceResult>(
+        'POST',
+        diplomacyPath(gameId, `/conferences/${encodeURIComponent(conferenceId)}/cancel`),
+        {},
+        { 'Idempotency-Key': idempotencyKey },
+      ),
+    /** A new revision of the whole draft, built on the revision you saw. */
+    submitDraft: (gameId: string, conferenceId: string, expectedRevision: number, terms: PeaceTerm[], idempotencyKey: string) =>
+      request<ConferenceResult>(
+        'POST',
+        diplomacyPath(gameId, `/conferences/${encodeURIComponent(conferenceId)}/drafts`),
+        { expectedRevision, terms },
+        { 'Idempotency-Key': idempotencyKey },
+      ),
+    /** An approval names its revision, so it can never approve changed terms. */
+    decideDraft: (gameId: string, conferenceId: string, revision: number, action: 'approve' | 'reject', idempotencyKey: string) =>
+      request<ConferenceResult>(
+        'POST',
+        diplomacyPath(gameId, `/conferences/${encodeURIComponent(conferenceId)}/revisions/${revision}/${action}`),
+        {},
         { 'Idempotency-Key': idempotencyKey },
       ),
     getResult: (gameId: string) => request<GameResult>('GET', `/games/${encodeURIComponent(gameId)}/result`),
@@ -445,6 +514,60 @@ export function describeError(error: unknown): string {
         return 'The situation has changed and this treaty can no longer be settled as it stands. Reject it or make a counter-proposal.'
       case 'INVALID_TERM':
         return 'A peace term is incomplete.'
+      case 'INVALID_PLAYER_COUNT':
+        return 'This map does not support that many players.'
+      case 'MAP_NOT_FOUND':
+        return 'That map does not exist.'
+      case 'NATION_NOT_PLAYABLE':
+        return 'That nation is controlled by the game; choose one of the playable nations.'
+      case 'INVALID_GIFT_AMOUNT':
+        return 'Choose an amount above zero and within the gift limit.'
+      case 'GIFT_TO_ENEMY':
+        return 'You cannot send gold to a nation you are at war with.'
+      case 'GIFTS_NOT_AVAILABLE':
+        return 'This game was created before gold gifts existed.'
+      case 'NATION_ELIMINATED':
+        return 'That nation has been eliminated.'
+      case 'GAME_PAUSED_FOR_CONFERENCE':
+        return 'A peace conference is in progress: normal play is paused for everyone until it ends.'
+      case 'CONFERENCE_IN_PROGRESS':
+        return 'Another peace conference is in progress; wait until it ends.'
+      case 'CONFERENCE_ALREADY_REQUESTED':
+        return 'You have already asked for this conference.'
+      case 'CONFERENCE_NOT_OPEN':
+        return 'This peace conference is no longer open for that.'
+      case 'STALE_REVISION':
+        return 'The draft has changed meanwhile. Review the current revision first.'
+      case 'ALREADY_DECIDED':
+        return 'Your nation has already decided on this revision.'
+      case 'APPROVAL_NOT_REQUIRED':
+        return 'Your approval is not needed for this draft.'
+      case 'NOT_CONFERENCE_PRINCIPAL':
+        return 'Only the two negotiating nations can change or end this conference.'
+      case 'NOT_CONFERENCE_COUNTERPART':
+        return 'Only the invited war leader can answer this request.'
+      case 'LEADER_CANNOT_LEAVE':
+        return 'A war leader cannot make a separate peace; negotiate the general peace instead.'
+      case 'USE_PEACE_CONFERENCE':
+        return 'In this game peace is negotiated in a peace conference.'
+      case 'NOT_DEFENDING_LEADER':
+        return 'Only the attacked war leader can call its allies to arms.'
+      case 'NOT_ALLIED':
+        return 'You have no active alliance with that nation.'
+      case 'CALL_ALREADY_PENDING':
+        return 'That ally has already been called to this war.'
+      case 'CALL_NOT_PENDING':
+        return 'This call to arms has already been answered.'
+      case 'ALLIED_WITH_ENEMY':
+        return 'You are allied with a nation of the attacking side; end that alliance first.'
+      case 'NPC_NOT_NEGOTIABLE':
+        return 'Nations controlled by the game do not negotiate alliances.'
+      case 'ATTACHMENT_NOT_ALLOWED':
+        return 'You can only lend battalions to an ally or a nation fighting on your side.'
+      case 'BATTALION_ATTACHED':
+        return 'That battalion is attached to an ally, which commands it until you release it.'
+      case 'ATTACHED_NOT_AT_WAR':
+        return 'A lent battalion only fights nations its own nation is at war with.'
       case 'GAME_FINISHED':
         return 'The game has finished; its final state can be viewed but not changed.'
       case 'GAME_NOT_FINISHED':

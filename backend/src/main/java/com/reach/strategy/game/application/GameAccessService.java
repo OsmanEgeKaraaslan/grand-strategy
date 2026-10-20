@@ -35,9 +35,11 @@ class GameAccessService implements GameAccess {
 			.orElseThrow(GameErrors::gameNotFound);
 		boolean inProgress = game.status() == GameStatus.IN_PROGRESS;
 		boolean finished = game.finished();
-		return new Membership(game.id(), mine.id(), mine.seatOrder(), inProgress,
-				inProgress && game.activeSeat() == mine.seatOrder(), inProgress || finished ? game.currentRound() : 0,
-				game.turnNumber(), game.rulesetVersion(), game.stateVersion(), finished);
+		// Nobody has a normal turn while a peace conference pauses play or once eliminated.
+		boolean yourTurn = inProgress && !game.paused() && !mine.eliminated() && game.activeSeat() == mine.seatOrder();
+		return new Membership(game.id(), mine.id(), mine.seatOrder(), inProgress, yourTurn,
+				inProgress || finished ? game.currentRound() : 0, game.turnNumber(), game.rulesetVersion(),
+				game.stateVersion(), finished, game.paused(), mine.eliminated());
 	}
 
 }

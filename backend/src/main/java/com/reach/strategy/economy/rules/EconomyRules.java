@@ -19,12 +19,27 @@ import java.util.TreeMap;
  * whose games have no sieges and therefore never have damaged workshops
  * @param workshopUpgrade the Tier 1 → Tier 2 upgrade (v4+, needs civilian technology); null before
  * @param populationGrowth civilian growth per round (v4+); null before v4: no growth (Q-E6 MVP default)
+ * @param startingByTier v6+: starting treasury and capital workshops per faction tier (POWER, MAJOR,
+ * REGIONAL, MINOR); a tier without an entry, and every nation before v6, uses the flat values above
  */
 public record EconomyRules(String version, long agricultureMgPerWorker, int workshopCapacity, int maxWorkshopsPerCity,
 		long startingTreasuryMg, int startingCapitalWorkshops, Map<Integer, WorkshopTier> workshopTiers,
-		WorkshopRepair workshopRepair, WorkshopUpgrade workshopUpgrade, GrowthRules populationGrowth) {
+		WorkshopRepair workshopRepair, WorkshopUpgrade workshopUpgrade, GrowthRules populationGrowth,
+		Map<String, StartingProfile> startingByTier) {
+
+	public EconomyRules(String version, long agricultureMgPerWorker, int workshopCapacity, int maxWorkshopsPerCity,
+			long startingTreasuryMg, int startingCapitalWorkshops, Map<Integer, WorkshopTier> workshopTiers,
+			WorkshopRepair workshopRepair, WorkshopUpgrade workshopUpgrade, GrowthRules populationGrowth) {
+		this(version, agricultureMgPerWorker, workshopCapacity, maxWorkshopsPerCity, startingTreasuryMg,
+				startingCapitalWorkshops, workshopTiers, workshopRepair, workshopUpgrade, populationGrowth, null);
+	}
 
 	public EconomyRules {
+		startingByTier = startingByTier == null ? Map.of() : Map.copyOf(startingByTier);
+		if (startingByTier.values().stream().anyMatch(p -> p.treasuryMg() < 0 || p.capitalWorkshops() < 0
+				|| p.capitalWorkshops() > maxWorkshopsPerCity)) {
+			throw new IllegalArgumentException("Invalid starting profiles in economy ruleset " + version);
+		}
 		if (agricultureMgPerWorker < 0 || workshopCapacity <= 0 || maxWorkshopsPerCity < 0 || startingTreasuryMg < 0
 				|| startingCapitalWorkshops < 0 || startingCapitalWorkshops > maxWorkshopsPerCity) {
 			throw new IllegalArgumentException("Invalid economy ruleset " + version);
@@ -37,6 +52,20 @@ public record EconomyRules(String version, long agricultureMgPerWorker, int work
 				|| !workshopTiers.containsKey(workshopUpgrade.toTier()))) {
 			throw new IllegalArgumentException("Economy ruleset " + version + " upgrades between unknown tiers");
 		}
+	}
+
+	/** Starting treasury of a nation of this tier, and its active Tier 1 workshops in the capital. */
+	public long startingTreasuryMg(String tier) {
+		StartingProfile profile = startingByTier.get(tier);
+		return profile == null ? startingTreasuryMg : profile.treasuryMg();
+	}
+
+	public int startingCapitalWorkshops(String tier) {
+		StartingProfile profile = startingByTier.get(tier);
+		return profile == null ? startingCapitalWorkshops : profile.capitalWorkshops();
+	}
+
+	public record StartingProfile(long treasuryMg, int capitalWorkshops) {
 	}
 
 	/**

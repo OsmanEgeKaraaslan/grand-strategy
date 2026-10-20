@@ -12,10 +12,13 @@ const STAT_LABELS: Record<string, string> = {
   battlesInWars: 'Battles won in wars',
   provincesCeded: 'Provinces ceded',
   tributePaidMg: 'Tribute paid (gold)',
+  nationsEliminated: 'Nations eliminated',
 }
 
 const REASON_LABELS: Record<string, string> = {
   ROUND_LIMIT: 'The last round of the game was played.',
+  DOMINATION: 'Every other nation was eliminated.',
+  NO_HUMAN_PLAYERS: 'No human player was left in the game.',
 }
 
 /**

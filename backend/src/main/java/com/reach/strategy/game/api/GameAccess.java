@@ -21,9 +21,12 @@ public interface GameAccess {
 	 * @param round current round (0 before the start)
 	 * @param turnNumber global player-turn counter (movement eligibility is keyed on it)
 	 * @param finished whether the game has finished (read-only from then on)
+	 * @param paused normal play is paused for a peace conference (Phase 10)
+	 * @param eliminated the caller's nation has been eliminated (Phase 10)
 	 */
 	record Membership(UUID gameId, UUID gamePlayerId, int seat, boolean inProgress, boolean yourTurn, int round,
-			int turnNumber, String rulesetVersion, long stateVersion, boolean finished) {
+			int turnNumber, String rulesetVersion, long stateVersion, boolean finished, boolean paused,
+			boolean eliminated) {
 
 		/** Started at some point: running or finished — its state is readable. */
 		public boolean started() {

@@ -9,7 +9,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.reach.strategy.diplomacy.domain.CallToArmsRepository;
+import com.reach.strategy.diplomacy.domain.ConferenceRepository;
 import com.reach.strategy.diplomacy.domain.DiplomacyEventLog;
+import com.reach.strategy.diplomacy.domain.GiftRepository;
 import com.reach.strategy.diplomacy.domain.RelationsRepository;
 import com.reach.strategy.diplomacy.domain.TreatyRepository;
 import com.reach.strategy.diplomacy.rules.Diplomacy;
@@ -44,13 +47,19 @@ public class DiplomacyQueries {
 	private final RelationsRepository relations;
 	private final TreatyRepository treaties;
 	private final DiplomacyEventLog events;
+	private final GiftRepository gifts;
+	private final CallToArmsRepository calls;
+	private final ConferenceRepository conferences;
 	private final WorldApi world;
 	private final EconomyApi economy;
 	private final JsonMapper jsonMapper;
 
 	DiplomacyQueries(GameAccess gameAccess, DiplomacyState state, RelationsRepository relations,
-			TreatyRepository treaties, DiplomacyEventLog events, WorldApi world, EconomyApi economy,
-			JsonMapper jsonMapper) {
+			TreatyRepository treaties, DiplomacyEventLog events, GiftRepository gifts, CallToArmsRepository calls,
+			ConferenceRepository conferences, WorldApi world, EconomyApi economy, JsonMapper jsonMapper) {
+		this.gifts = gifts;
+		this.calls = calls;
+		this.conferences = conferences;
 		this.gameAccess = gameAccess;
 		this.state = state;
 		this.relations = relations;
@@ -72,7 +81,7 @@ public class DiplomacyQueries {
 		if (loaded.isEmpty()) {
 			return new DiplomacyViews.Overview(gameId, false, membership.rulesetVersion(), membership.round(),
 					membership.yourTurn(), nationId, null, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-					List.of());
+					List.of(), List.of());
 		}
 		Ctx ctx = context(gameId, loaded.get(), snapshot, nationId, membership.round());
 		List<DiplomacyViews.NationRelation> nations = snapshot.nations()
@@ -100,7 +109,21 @@ public class DiplomacyQueries {
 			.toList();
 		return new DiplomacyViews.Overview(gameId, true, membership.rulesetVersion(), membership.round(),
 				membership.yourTurn(), nationId, rulesView(ctx.rules()), nations, wars, alliances, proposals,
-				treatyViews(ctx), tributeViews(gameId), eventViews(events.recent(gameId, EVENT_LIMIT)));
+				treatyViews(ctx), tributeViews(gameId), eventViews(events.recent(gameId, EVENT_LIMIT)),
+				gifts.recent(gameId, EVENT_LIMIT).stream().map(GiftService::view).toList(),
+				calls.all(gameId).stream().map(c -> callView(c, nationId)).toList(),
+				conferences.all(gameId).stream().map(c -> conferenceView(ctx, c)).toList());
+	}
+
+	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+	public DiplomacyViews.ConferenceView conference(CurrentPlayer me, UUID gameId, UUID conferenceId) {
+		GameAccess.Membership membership = startedGame(me, gameId);
+		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
+		DiplomacyState.Picture picture = state.load(gameId).orElseThrow(DiplomacyErrors::notAvailable);
+		Ctx ctx = context(gameId, picture, snapshot, nationOf(snapshot, membership.gamePlayerId()), membership.round());
+		ConferenceRepository.ConferenceRow row = conferences.find(gameId, conferenceId)
+			.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CONFERENCE_NOT_FOUND", "Peace conference not found."));
+		return conferenceView(ctx, row);
 	}
 
 	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -255,6 +278,7 @@ public class DiplomacyQueries {
 
 	DiplomacyViews.WarView warView(Ctx ctx, RelationsRepository.WarRow war) {
 		List<RelationsRepository.ParticipantRow> participants = ctx.picture().participantsOf(war.id());
+		List<RelationsRepository.ParticipantRow> everyone = ctx.picture().allParticipantsOf(war.id());
 		WarScores.Detailed detailed = WarScores.of(war, participants, ctx.scoreEvents(), ctx.snapshot(), ctx.picture());
 		WarScore.Score s = detailed.score();
 		DiplomacyViews.Score score = new DiplomacyViews.Score(side(s.attacker(), detailed.attacker()),
@@ -263,9 +287,9 @@ public class DiplomacyQueries {
 		String yourSide = ctx.picture().sideOf(war.id(), ctx.viewer()).orElse(null);
 		boolean youLead = war.attackerLeader().equals(ctx.viewer()) || war.defenderLeader().equals(ctx.viewer());
 		return new DiplomacyViews.WarView(war.id(), war.status(), war.attackerLeader(), war.defenderLeader(),
-				participants.stream()
+				everyone.stream()
 					.map(p -> new DiplomacyViews.Participant(p.nationId(), ctx.nameOf(p.nationId()), p.side(),
-							p.joinReason(), p.joinedRound()))
+							p.joinReason(), p.joinedRound(), p.leftRound(), p.leftReason()))
 					.toList(),
 				war.declaredRound(), war.endedRound(), war.endReason(), last - war.declaredRound() + 1, score, yourSide,
 				youLead);
@@ -309,6 +333,72 @@ public class DiplomacyQueries {
 				p.createdRound(), p.createdTurn(), p.createdStateVersion(), p.respondedRound(), p.counterOfId(),
 				p.createdRound() + ctx.rules().proposalExpiryRounds(), p.recipient().equals(ctx.viewer()), violations,
 				p.createdAt());
+	}
+
+	DiplomacyViews.CallView callView(CallToArmsRepository.CallRow c, UUID viewer) {
+		return new DiplomacyViews.CallView(c.id(), c.warId(), c.caller(), c.ally(), c.status(), c.createdRound(),
+				c.answeredRound(), c.pending() && c.ally().equals(viewer));
+	}
+
+	DiplomacyViews.ConferenceView conferenceView(Ctx ctx, ConferenceRepository.ConferenceRow c) {
+		List<ConferenceRepository.RevisionRow> revisions = conferences.revisions(c.id());
+		ConferenceRepository.RevisionRow current = revisions.stream()
+			.filter(r -> r.revision() == c.currentRevision())
+			.findFirst()
+			.orElse(null);
+		List<DiplomacyViews.Term> terms = current == null ? List.of()
+				: withTributeRules(readTerms(current.termsJson()), ctx.rules());
+		List<DiplomacyViews.Approval> approvals = new ArrayList<>();
+		boolean mustDecide = false;
+		if (current != null) {
+			Map<UUID, String> decisions = conferences.decisions(c.id(), current.revision())
+				.stream()
+				.collect(Collectors.toMap(ConferenceRepository.DecisionRow::nationId, ConferenceRepository.DecisionRow::decision));
+			List<UUID> required = jsonMapper.readValue(current.requiredJson(), new TypeReference<List<UUID>>() {
+			});
+			for (UUID n : required) {
+				boolean npc = ctx.snapshot().nations().stream().anyMatch(x -> x.id().equals(n) && x.npc());
+				approvals.add(new DiplomacyViews.Approval(n, ctx.nameOf(n), npc, decisions.get(n)));
+			}
+			mustDecide = c.active() && required.contains(ctx.viewer()) && !decisions.containsKey(ctx.viewer());
+		}
+		List<String> violations = List.of();
+		if (c.active() && current != null) {
+			Map<UUID, String> sides = ConferenceService.negotiatingSides(ctx.picture(), c);
+			violations = PeaceTerms.validate(toRules(terms), conferenceFacts(ctx.snapshot(), sides, ctx.rules()), ctx.rules())
+				.stream()
+				.map(v -> (v.term() < 0 ? "draft" : "term " + (v.term() + 1)) + ": " + v.code().name())
+				.toList();
+		}
+		boolean principal = c.principal(ctx.viewer());
+		return new DiplomacyViews.ConferenceView(c.id(), c.warId(), c.kind(), c.requester(), c.counterpart(), c.status(),
+				c.requestedRound(), c.currentRevision(), terms, approvals,
+				revisions.stream()
+					.map(r -> new DiplomacyViews.RevisionSummary(r.revision(), r.author(), readTerms(r.termsJson()).size(),
+							r.createdAt()))
+					.toList(),
+				violations, principal, "REQUESTED".equals(c.status()) && c.counterpart().equals(ctx.viewer()),
+				principal && c.open(), principal && c.active(), mustDecide);
+	}
+
+	/** Validation facts for a conference: every negotiating nation with its side and treasury. */
+	PeaceTerms.Facts conferenceFacts(WorldApi.WorldSnapshot snapshot, Map<UUID, String> sides, DiplomacyRules rules) {
+		Set<String> capitals = world.mapSummary(snapshot.mapId())
+			.nations()
+			.stream()
+			.map(WorldApi.NationOption::capitalProvinceKey)
+			.collect(Collectors.toSet());
+		List<PeaceTerms.ProvinceFact> provinces = snapshot.provinces()
+			.stream()
+			.map(p -> new PeaceTerms.ProvinceFact(p.provinceKey(), p.ownerNationId(), p.cityId(), p.population(),
+					capitals.contains(p.provinceKey())))
+			.toList();
+		Map<UUID, Long> treasuries = new java.util.HashMap<>();
+		new java.util.TreeSet<>(sides.keySet()).forEach(n -> treasuries.put(n, economy.treasury(n).treasuryMg()));
+		List<UUID> parties = new ArrayList<>(sides.keySet());
+		return new PeaceTerms.Facts(parties.isEmpty() ? null : parties.getFirst(),
+				parties.size() > 1 ? parties.get(1) : null, provinces, treasuries, sides,
+				rules.features().capitalsCedable());
 	}
 
 	List<DiplomacyViews.TreatyView> treatyViews(Ctx ctx) {
@@ -384,7 +474,9 @@ public class DiplomacyQueries {
 				r.populationTransfer().minResidualPopulation(), r.reparations().maxMg(), r.warScore().maxScore(),
 				r.victory().maxRounds(), r.victory().provincePoints(), r.victory().pointsPerThousandPopulation(),
 				r.militaryAccess().normalAlliance(), r.militaryAccess().defensiveAlliance(),
-				r.militaryAccess().coBelligerents());
+				r.militaryAccess().coBelligerents(), r.gifts() == null ? null : r.gifts().maxMg(),
+				r.gifts() != null && r.gifts().allowToEnemies(), r.features(), r.victory().pointsPerHundredGold(),
+				r.victory().domination());
 	}
 
 	// --- terms <-> JSON -------------------------------------------------------------------------

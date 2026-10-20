@@ -80,6 +80,17 @@ as a whole — connected, no self/duplicate edges, every province owned by exact
 nation, capitals inside their nation, enough nations for the map's player count, geometry for
 every province.
 
+### 3.0a Phase 10 migrations (V12–V14)
+
+| Migration | Changes |
+|---|---|
+| `V12__grand_campaign_foundations.sql` | `map_template.min_border_length`; `province_template.city_x/city_y`; `nation_template.tier` (POWER/MAJOR/REGIONAL/MINOR) and `playable`; `nation.game_player_id` nullable with `control` (HUMAN/NPC, checked against the player) and `eliminated_round`; `game_player.eliminated_round`; `gold_gift` (game, sender, recipient, positive amount, round; composite FKs); command `SEND_GOLD`; event `GOLD_GIFT`; `game_result_standing.player_id` nullable (NPC nations) |
+| `V13__seed_grand_campaign_map.sql` | Generated seed of the Grand Campaign: 72 provinces, 159 adjacencies (rivers marked), 10 nations with tiers, start provinces |
+| `V14__coalitions_and_conferences.sql` | Commands `ATTACH_BATTALIONS`, `DETACH_BATTALIONS`, `CALL_TO_ARMS`, `ANSWER_CALL`, `REQUEST_CONFERENCE`, `ANSWER_CONFERENCE`, `CANCEL_CONFERENCE`, `SUBMIT_DRAFT`, `APPROVE_DRAFT`, `REJECT_DRAFT`; `game.paused_conference_id`; `battalion.commander_nation_id` (composite FK to nation), `last_moved_round`, `last_reinforced_round`; war end reason `ELIMINATION`; `war_participant` join reason `CALL_TO_ARMS`, `left_round`, `left_reason` (SEPARATE_PEACE/ELIMINATED); tables `call_to_arms` (one pending call per war and ally), `peace_conference` (at most one ACTIVE per game; one open request per war, requester and kind), `conference_revision` (immutable; `terms` and `required` approvers as jsonb), `conference_decision` (primary key conference, revision, nation); `peace_treaty` gains `conference_id`, `revision`, `kind` (GENERAL/SEPARATE), `exiting_nation_id`, nullable `proposal_id`, and one general treaty per war instead of one treaty per war; new event kinds for calls, conferences, separate peace, elimination, leader changes and ended attachments |
+
+Every new per-game table carries `game_id` with composite foreign keys `(game_id, id)`; applied
+migrations V1–V11 are unchanged.
+
 ### 3.1 Static world templates (Phase 3)
 
 **map_template**

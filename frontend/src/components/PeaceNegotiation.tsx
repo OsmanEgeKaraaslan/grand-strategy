@@ -107,7 +107,8 @@ export function PeaceNegotiation({
       {terms.length < rules.maxPeaceTerms && (
         <TermBuilder
           you={yourNationId}
-          other={other}
+          givers={[other, yourNationId]}
+          receiversOf={(giver) => [giver === yourNationId ? other : yourNationId]}
           state={state}
           names={names}
           capitalKeys={capitalKeys}
@@ -182,9 +183,15 @@ export function SettlementSummary({
   )
 }
 
-function TermBuilder({
+/**
+ * One term at a time. `givers` lists the nations that may give something; `receiversOf`
+ * the nations of the other side that may receive it (two leaders in a Phase 9 negotiation, the
+ * coalitions in a Phase 10 peace conference).
+ */
+export function TermBuilder({
   you,
-  other,
+  givers,
+  receiversOf,
   state,
   names,
   capitalKeys,
@@ -193,7 +200,8 @@ function TermBuilder({
   onAdd,
 }: {
   you: string
-  other: string
+  givers: string[]
+  receiversOf: (giver: string) => string[]
   state: GameState
   names: Names
   capitalKeys: Set<string>
@@ -202,13 +210,15 @@ function TermBuilder({
   onAdd: (term: PeaceTerm) => void
 }) {
   const [type, setType] = useState<TermType>('PROVINCE')
-  const [giver, setGiver] = useState<string>(other)
+  const [giver, setGiver] = useState<string>(givers[0])
+  const receivers = receiversOf(giver)
+  const [chosenReceiver, setChosenReceiver] = useState<string>('')
   const [province, setProvince] = useState('')
   const [gold, setGold] = useState('')
   const [source, setSource] = useState('')
   const [destination, setDestination] = useState('')
   const [people, setPeople] = useState(String(rules.populationMinPeople))
-  const receiver = giver === you ? other : you
+  const receiver = receivers.includes(chosenReceiver) ? chosenReceiver : receivers[0]
   const giverProvinces = state.provinces.filter((p) => p.ownerNationId === giver)
   const receiverProvinces = state.provinces.filter((p) => p.ownerNationId === receiver)
   const amountMg = parseGoldToMg(gold)
@@ -253,10 +263,27 @@ function TermBuilder({
       <label>
         Given by
         <select value={giver} onChange={(e) => setGiver(e.target.value)}>
-          <option value={other}>{names.nation(other)}</option>
-          <option value={you}>{names.nation(you)} (you)</option>
+          {givers.map((g) => (
+            <option key={g} value={g}>
+              {names.nation(g)}
+              {g === you ? ' (you)' : ''}
+            </option>
+          ))}
         </select>
       </label>
+      {receivers.length > 1 && (
+        <label>
+          Given to
+          <select value={receiver} onChange={(e) => setChosenReceiver(e.target.value)}>
+            {receivers.map((r) => (
+              <option key={r} value={r}>
+                {names.nation(r)}
+                {r === you ? ' (you)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {type === 'PROVINCE' && (
         <label>
           Province
