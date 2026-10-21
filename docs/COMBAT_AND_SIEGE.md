@@ -364,6 +364,10 @@ second move in the same round. Recruited or reinforced battalions wait for the n
 v1–v5 keep eligibility per player turn (§9a of TURN_SYSTEM), which is the same for a battalion only
 its owner commands.
 
+**Defect fixed in Phase 11:** a battalion that loses all its men in a battle is deleted (with its
+cohorts) before its manpower is updated; before, the zero-manpower row could be flushed and the
+command failed on `battalion_manpower_ck`. The battle results are unchanged.
+
 ## 4. Reinforcement — implemented in Phase 6 (option A, rules accepted 2026-10-19)
 
 **As implemented** (`military.rules.Reinforcement`, `BattalionService.reinforce`):

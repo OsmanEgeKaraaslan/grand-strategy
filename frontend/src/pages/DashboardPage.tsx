@@ -116,7 +116,7 @@ function CreateGameCard() {
           </select>
         </label>
         {selectedMap && selectedMap.nations > maxPlayers && (
-          <p className="muted">Nations nobody chooses are controlled by the game (passive until AI arrives).</p>
+          <p className="muted">Nations nobody chooses are played by the computer: they build, recruit, research, go to war and negotiate by the same rules as you.</p>
         )}
         {createGame.error && <Alert>{describeError(createGame.error)}</Alert>}
         <button type="submit" className="button button--primary" disabled={createGame.isPending}>

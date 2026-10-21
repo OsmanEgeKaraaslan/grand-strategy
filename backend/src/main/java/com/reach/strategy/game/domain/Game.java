@@ -197,10 +197,18 @@ public class Game implements Persistable<UUID> {
 
 	/** @param skippedSeats seats of eliminated players, which take no turn */
 	public TurnOrder.Advance nextTurn(java.util.Set<Integer> skippedSeats) {
+		return nextTurn(skippedSeats, playerCount);
+	}
+
+	/**
+	 * @param seatCount all seats of the game: the human players plus the computer seats added at the
+	 * start (Phase 11)
+	 */
+	public TurnOrder.Advance nextTurn(java.util.Set<Integer> skippedSeats, int seatCount) {
 		if (status != GameStatus.IN_PROGRESS) {
 			throw new IllegalStateException("Game is not in progress");
 		}
-		return TurnOrder.next(currentRound, activeSeat, playerCount, skippedSeats);
+		return TurnOrder.next(currentRound, activeSeat, seatCount, skippedSeats);
 	}
 
 	public void applyTurnAdvance(TurnOrder.Advance advance, Instant now) {

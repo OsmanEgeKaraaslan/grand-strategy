@@ -1,5 +1,7 @@
 package com.reach.strategy.economy.application;
 
+import com.reach.strategy.economy.api.EconomyViews;
+
 import java.util.List;
 import java.util.UUID;
 

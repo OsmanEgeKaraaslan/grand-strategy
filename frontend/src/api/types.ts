@@ -143,9 +143,13 @@ export interface GameState {
   pausedConferenceId?: string | null
   /** Your nation has been eliminated: you can still watch, but give no more orders. */
   youAreEliminated?: boolean
-  players: { seat: number; displayName: string; host: boolean; you: boolean; nationId: string }[]
-  /** seat is null for nations without a human player (NPC-controlled until AI exists). */
-  nations: { id: string; name: string; color: string; seat: number | null; control?: 'HUMAN' | 'NPC'; eliminatedRound?: number | null }[]
+  /** computer: a computer-controlled seat (Phase 11); it plays its turn automatically. */
+  players: { seat: number; displayName: string; host: boolean; you: boolean; nationId: string; computer?: boolean }[]
+  /**
+   * control: HUMAN (a player), AI (a computer seat that plays its own turns, ruleset v7) or NPC (a passive
+   * placeholder in older games, without a seat).
+   */
+  nations: { id: string; name: string; color: string; seat: number | null; control?: 'HUMAN' | 'AI' | 'NPC'; eliminatedRound?: number | null }[]
   provinces: ProvinceState[]
 }
 

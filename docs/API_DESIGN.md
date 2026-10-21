@@ -227,6 +227,13 @@ New stable error codes: `GAME_PAUSED_FOR_CONFERENCE`, `NATION_ELIMINATED`, `NATI
 `ALREADY_DECIDED`, `ATTACHMENT_NOT_ALLOWED`, `BATTALION_ATTACHED`, `BATTALION_NOT_ATTACHED`,
 `ATTACHED_NOT_AT_WAR`.
 
+### 2.4h Computer opponents (Phase 11)
+
+No new endpoints. The game state's `players[]` gain `computer` (computer seats, display name
+"Computer") and `nations[].control` may be `AI`; lobby participants never include computer seats.
+Computers act through the same services as the endpoints (ports in each module's `api`); see
+[AI.md](AI.md).
+
 ### 2.4d Fortifications and sieges (Phase 7 — implemented)
 
 Members of a started game only. No fog of war: every member sees all fortresses and sieges.

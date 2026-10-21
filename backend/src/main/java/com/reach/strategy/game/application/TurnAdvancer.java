@@ -9,6 +9,7 @@ import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.reach.strategy.game.api.ComputerSeats;
 import com.reach.strategy.game.api.VictoryCondition;
 import com.reach.strategy.game.domain.Game;
 import com.reach.strategy.game.domain.GamePlayer;
@@ -18,6 +19,7 @@ import com.reach.strategy.game.rules.TurnOrder;
 import com.reach.strategy.world.api.WorldApi;
 import tools.jackson.databind.json.JsonMapper;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 /**
@@ -33,9 +35,11 @@ class TurnAdvancer {
 	private final GameResultRepository results;
 	private final WorldApi world;
 	private final JsonMapper jsonMapper;
+	private final ApplicationEventPublisher events;
 
 	TurnAdvancer(GamePlayerRepository memberships, RoundProcessor roundProcessor, List<VictoryCondition> victory,
-			GameResultRepository results, WorldApi world, JsonMapper jsonMapper) {
+			GameResultRepository results, WorldApi world, JsonMapper jsonMapper, ApplicationEventPublisher events) {
+		this.events = events;
 		this.memberships = memberships;
 		this.roundProcessor = roundProcessor;
 		this.victory = List.copyOf(victory);
@@ -53,7 +57,8 @@ class TurnAdvancer {
 	 * completes exactly once and the victory condition is asked.
 	 */
 	Advanced advance(Game game, Instant now) {
-		TurnOrder.Advance advance = game.nextTurn(skippedSeats(game));
+		List<GamePlayer> seats = memberships.findByGameIdOrderBySeatOrder(game.id());
+		TurnOrder.Advance advance = game.nextTurn(skippedSeats(game), seats.size());
 		if (advance.roundCompleted()) {
 			roundProcessor.completeRound(game.id(), advance.endedRound(), game.rulesetVersion(), now);
 			Optional<VictoryCondition.Outcome> outcome = victory.isEmpty() ? Optional.empty()
@@ -64,7 +69,14 @@ class TurnAdvancer {
 			}
 		}
 		game.applyTurnAdvance(advance, now);
+		// Delivered after commit: a computer seat may now be on turn (Phase 11).
+		events.publishEvent(new ComputerSeats.TurnPassed(game.id()));
 		return new Advanced(advance, false);
+	}
+
+	/** Announces (after commit) that play may continue, e.g. at a computer seat after a pause. */
+	void passed(Game game) {
+		events.publishEvent(new ComputerSeats.TurnPassed(game.id()));
 	}
 
 	/** Ends the game now if the victory condition decides so outside a round end. */

@@ -96,6 +96,13 @@ public class WorldService implements WorldApi {
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void instantiate(UUID gameId, UUID mapId, Map<UUID, UUID> gamePlayerByNation) {
+		instantiate(gameId, mapId, gamePlayerByNation, java.util.Set.of());
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.MANDATORY)
+	public void instantiate(UUID gameId, UUID mapId, Map<UUID, UUID> gamePlayerByNation,
+			java.util.Set<UUID> computerGamePlayers) {
 		MapDefinition map = template(mapId).definition();
 		Map<UUID, MapDefinition.Nation> nationsById = new HashMap<>();
 		map.nations().forEach(nation -> nationsById.put(nation.id(), nation));
@@ -112,9 +119,11 @@ public class WorldService implements WorldApi {
 		for (MapDefinition.Nation nation : map.nations()) {
 			UUID id = UUID.randomUUID();
 			nationIdByKey.put(nation.key(), id);
-			nations.add(new WorldStateRepository.NationRow(id, gameId, nation.id(), gamePlayerByNation.get(nation.id()),
-					nation.name(), nation.color()));
-			// Nations without a player are NPC-controlled (gamePlayerId null).
+			UUID gamePlayer = gamePlayerByNation.get(nation.id());
+			// Nations without a player are NPC-controlled; computer seats are AI-controlled (Phase 11).
+			String control = gamePlayer == null ? "NPC" : computerGamePlayers.contains(gamePlayer) ? "AI" : "HUMAN";
+			nations.add(new WorldStateRepository.NationRow(id, gameId, nation.id(), gamePlayer, nation.name(),
+					nation.color(), null, control));
 		}
 
 		Map<String, String> owners = map.startingOwners();
@@ -140,7 +149,7 @@ public class WorldService implements WorldApi {
 		List<NationState> nations = worldState.nations(gameId)
 			.stream()
 			.map(row -> new NationState(row.id(), row.nationTemplateId(), row.name(), row.color(), row.gamePlayerId(),
-					row.gamePlayerId() == null ? "NPC" : "HUMAN", row.eliminatedRound()))
+					row.control(), row.eliminatedRound()))
 			.toList();
 		List<ProvinceState> provinces = worldState.provinces(gameId)
 			.stream()

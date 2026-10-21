@@ -19,7 +19,7 @@ public class Player {
 	@Id
 	private UUID id;
 
-	@Column(name = "supabase_user_id", nullable = false, updatable = false)
+	@Column(name = "supabase_user_id", updatable = false)
 	private UUID supabaseUserId;
 
 	@Column(name = "display_name", nullable = false)

@@ -1,5 +1,7 @@
 package com.reach.strategy.diplomacy.application;
 
+import com.reach.strategy.diplomacy.api.DiplomacyViews;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

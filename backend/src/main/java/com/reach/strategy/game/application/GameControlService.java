@@ -45,6 +45,7 @@ class GameControlService implements GameControl {
 			return;
 		}
 		game.resume(conferenceId, now);
+		advancer.passed(game);
 		// The active player may have been eliminated by the treaty: the turn passes on.
 		if (advancer.skippedSeats(game).contains(game.activeSeat())) {
 			advancer.advance(game, now);

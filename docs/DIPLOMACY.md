@@ -250,7 +250,12 @@ All values are PROVISIONAL and versioned.
 - One command `SEND_GOLD`: atomic (both treasuries in one transaction) and idempotent (same key =
   same gift). Public history: `gold_gift` table and event `GOLD_GIFT`; no gold is created or lost.
 
-## 11. Nations without a player (NPC placeholder) — PROVISIONAL (Phase 10A)
+## 11. Nations without a player (NPC placeholder) — PROVISIONAL (Phase 10A; ruleset v6 only)
+
+> **Ruleset v7 (Phase 11)** replaces the placeholder: unchosen nations are played by the computer,
+> which takes part in all diplomacy by the rules of this document — see [AI.md](AI.md) §7. The
+> placeholder below remains for v6 games.
+
 
 On the Grand Campaign map only four nations are playable; every other nation (and every playable
 nation nobody chose) is **controlled by the game**. Until Phase 11 adds an AI, such a nation is a

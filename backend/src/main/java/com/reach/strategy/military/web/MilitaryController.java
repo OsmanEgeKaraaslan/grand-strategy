@@ -17,7 +17,7 @@ import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.military.application.AttachmentService;
 import com.reach.strategy.military.application.BattalionService;
 import com.reach.strategy.military.application.MilitaryService;
-import com.reach.strategy.military.application.MilitaryViews;
+import com.reach.strategy.military.api.MilitaryViews;
 import com.reach.strategy.military.rules.UnitType;
 import com.reach.strategy.platform.web.ApiException;
 

@@ -1,5 +1,7 @@
 package com.reach.strategy.diplomacy.application;
 
+import com.reach.strategy.diplomacy.api.DiplomacyViews;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -7,6 +9,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.reach.strategy.diplomacy.api.ConferenceActivity;
 import com.reach.strategy.diplomacy.domain.CallToArmsRepository;
 import com.reach.strategy.diplomacy.domain.ConferenceRepository;
 import com.reach.strategy.diplomacy.domain.RelationsRepository;
@@ -20,6 +23,7 @@ import com.reach.strategy.world.api.WorldApi;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 /**
@@ -54,12 +58,14 @@ public class ConferenceService {
 	private final WorldApi world;
 	private final ForceWithdrawal withdrawal;
 	private final JsonMapper jsonMapper;
+	private final ApplicationEventPublisher events;
 
 	ConferenceService(GameCommands gameCommands, GameControl gameControl, DiplomacyState state,
 			RelationsRepository relations, TreatyRepository treaties, ConferenceRepository conferences,
 			CallToArmsRepository calls, DiplomacyService diplomacy, PeaceService peace, EliminationService elimination,
 			DiplomacyQueries queries, WorldApi world, ForceWithdrawal withdrawal,
-			JsonMapper jsonMapper) {
+			JsonMapper jsonMapper, ApplicationEventPublisher events) {
+		this.events = events;
 		this.gameCommands = gameCommands;
 		this.gameControl = gameControl;
 		this.state = state;
@@ -81,7 +87,7 @@ public class ConferenceService {
 	/** GENERAL: a war leader asks the other leader. SEPARATE: a non-leader participant asks the opposing leader. */
 	public DiplomacyViews.ConferenceResult request(CurrentPlayer me, UUID gameId, UUID warId, String kind,
 			UUID idempotencyKey) {
-		return gameCommands.executeOutOfTurn(me, gameId, idempotencyKey, "REQUEST_CONFERENCE", new Handler(gameId) {
+		return announce(gameId, gameCommands.executeOutOfTurn(me, gameId, idempotencyKey, "REQUEST_CONFERENCE", new Handler(gameId) {
 
 			@Override
 			public GameCommands.Outcome<DiplomacyViews.ConferenceResult> execute(GameCommands.CommandContext context) {
@@ -127,13 +133,13 @@ public class ConferenceService {
 				return new GameCommands.Outcome<>(result(gameId, requester, id, null, List.of()), id);
 			}
 
-		});
+		}));
 	}
 
 	/** The opposing war leader agrees to talk (normal play pauses) or refuses. */
 	public DiplomacyViews.ConferenceResult answer(CurrentPlayer me, UUID gameId, UUID conferenceId, boolean accept,
 			UUID idempotencyKey) {
-		return gameCommands.executeOutOfTurn(me, gameId, idempotencyKey, "ANSWER_CONFERENCE", new Handler(gameId) {
+		return announce(gameId, gameCommands.executeOutOfTurn(me, gameId, idempotencyKey, "ANSWER_CONFERENCE", new Handler(gameId) {
 
 			@Override
 			public GameCommands.Outcome<DiplomacyViews.ConferenceResult> execute(GameCommands.CommandContext context) {
@@ -161,12 +167,12 @@ public class ConferenceService {
 				return new GameCommands.Outcome<>(result(gameId, nation, conferenceId, null, List.of()), conferenceId);
 			}
 
-		});
+		}));
 	}
 
 	/** Either principal ends the conference without a treaty; play resumes where it stopped. */
 	public DiplomacyViews.ConferenceResult cancel(CurrentPlayer me, UUID gameId, UUID conferenceId, UUID idempotencyKey) {
-		return gameCommands.executeOutOfTurn(me, gameId, idempotencyKey, "CANCEL_CONFERENCE", new Handler(gameId) {
+		return announce(gameId, gameCommands.executeOutOfTurn(me, gameId, idempotencyKey, "CANCEL_CONFERENCE", new Handler(gameId) {
 
 			@Override
 			public GameCommands.Outcome<DiplomacyViews.ConferenceResult> execute(GameCommands.CommandContext context) {
@@ -189,7 +195,7 @@ public class ConferenceService {
 				return new GameCommands.Outcome<>(result(gameId, nation, conferenceId, null, List.of()), conferenceId);
 			}
 
-		});
+		}));
 	}
 
 	private void open(UUID gameId, GameCommands.CommandContext context, ConferenceRepository.ConferenceRow conference) {
@@ -213,7 +219,7 @@ public class ConferenceService {
 	public DiplomacyViews.ConferenceResult submit(CurrentPlayer me, UUID gameId, UUID conferenceId,
 			int expectedRevision, List<DiplomacyViews.Term> terms, UUID idempotencyKey) {
 		List<PeaceTerms.Term> parsed = DiplomacyQueries.toRules(terms);
-		return gameCommands.executeOutOfTurn(me, gameId, idempotencyKey, "SUBMIT_DRAFT", new Handler(gameId) {
+		return announce(gameId, gameCommands.executeOutOfTurn(me, gameId, idempotencyKey, "SUBMIT_DRAFT", new Handler(gameId) {
 
 			@Override
 			public GameCommands.Outcome<DiplomacyViews.ConferenceResult> execute(GameCommands.CommandContext context) {
@@ -231,7 +237,7 @@ public class ConferenceService {
 				return new GameCommands.Outcome<>(result(gameId, nation, conferenceId, null, List.of()), conferenceId);
 			}
 
-		});
+		}));
 	}
 
 	/**
@@ -241,7 +247,7 @@ public class ConferenceService {
 	 */
 	public DiplomacyViews.ConferenceResult decide(CurrentPlayer me, UUID gameId, UUID conferenceId, int revision,
 			boolean approve, UUID idempotencyKey) {
-		return gameCommands.executeOutOfTurn(me, gameId, idempotencyKey, approve ? "APPROVE_DRAFT" : "REJECT_DRAFT",
+		return announce(gameId, gameCommands.executeOutOfTurn(me, gameId, idempotencyKey, approve ? "APPROVE_DRAFT" : "REJECT_DRAFT",
 				new Handler(gameId) {
 
 					@Override
@@ -277,7 +283,7 @@ public class ConferenceService {
 								conferenceId);
 					}
 
-				});
+				}));
 	}
 
 	private void addRevision(UUID gameId, GameCommands.CommandContext context,
@@ -421,6 +427,12 @@ public class ConferenceService {
 				}
 			}
 		}
+	}
+
+	/** Computer participants react after the commit (Phase 11). */
+	private <T> T announce(UUID gameId, T result) {
+		events.publishEvent(new ConferenceActivity(gameId));
+		return result;
 	}
 
 	// --- helpers --------------------------------------------------------------------------------

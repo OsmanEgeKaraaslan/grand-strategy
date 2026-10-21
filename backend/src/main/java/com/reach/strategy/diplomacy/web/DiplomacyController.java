@@ -13,7 +13,7 @@ import com.reach.strategy.diplomacy.application.CallToArmsService;
 import com.reach.strategy.diplomacy.application.ConferenceService;
 import com.reach.strategy.diplomacy.application.DiplomacyQueries;
 import com.reach.strategy.diplomacy.application.DiplomacyService;
-import com.reach.strategy.diplomacy.application.DiplomacyViews;
+import com.reach.strategy.diplomacy.api.DiplomacyViews;
 import com.reach.strategy.diplomacy.application.GiftService;
 import com.reach.strategy.diplomacy.application.PeaceService;
 import com.reach.strategy.diplomacy.rules.Diplomacy;

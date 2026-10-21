@@ -75,7 +75,9 @@ class LobbyServiceTest {
 	@BeforeEach
 	void setUp() {
 		service = new LobbyService(games, memberships, playerDirectory, world, List.of(), "v1",
-				Clock.fixed(NOW, ZoneOffset.UTC));
+				Clock.fixed(NOW, ZoneOffset.UTC), new org.springframework.beans.factory.support.StaticListableBeanFactory()
+					.getBeanProvider(com.reach.strategy.game.api.ComputerOpponents.class),
+				org.mockito.Mockito.mock(com.reach.strategy.identity.api.ComputerPlayers.class));
 		when(world.defaultMapId()).thenReturn(MAP);
 		when(world.mapSummary(MAP)).thenReturn(new WorldApi.MapSummary(MAP, "sundered-reach", "The Sundered Reach", 2, List.of(VARN, OSTRA)));
 		Game.Created created = Game.create("Twin Shores", host.id(), 2, MAP, "v1", InviteCode.generate(), NOW);
@@ -236,7 +238,7 @@ class LobbyServiceTest {
 		assertThat(started.status()).isEqualTo(GameStatus.IN_PROGRESS);
 		assertThat(game.activeSeat()).isZero();
 		verify(world).instantiate(eq(game.id()), eq(MAP), eq(Map.of(VARN.id(), storedMembers.get(0).id(), OSTRA.id(),
-				storedMembers.get(1).id())));
+				storedMembers.get(1).id())), eq(java.util.Set.of()));
 	}
 
 	@Test
@@ -247,7 +249,7 @@ class LobbyServiceTest {
 		LobbyView again = service.start(host, game.id());
 
 		assertThat(again.status()).isEqualTo(GameStatus.IN_PROGRESS);
-		verify(world, times(1)).instantiate(any(), any(), any());
+		verify(world, times(1)).instantiate(any(), any(), any(), any());
 		assertThat(game.turnNumber()).isEqualTo(1);
 	}
 
@@ -259,7 +261,7 @@ class LobbyServiceTest {
 			.isInstanceOfSatisfying(ApiException.class, ex -> assertThat(ex.code()).isEqualTo("NOT_HOST"));
 		assertThatThrownBy(() -> service.start(outsider, game.id()))
 			.isInstanceOfSatisfying(ApiException.class, ex -> assertThat(ex.code()).isEqualTo("GAME_NOT_FOUND"));
-		verify(world, never()).instantiate(any(), any(), any());
+		verify(world, never()).instantiate(any(), any(), any(), any());
 	}
 
 	@Test

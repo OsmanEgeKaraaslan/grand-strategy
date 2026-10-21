@@ -1,5 +1,7 @@
 package com.reach.strategy.diplomacy.application;
 
+import com.reach.strategy.diplomacy.api.DiplomacyViews;
+
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;

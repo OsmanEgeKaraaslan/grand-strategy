@@ -1,5 +1,7 @@
 package com.reach.strategy.diplomacy.application;
 
+import com.reach.strategy.diplomacy.api.DiplomacyViews;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -357,7 +359,7 @@ public class DiplomacyQueries {
 			List<UUID> required = jsonMapper.readValue(current.requiredJson(), new TypeReference<List<UUID>>() {
 			});
 			for (UUID n : required) {
-				boolean npc = ctx.snapshot().nations().stream().anyMatch(x -> x.id().equals(n) && x.npc());
+				boolean npc = ctx.snapshot().nations().stream().anyMatch(x -> x.id().equals(n) && !x.human());
 				approvals.add(new DiplomacyViews.Approval(n, ctx.nameOf(n), npc, decisions.get(n)));
 			}
 			mustDecide = c.active() && required.contains(ctx.viewer()) && !decisions.containsKey(ctx.viewer());
@@ -475,8 +477,13 @@ public class DiplomacyQueries {
 				r.victory().maxRounds(), r.victory().provincePoints(), r.victory().pointsPerThousandPopulation(),
 				r.militaryAccess().normalAlliance(), r.militaryAccess().defensiveAlliance(),
 				r.militaryAccess().coBelligerents(), r.gifts() == null ? null : r.gifts().maxMg(),
-				r.gifts() != null && r.gifts().allowToEnemies(), r.features(), r.victory().pointsPerHundredGold(),
+				r.gifts() != null && r.gifts().allowToEnemies(), features(r.features()), r.victory().pointsPerHundredGold(),
 				r.victory().domination());
+	}
+
+	static DiplomacyViews.Features features(DiplomacyRules.Features f) {
+		return new DiplomacyViews.Features(f.coalitionWarfare(), f.attachments(), f.callsToArms(), f.peaceConferences(),
+				f.separatePeace(), f.capitalsCedable(), f.elimination());
 	}
 
 	// --- terms <-> JSON -------------------------------------------------------------------------

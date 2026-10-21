@@ -38,6 +38,10 @@ public class GamePlayer implements Persistable<UUID> {
 	private UUID nationTemplateId;
 
 	/** Round in which this player's nation was eliminated (Phase 10); it takes no more turns. */
+	/** A computer-controlled seat (Phase 11): its player is a computer account without a login. */
+	@Column(name = "computer", nullable = false, updatable = false)
+	private boolean computer;
+
 	@Column(name = "eliminated_round")
 	private Integer eliminatedRound;
 
@@ -72,6 +76,19 @@ public class GamePlayer implements Persistable<UUID> {
 		membership.seatOrder = seatOrder;
 		membership.joinedAt = now;
 		return membership;
+	}
+
+	/** A computer seat for a nation nobody chose, appended after the human seats at the start. */
+	public static GamePlayer computerSeat(UUID gameId, UUID computerPlayerId, int seatOrder, UUID nationTemplateId,
+			Instant now) {
+		GamePlayer seat = seat(gameId, computerPlayerId, seatOrder, now);
+		seat.computer = true;
+		seat.nationTemplateId = nationTemplateId;
+		return seat;
+	}
+
+	public boolean computer() {
+		return computer;
 	}
 
 	public UUID id() {

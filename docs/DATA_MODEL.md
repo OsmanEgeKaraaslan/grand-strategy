@@ -91,6 +91,12 @@ every province.
 Every new per-game table carries `game_id` with composite foreign keys `(game_id, id)`; applied
 migrations V1–V11 are unchanged.
 
+### 3.0b Phase 11 migration (V15)
+
+| Migration | Changes |
+|---|---|
+| `V15__computer_opponents.sql` | `player.kind` (HUMAN/COMPUTER) with `supabase_user_id` nullable exactly for computer accounts; `game_player.computer`; `game.active_seat` no longer bounded by `max_players` (computer seats follow the human seats); nation `control` gains `AI` (a computer seat has a game_player, NPC has none); `ai_turn` (game, turn number → round, seat, nation, RUNNING/DONE, goal, actions, failures, observations, refused signatures, last error, duration; composite FKs); `ai_decision` (major decisions with reason and details, per game/round/nation) |
+
 ### 3.1 Static world templates (Phase 3)
 
 **map_template**

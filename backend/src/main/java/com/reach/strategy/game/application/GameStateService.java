@@ -60,8 +60,9 @@ public class GameStateService {
 			.collect(Collectors.toMap(WorldApi.NationState::gamePlayerId, Function.identity()));
 
 		List<GameStateView.Player> players = members.stream()
-			.map(member -> new GameStateView.Player(member.seatOrder(), names.getOrDefault(member.playerId(), "Unknown player"),
-					game.isHost(member.playerId()), member == mine, nationByPlayer.get(member.id()).id()))
+			.map(member -> new GameStateView.Player(member.seatOrder(),
+					member.computer() ? "Computer" : names.getOrDefault(member.playerId(), "Unknown player"),
+					game.isHost(member.playerId()), member == mine, nationByPlayer.get(member.id()).id(), member.computer()))
 			.toList();
 		Map<UUID, Integer> seatByGamePlayer = members.stream()
 			.collect(Collectors.toMap(GamePlayer::id, GamePlayer::seatOrder));
@@ -91,7 +92,8 @@ public class GameStateService {
 			int turnNumber, long stateVersion, int yourSeat, boolean yourTurn, List<Player> players, List<Nation> nations,
 			List<Province> provinces, UUID pausedConferenceId, boolean youAreEliminated) {
 
-		public record Player(int seat, String displayName, boolean host, boolean you, UUID nationId) {
+		/** @param computer a computer-controlled seat (Phase 11) */
+		public record Player(int seat, String displayName, boolean host, boolean you, UUID nationId, boolean computer) {
 		}
 
 		/**

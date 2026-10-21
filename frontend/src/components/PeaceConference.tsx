@@ -138,7 +138,7 @@ export function ConferenceCard({
               <li key={a.nationId}>
                 {a.name}
                 {a.nationId === yourNationId ? ' (you)' : ''}
-                {a.npc ? <span className="tag">game-controlled</span> : null}:{' '}
+                {a.npc ? <span className="tag">computer</span> : null}:{' '}
                 <strong>{a.decision ? DECISION_TEXT[a.decision] : 'not yet decided'}</strong>
               </li>
             ))}

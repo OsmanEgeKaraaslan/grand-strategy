@@ -1,5 +1,7 @@
 package com.reach.strategy.research.application;
 
+import com.reach.strategy.research.api.ResearchViews;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;

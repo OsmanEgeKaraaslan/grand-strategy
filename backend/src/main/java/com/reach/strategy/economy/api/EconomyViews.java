@@ -1,4 +1,4 @@
-package com.reach.strategy.economy.application;
+package com.reach.strategy.economy.api;
 
 import java.util.List;
 import java.util.UUID;

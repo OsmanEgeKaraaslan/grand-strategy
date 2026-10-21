@@ -5,3 +5,8 @@ strategy:
     current-version: v5
   world:
     default-map: sundered-reach
+  # Computer turns run in the committing request thread, so tests observe them deterministically;
+  # the periodic recovery sweep is off (tests call the runner directly).
+  ai:
+    execution: inline
+    recovery-enabled: false

@@ -109,7 +109,7 @@ function NationPicker({ lobby }: { lobby: Lobby }) {
       <h2 id="nations-title">Choose your nation</h2>
       <p className="muted">
         Each playable nation can be led by one player. You can change your choice until the game starts; the other
-        nations are controlled by the game.
+        nations are played by the computer.
       </p>
       {chooseNation.error && <Alert>{describeError(chooseNation.error)}</Alert>}
       <ul className="nation-list">
@@ -131,7 +131,7 @@ function NationPicker({ lobby }: { lobby: Lobby }) {
                   <span className="muted">
                     {nation.provinceCount} provinces · {TIER_LABELS[nation.tier] ?? nation.tier} ·{' '}
                     {!playable
-                      ? 'controlled by the game'
+                      ? 'played by the computer'
                       : nation.chosenByYou
                       ? 'your nation'
                       : takenByOther

@@ -440,10 +440,31 @@ hardens, it does not introduce security for the first time.
 - **Not done:** AI (Phase 11), offensive calls to arms, neutral land (Q-W4), war-score costs of terms,
   a Playwright session, balancing of the new map (Q-W5).
 
-## Phase 11 — Enemy AI
+## Phase 11 — Autonomous Nation AI — **implemented (2026-10-20)**
 
-- Computer-controlled nations that take their sequential turn through the same command pipeline
-  as players (no special access to state).
+Full description: [AI.md](AI.md).
+
+- **11A — execution foundation:** computer seats after the human seats for every unchosen nation
+  (ruleset v7), computer accounts without a login, ports onto every module's services, a bounded
+  observe → plan → act loop per turn with progress committed together with each command
+  (`ai_turn`), restart recovery, no duplicate processing, decision log (`ai_decision`), inline /
+  async / manual execution.
+- **11B — economy and military:** goals and personalities, payback-ranked construction, research and
+  doctrines, recruitment within an upkeep share, reinforcement, BFS/Dijkstra over real access,
+  estimated-odds attacks, captures, sieges, capital garrisons and retreats.
+- **11C — diplomacy:** war targets with staging, alliance offers and answers, calls to arms, peace
+  requests, terms and revision-bound approvals (including separate peace and elimination), gifts;
+  computer-to-computer conferences conclude without humans.
+- **Defect fixed on the way:** a battalion wiped out in battle was flushed with zero manpower before
+  its deletion (violating `battalion_manpower_ck`); it is now deleted first.
+- **Tests:** pure planner tests (goals, spending, research, recruitment, paths, attacks, sieges,
+  garrisons, war, alliances, calls, peace, terms, elimination, reproducibility); PostgreSQL ITs
+  (seats and turns, recovery, concurrency, actor authority and limits, development, combat against
+  a human, alliance and call answers, revision judgement, elimination, computer-to-computer treaty
+  and separate peace) and two campaign scenarios (A: 2 humans and 8 computers for 30 rounds to the
+  result; B: a human–computer coalition war to a treaty); frontend tests.
+- **Not done:** difficulty levels, multi-turn campaign planning, computers attaching their own
+  troops, opinion/reputation, a human playtest of balance and pacing (Q-AI1).
 
 ## Phase 12 — Accounts & Player Profiles
 

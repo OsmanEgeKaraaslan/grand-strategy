@@ -1,4 +1,4 @@
-package com.reach.strategy.military.application;
+package com.reach.strategy.military.api;
 
 import java.math.BigDecimal;
 import java.time.Instant;

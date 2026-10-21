@@ -79,7 +79,7 @@ describe('DashboardPage', () => {
 
     const map = await screen.findByRole('combobox', { name: /^Map/ })
     expect(map).toHaveValue('grand-campaign')
-    expect(screen.getByText(/controlled by the game/)).toBeInTheDocument()
+    expect(screen.getByText(/played by the computer/)).toBeInTheDocument()
     // A two-player map offers only two players.
     await userEvent.selectOptions(map, 'sundered-reach')
     expect(screen.getByRole('combobox', { name: /Human players/ })).toHaveValue('2')

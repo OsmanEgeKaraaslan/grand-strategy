@@ -237,8 +237,9 @@ function TurnBar({ state }: { state: GameState }) {
         ) : (
           <span className="turn-bar__waiting">
             <span className="pulse" aria-hidden="true" />
-            Waiting for {active?.displayName ?? 'the other player'}
-            {activeNation ? ` (${activeNation.name})` : ''}…
+            {active?.computer
+              ? `${activeNation?.name ?? 'A computer nation'} (computer) is playing its turn…`
+              : `Waiting for ${active?.displayName ?? 'the other player'}${activeNation ? ` (${activeNation.name})` : ''}…`}
           </span>
         )}
       </div>
@@ -404,6 +405,7 @@ function PlayersCard({ state }: { state: GameState }) {
               <span className="seat__name">
                 {player.displayName}
                 {player.you && <span className="tag tag--you">You</span>}
+                {player.computer && <span className="tag">Computer</span>}
                 {active && <span className="tag tag--active">Active</span>}
                 {nation?.eliminatedRound != null && <span className="tag tag--warning">Eliminated</span>}
                 <span className="seat__nation muted">{nation?.name}</span>

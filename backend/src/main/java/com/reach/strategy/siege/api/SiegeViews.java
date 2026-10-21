@@ -1,4 +1,4 @@
-package com.reach.strategy.siege.application;
+package com.reach.strategy.siege.api;
 
 import java.util.List;
 import java.util.UUID;

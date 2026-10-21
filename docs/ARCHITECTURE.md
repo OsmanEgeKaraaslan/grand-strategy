@@ -328,3 +328,20 @@ the image without rolling back the schema.
   places to replace. No strategic AI exists yet.
 - No new infrastructure or dependency; the module boundary test (cycles, `api`-only access, pure
   rules) covers the new code.
+
+## 11. Phase 11 additions — computer opponents
+
+- New top module `ai` (see [AI.md](AI.md)): pure planners in `ai.rules`, the turn runner,
+  negotiator, observer and executor in `ai.application`, `ai_turn` / `ai_decision` repositories in
+  `ai.domain`. Only `ai` may depend on `diplomacy`; no module depends on `ai` (boundary test).
+- Every feature module exposes a thin port in its `api` package (`EconomyActions`,
+  `MilitaryActions`, `SiegeActions`, `ResearchActions`, `DiplomacyActions`; `game.api.TurnControl`)
+  implemented by an adapter that delegates to the existing application services; the read models
+  (`…Views`) moved from `application` to `api` unchanged (same JSON).
+- `identity.api.ComputerPlayers` creates computer accounts (no Supabase id) and hands out their
+  actors; no `web` package may use it (boundary test). `game.api.ComputerSeats` lists seats and the
+  computer whose turn it is; `ComputerSeats.TurnPassed` and `diplomacy.api.ConferenceActivity` are
+  published inside command transactions and handled after commit.
+- Computer commands are ordinary commands of the computer seat's account: same lock, membership,
+  active-seat, idempotency and recording. No new infrastructure: the worker pool and the recovery
+  sweep live inside the monolith.

@@ -14,7 +14,7 @@ import jakarta.validation.constraints.Size;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.platform.web.ApiException;
 import com.reach.strategy.research.application.ResearchService;
-import com.reach.strategy.research.application.ResearchViews;
+import com.reach.strategy.research.api.ResearchViews;
 import com.reach.strategy.research.rules.InstitutionType;
 import com.reach.strategy.research.rules.ResearchRules;
 

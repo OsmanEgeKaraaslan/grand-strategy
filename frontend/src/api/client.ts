@@ -519,7 +519,7 @@ export function describeError(error: unknown): string {
       case 'MAP_NOT_FOUND':
         return 'That map does not exist.'
       case 'NATION_NOT_PLAYABLE':
-        return 'That nation is controlled by the game; choose one of the playable nations.'
+        return 'That nation is played by the computer; choose one of the playable nations.'
       case 'INVALID_GIFT_AMOUNT':
         return 'Choose an amount above zero and within the gift limit.'
       case 'GIFT_TO_ENEMY':

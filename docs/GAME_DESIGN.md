@@ -462,3 +462,10 @@ can be added (all state reads go through a viewer-aware query service).
 - **Coalitions**: gold gifts, calls to arms, coalition battles, attached battalions, peace conferences
   with revisions and approvals, separate peace, elimination and domination — rules in
   DIPLOMACY §10–16 and COMBAT_AND_SIEGE §3a.
+
+## 16. Phase 11 — computer opponents (ruleset v7) — PROVISIONAL
+
+Every nation no human chooses is played by the computer, by exactly the rules and information a
+human has (no fog of war exists; no bonus of any kind). Computers develop, arm, research, ally,
+fight, besiege, negotiate and can win by score or domination. One difficulty; personalities
+(expansionist, economic, defensive, diplomatic) only shift weights. Details: [AI.md](AI.md).

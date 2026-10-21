@@ -37,6 +37,9 @@ public interface WorldApi {
 	 */
 	void instantiate(UUID gameId, UUID mapId, Map<UUID, UUID> gamePlayerByNation);
 
+	/** As above; the nations of {@code computerGamePlayers} are AI-controlled computer seats (Phase 11). */
+	void instantiate(UUID gameId, UUID mapId, Map<UUID, UUID> gamePlayerByNation, java.util.Set<UUID> computerGamePlayers);
+
 	/** Current world state of a started game. */
 	WorldSnapshot snapshot(UUID gameId);
 
@@ -114,8 +117,18 @@ public interface WorldApi {
 			return eliminatedRound != null;
 		}
 
+		/** A passive game-controlled nation without a seat (Phase 10 placeholder). */
 		public boolean npc() {
 			return gamePlayerId == null;
+		}
+
+		/** A computer seat (Phase 11): plays its own turns through the command pipeline. */
+		public boolean computer() {
+			return "AI".equals(control);
+		}
+
+		public boolean human() {
+			return "HUMAN".equals(control);
 		}
 
 	}

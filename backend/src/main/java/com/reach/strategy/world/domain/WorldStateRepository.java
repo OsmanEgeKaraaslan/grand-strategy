@@ -20,12 +20,15 @@ public class WorldStateRepository {
 		this.jdbc = jdbc;
 	}
 
-	/** @param gamePlayerId null for an NPC-controlled nation */
+	/**
+	 * @param gamePlayerId null for an NPC-controlled nation
+	 * @param control HUMAN, AI (a computer seat, Phase 11) or NPC
+	 */
 	public record NationRow(UUID id, UUID gameId, UUID nationTemplateId, UUID gamePlayerId, String name, String color,
-			Integer eliminatedRound) {
+			Integer eliminatedRound, String control) {
 
 		public NationRow(UUID id, UUID gameId, UUID nationTemplateId, UUID gamePlayerId, String name, String color) {
-			this(id, gameId, nationTemplateId, gamePlayerId, name, color, null);
+			this(id, gameId, nationTemplateId, gamePlayerId, name, color, null, gamePlayerId == null ? "NPC" : "HUMAN");
 		}
 
 	}
@@ -57,7 +60,7 @@ public class WorldStateRepository {
 			ps.setObject(4, n.gamePlayerId(), java.sql.Types.OTHER);
 			ps.setString(5, n.name());
 			ps.setString(6, n.color());
-			ps.setString(7, n.gamePlayerId() == null ? "NPC" : "HUMAN");
+			ps.setString(7, n.control());
 		});
 	}
 
@@ -89,11 +92,12 @@ public class WorldStateRepository {
 
 	public List<NationRow> nations(UUID gameId) {
 		return jdbc.query("""
-				SELECT id, game_id, nation_template_id, game_player_id, name, color, eliminated_round
+				SELECT id, game_id, nation_template_id, game_player_id, name, color, eliminated_round, control
 				FROM game.nation WHERE game_id = ? ORDER BY name
 				""", (rs, row) -> new NationRow(rs.getObject("id", UUID.class), rs.getObject("game_id", UUID.class),
 				rs.getObject("nation_template_id", UUID.class), rs.getObject("game_player_id", UUID.class),
-				rs.getString("name"), rs.getString("color"), (Integer) rs.getObject("eliminated_round")), gameId);
+				rs.getString("name"), rs.getString("color"), (Integer) rs.getObject("eliminated_round"),
+				rs.getString("control")), gameId);
 	}
 
 	public void markEliminated(UUID gameId, UUID nationId, int round) {

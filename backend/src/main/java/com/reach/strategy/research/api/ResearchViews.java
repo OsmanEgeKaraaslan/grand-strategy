@@ -1,4 +1,4 @@
-package com.reach.strategy.research.application;
+package com.reach.strategy.research.api;
 
 import java.util.List;
 import java.util.Map;

@@ -282,7 +282,7 @@ class DiplomacyHooks {
 			if (dominator.isPresent() && picture.get().rules().victory().domination()) {
 				return Optional.of(outcome(gameId, picture.get(), currentRound, "DOMINATION", dominator.get()));
 			}
-			boolean humansLeft = world.snapshot(gameId).nations().stream().anyMatch(n -> !n.npc() && !n.eliminated());
+			boolean humansLeft = world.snapshot(gameId).nations().stream().anyMatch(n -> n.human() && !n.eliminated());
 			if (!humansLeft) {
 				return Optional.of(outcome(gameId, picture.get(), currentRound, "NO_HUMAN_PLAYERS", null));
 			}

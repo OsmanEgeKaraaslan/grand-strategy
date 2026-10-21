@@ -64,7 +64,7 @@ class FailureRollbackIT {
 		doAnswer(invocation -> {
 			invocation.callRealMethod();
 			throw new IllegalStateException("simulated failure after the world rows were written");
-		}).when(spyBehind(world)).instantiate(any(), any(), any());
+		}).when(spyBehind(world)).instantiate(any(), any(), any(), any());
 
 		MvcResult failed = api.start(lobby.host(), lobby.gameId());
 

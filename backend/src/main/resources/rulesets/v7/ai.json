@@ -1,0 +1,80 @@
+{
+  "version": "v7",
+  "budget": {
+    "maxActionsPerTurn": 40,
+    "maxObservationsPerTurn": 6,
+    "maxFailuresPerTurn": 10,
+    "maxConferencePasses": 12,
+    "maxRevisionsPerConference": 3
+  },
+  "economy": {
+    "reserveMg": 15000,
+    "workshopPaybackRounds": 10,
+    "upgradePaybackRounds": 12,
+    "repairPaybackRounds": 15,
+    "minRoundsLeftToInvest": 4,
+    "institutionFirstRound": 2,
+    "institutionMinNetIncomeMg": 8000,
+    "maxInstitutions": 2,
+    "fortressMinTreasuryMg": 60000,
+    "maxConstructionsPerTurn": 3
+  },
+  "military": {
+    "unitStrength": { "INFANTRY": 100, "CAVALRY": 125, "ARTILLERY": 85 },
+    "upkeepShareBps": { "DEVELOP": 3000, "BUILDUP": 5500, "EXPAND": 5500, "DEFEND": 7500, "RECOVER": 2000 },
+    "minimumBattalions": 3,
+    "maxRecruitsPerTurn": 3,
+    "attackRatioBps": 13000,
+    "riskyAttackRatioBps": 10500,
+    "reinforceMinMissing": 200,
+    "threatRadius": 2,
+    "artilleryShareWhenFortifiedBps": 2500,
+    "cavalryShareBps": 2000,
+    "objectiveCapitalBonus": 3,
+    "objectivePopulationPerPoint": 5000
+  },
+  "diplomacy": {
+    "firstWarRound": 3,
+    "noNewWarsInLastRounds": 6,
+    "warRatioBps": 14000,
+    "maxWars": 1,
+    "allyHelpExpectationBps": 5000,
+    "threatRatioBps": 12000,
+    "maxAlliances": 2,
+    "allianceRetryRounds": 6,
+    "honourRatioBps": 7000,
+    "peaceAfterRounds": 8,
+    "losingScore": -12,
+    "winningScore": 15,
+    "favouredRatioBps": 13000,
+    "endgameRounds": 3,
+    "provinceValueMg": 40000,
+    "populationValueMgPerThousand": 2000,
+    "tributeValueMg": 30000,
+    "maxDemandedProvinces": 3,
+    "giftMinTreasuryMg": 150000,
+    "giftShareBps": 2000,
+    "giftEveryRounds": 6
+  },
+  "personalities": {
+    "EXPANSIONIST": { "aggressionBps": 3000, "economyBps": -1000, "defenseBps": 0, "diplomacyBps": -1000, "institutions": ["MILITARY_ACADEMY", "BARRACKS", "UNIVERSITY"] },
+    "ECONOMIC": { "aggressionBps": -1500, "economyBps": 3000, "defenseBps": 0, "diplomacyBps": 1000, "institutions": ["UNIVERSITY", "MILITARY_ACADEMY", "BARRACKS"] },
+    "DEFENSIVE": { "aggressionBps": -2500, "economyBps": 1000, "defenseBps": 3000, "diplomacyBps": 1000, "institutions": ["MILITARY_ACADEMY", "UNIVERSITY", "BARRACKS"] },
+    "DIPLOMATIC": { "aggressionBps": -1000, "economyBps": 1000, "defenseBps": 0, "diplomacyBps": 3000, "institutions": ["UNIVERSITY", "BARRACKS", "MILITARY_ACADEMY"] }
+  },
+  "nationPersonalities": {
+    "castavar": "EXPANSIONIST",
+    "nordmark": "DEFENSIVE",
+    "vostrava": "EXPANSIONIST",
+    "dravonia": "DIPLOMATIC",
+    "aurelia": "EXPANSIONIST",
+    "serenna": "ECONOMIC",
+    "karpathia": "DEFENSIVE",
+    "frisia": "ECONOMIC",
+    "helvaria": "DEFENSIVE",
+    "aestia": "DIPLOMATIC",
+    "varn": "EXPANSIONIST",
+    "ostra": "DEFENSIVE"
+  },
+  "defaultPersonality": "ECONOMIC"
+}

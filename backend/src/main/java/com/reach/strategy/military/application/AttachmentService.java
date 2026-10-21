@@ -1,5 +1,7 @@
 package com.reach.strategy.military.application;
 
+import com.reach.strategy.military.api.MilitaryViews;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;

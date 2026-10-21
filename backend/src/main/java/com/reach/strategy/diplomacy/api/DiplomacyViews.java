@@ -1,11 +1,10 @@
-package com.reach.strategy.diplomacy.application;
+package com.reach.strategy.diplomacy.api;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import com.reach.strategy.diplomacy.rules.DiplomacyRules;
 
 /**
  * Read models of diplomacy. Wars, alliances, treaties, tributes and the event history are public
@@ -40,7 +39,12 @@ public final class DiplomacyViews {
 			int populationMinResidual, long reparationsMaxMg, int maxScore, int victoryMaxRounds, int victoryProvincePoints,
 			int victoryPointsPerThousandPopulation, boolean normalAllianceGrantsAccess,
 			boolean defensiveAllianceGrantsAccess, boolean coBelligerentAccess, Long giftMaxMg, boolean giftsToEnemies,
-			DiplomacyRules.Features features, int victoryPointsPerHundredGold, boolean domination) {
+			Features features, int victoryPointsPerHundredGold, boolean domination) {
+	}
+
+	/** The ruleset's Phase 10 switches (JSON shape unchanged). */
+	public record Features(boolean coalitionWarfare, boolean attachments, boolean callsToArms, boolean peaceConferences,
+			boolean separatePeace, boolean capitalsCedable, boolean elimination) {
 	}
 
 	/**

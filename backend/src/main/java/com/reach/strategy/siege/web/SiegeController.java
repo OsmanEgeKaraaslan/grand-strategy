@@ -13,7 +13,7 @@ import jakarta.validation.constraints.Size;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.platform.web.ApiException;
 import com.reach.strategy.siege.application.SiegeService;
-import com.reach.strategy.siege.application.SiegeViews;
+import com.reach.strategy.siege.api.SiegeViews;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

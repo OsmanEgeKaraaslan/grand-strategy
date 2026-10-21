@@ -2,11 +2,16 @@ package com.reach.strategy.game.application;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.reach.strategy.game.api.ComputerOpponents;
 import com.reach.strategy.game.api.GameStartInitializer;
 import com.reach.strategy.game.domain.Game;
 import com.reach.strategy.game.domain.GameFullException;
@@ -15,11 +20,13 @@ import com.reach.strategy.game.domain.GamePlayerRepository;
 import com.reach.strategy.game.domain.GameRepository;
 import com.reach.strategy.game.domain.GameStatus;
 import com.reach.strategy.game.domain.InviteCode;
+import com.reach.strategy.identity.api.ComputerPlayers;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.identity.api.PlayerDirectory;
 import com.reach.strategy.platform.web.ApiException;
 import com.reach.strategy.world.api.WorldApi;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -43,10 +50,15 @@ public class LobbyService {
 	private final List<GameStartInitializer> startInitializers;
 	private final String currentRulesetVersion;
 	private final Clock clock;
+	private final ObjectProvider<ComputerOpponents> computerOpponents;
+	private final ComputerPlayers computerPlayers;
 
 	LobbyService(GameRepository games, GamePlayerRepository memberships, PlayerDirectory playerDirectory, WorldApi world,
 			List<GameStartInitializer> startInitializers,
-			@Value("${strategy.ruleset.current-version}") String currentRulesetVersion, Clock clock) {
+			@Value("${strategy.ruleset.current-version}") String currentRulesetVersion, Clock clock,
+			ObjectProvider<ComputerOpponents> computerOpponents, ComputerPlayers computerPlayers) {
+		this.computerOpponents = computerOpponents;
+		this.computerPlayers = computerPlayers;
 		this.games = games;
 		this.memberships = memberships;
 		this.playerDirectory = playerDirectory;
@@ -188,9 +200,29 @@ public class LobbyService {
 			throw new ApiException(HttpStatus.CONFLICT, "NATIONS_NOT_SELECTED",
 					"Every player must choose a different nation first.");
 		}
-		Map<UUID, UUID> gamePlayerByNation = members.stream()
+		List<GamePlayer> seats = new ArrayList<>(members);
+		Set<UUID> computerSeats = new HashSet<>();
+		ComputerOpponents opponents = computerOpponents.getIfAvailable();
+		if (opponents != null && opponents.enabled(game.rulesetVersion())) {
+			// Phase 11: every nation nobody chose gets a computer seat after the human seats, in key order.
+			Set<UUID> chosen = members.stream().map(GamePlayer::nationTemplateId).collect(Collectors.toSet());
+			int seat = members.size();
+			for (WorldApi.NationOption nation : map.nations()
+				.stream()
+				.sorted(Comparator.comparing(WorldApi.NationOption::key))
+				.toList()) {
+				if (!chosen.contains(nation.id())) {
+					GamePlayer computer = GamePlayer.computerSeat(game.id(), computerPlayers.create(), seat++, nation.id(),
+							clock.instant());
+					memberships.saveAndFlush(computer);
+					seats.add(computer);
+					computerSeats.add(computer.id());
+				}
+			}
+		}
+		Map<UUID, UUID> gamePlayerByNation = seats.stream()
 			.collect(Collectors.toMap(GamePlayer::nationTemplateId, GamePlayer::id));
-		world.instantiate(game.id(), game.mapTemplateId(), gamePlayerByNation);
+		world.instantiate(game.id(), game.mapTemplateId(), gamePlayerByNation, computerSeats);
 		// e.g. treasuries and starting workshops; the game keeps the ruleset it was created with.
 		startInitializers.forEach(initializer -> initializer.initialize(game.id(), game.mapTemplateId(), game.rulesetVersion()));
 		game.start(clock.instant());
@@ -225,8 +257,10 @@ public class LobbyService {
 	}
 
 	private LobbyView view(Game game, List<GamePlayer> members, CurrentPlayer me, WorldApi.MapSummary map) {
-		Map<UUID, String> names = playerDirectory.displayNames(members.stream().map(GamePlayer::playerId).toList());
-		return LobbyView.of(game, members, names, me.id(), map);
+		// Computer seats are not lobby participants.
+		List<GamePlayer> humans = members.stream().filter(member -> !member.computer()).toList();
+		Map<UUID, String> names = playerDirectory.displayNames(humans.stream().map(GamePlayer::playerId).toList());
+		return LobbyView.of(game, humans, names, me.id(), map);
 	}
 
 }

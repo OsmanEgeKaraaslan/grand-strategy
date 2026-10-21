@@ -158,7 +158,7 @@ describe('Larger maps', () => {
   })
 })
 
-describe('Lobby with game-controlled nations', () => {
+describe('Lobby with computer nations', () => {
   it('only offers the playable nations', async () => {
     const lobby: Lobby = lobbyFixture({
       maxPlayers: 3,
@@ -176,9 +176,36 @@ describe('Lobby with game-controlled nations', () => {
 
     const aurelia = await screen.findByRole('button', { name: /Aurelian Empire/ })
     expect(aurelia).toBeDisabled()
-    expect(aurelia).toHaveTextContent('12 provinces · major realm · controlled by the game')
+    expect(aurelia).toHaveTextContent('12 provinces · major realm · played by the computer')
     expect(screen.getByRole('button', { name: /Kingdom of Varn/ })).toBeEnabled()
     expect(screen.getByRole('button', { name: /Kingdom of Varn/ })).toHaveTextContent('balanced power')
     expect(screen.getAllByText('Open slot — waiting for a player')).toHaveLength(2)
+  })
+})
+
+describe('Computer seats', () => {
+  it('shows computer seats and that the computer is playing its turn', async () => {
+    renderGame({
+      getGameState: vi.fn().mockResolvedValue(
+        gameStateFixture({
+          activeSeat: 2,
+          yourTurn: false,
+          players: [
+            { seat: 0, displayName: 'Aldric', host: true, you: true, nationId: VARN },
+            { seat: 1, displayName: 'Bryn', host: false, you: false, nationId: OSTRA },
+            { seat: 2, displayName: 'Computer', host: false, you: false, nationId: NPC, computer: true },
+          ],
+          nations: [
+            { id: VARN, name: 'Kingdom of Varn', color: '#3f6fb5', seat: 0, control: 'HUMAN', eliminatedRound: null },
+            { id: OSTRA, name: 'Ostran Confederacy', color: '#b5503a', seat: 1, control: 'HUMAN', eliminatedRound: null },
+            { id: NPC, name: 'Aurelian Empire', color: '#5b6fb8', seat: 2, control: 'AI', eliminatedRound: null },
+          ],
+        }),
+      ),
+    })
+    expect(await screen.findByText('Aurelian Empire (computer) is playing its turn…')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'End turn' })).not.toBeInTheDocument()
+    const seats = screen.getByRole('region', { name: 'Players' })
+    expect(within(seats).getByText('Computer', { selector: '.tag' })).toBeInTheDocument()
   })
 })

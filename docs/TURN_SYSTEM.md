@@ -357,6 +357,19 @@ an equality check, and neither value is touched by regrouping armies.
   transaction stores the result exactly once and sets the game `FINISHED` (`GameControl.finishIfDecided`).
 - **Movement eligibility** in v6 is per global round (COMBAT_AND_SIEGE §3a).
 
+## 9c. Computer seats (Phase 11, ruleset v7)
+
+- Every nation nobody chose holds a seat after the human seats (nation-key order). The turn order
+  is all seats; computers play once per round after the humans; the round ends after the last
+  seat and is processed once, for every nation alike.
+- When the turn passes to a computer seat, the computer plays it automatically after the commit and
+  ends it with the normal end-turn command (expected turn number, idempotency key). Humans see
+  "<nation> (computer) is playing its turn"; they cannot act for it.
+- Each computer action commits together with the turn's action counter (`ai_turn`), so an
+  interrupted computer turn resumes from the last committed action after a restart (a periodic
+  sweep finds such games). A conference pause stops a computer turn; it resumes when the pause ends.
+- Eliminated computer seats are skipped like eliminated humans.
+
 ## 10. Testing the turn system
 
 | Test | Kind |

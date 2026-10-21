@@ -1,5 +1,7 @@
 package com.reach.strategy.siege.application;
 
+import com.reach.strategy.siege.api.SiegeViews;
+
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;

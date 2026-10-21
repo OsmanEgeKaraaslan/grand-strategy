@@ -1,5 +1,7 @@
 package com.reach.strategy.military.application;
 
+import com.reach.strategy.military.api.MilitaryViews;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -626,16 +628,18 @@ public class MilitaryService {
 		List<Battalion> alive = new ArrayList<>();
 		for (Battalion battalion : side) {
 			int losses = result.losses().getOrDefault(battalion.id(), 0);
-			if (battalion.suffer(losses)) {
-				cohorts.suffered(battalion, losses);
-				alive.add(battalion);
-				fate.put(battalion.id(), "SURVIVED");
-			}
-			else {
+			if (losses >= battalion.manpower()) {
+				// Wiped out: delete it with its cohorts before its manpower would reach zero — a flush of a
+				// zero-manpower row violates battalion_manpower_ck (defect found in Phase 11).
 				fate.put(battalion.id(), "DESTROYED");
 				cohorts.removed(battalion);
 				battalions.delete(battalion);
+				continue;
 			}
+			battalion.suffer(losses);
+			cohorts.suffered(battalion, losses);
+			alive.add(battalion);
+			fate.put(battalion.id(), "SURVIVED");
 		}
 		return alive;
 	}

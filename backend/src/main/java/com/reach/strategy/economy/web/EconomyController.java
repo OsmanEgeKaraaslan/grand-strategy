@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 
 import com.reach.strategy.economy.application.EconomyService;
-import com.reach.strategy.economy.application.EconomyViews;
+import com.reach.strategy.economy.api.EconomyViews;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.platform.web.ApiException;
 

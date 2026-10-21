@@ -28,7 +28,8 @@ The project has two equal goals:
 | 8 — Technology, research, doctrines, growth | Implemented: Military Academy, University and Barracks producing national research points, military and civilian technology levels, doctrines (mountain, river, siege, logistics) that change real combat, siege and upkeep calculations, Tier 1 → 2 workshop upgrades, 0.5% population growth. All backend (unit + PostgreSQL) and frontend tests pass locally |
 | **9 — Diplomacy, war, peace, victory** | **Implemented**: peace by default, war declarations that gate movement, battles, occupation and sieges, normal alliances and defensive pacts, server-side war score, peace proposals settled atomically (provinces, reparations, ten-round tribute, population transfers), truce and withdrawal, round-30 match completion with stored results. All backend (unit + PostgreSQL) and frontend tests pass locally |
 | **10 — World expansion, N-faction multiplayer, coalitions** | **Implemented**: Grand Campaign map (72 provinces, 10 factions), 2–4 human players with passive game-controlled nations, starting values per tier, gold gifts, defensive calls to arms, coalition battles, attached battalions, peace conferences with revisions and approvals that pause the game, separate peace, elimination and domination (ruleset v6). All backend (unit + PostgreSQL) and frontend tests pass locally |
-| Your manual playtest | Next: play a Grand Campaign game (see “Manual multiplayer test” below). Phase 11 (AI) is not started |
+| **11 — Autonomous nation AI** | **Implemented**: every nation nobody chooses is played by the computer (ruleset v7) — it builds, recruits, researches, moves, fights, besieges, allies, answers calls, negotiates and concludes peace through the same rules and command pipeline as players ([docs/AI.md](docs/AI.md)). All backend (unit + PostgreSQL) and frontend tests pass locally |
+| Your manual playtest | Next: play a Grand Campaign game against the computer (see “Manual test with computer opponents” below). Phase 12 is not started |
 
 Playable so far: create a lobby, invite a rival, choose nations, start, take turns on the map, earn gold and build workshops, recruit, reinforce and disband battalions, move them, fight battles, occupy open provinces, besiege fortresses and repair the damage, build research institutions, unlock technology and doctrines, upgrade workshops to Tier 2 and watch cities grow. Declare war, form alliances, negotiate peace with territory, gold, tribute and people, and play a complete game to its round-30 result. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -135,6 +136,31 @@ guest, then round 2 begins. Changes appear on the other screen within ~3 seconds
 Economy check: click one of your provinces to see its farmers, workshop workers and income, order
 a Tier 1 workshop (40 gold) on your turn, and end the round — your treasury grows by the projected
 income and the workshop becomes active, producing from the following round.
+
+### Manual test with computer opponents (Phase 11)
+
+New games use ruleset v7: every nation nobody chooses is played by the computer. Two browser windows
+(normal and private), two accounts.
+
+1. Create a game (map *Grand Campaign*, *2 human players*), join, choose e.g. Castavar and Nordmark,
+   start. The *Players* card lists eight seats tagged *Computer*.
+2. End both human turns. The turn bar shows "<nation> (computer) is playing its turn…" for each
+   computer in turn; a round of eight computers takes a few seconds (backend log lines
+   `Computer <nation> round <n>: <action> — <reason>`; table `game.ai_turn` has the duration of
+   every computer turn, `game.ai_decision` the reason of every major decision).
+3. **Development:** after a few rounds the map's cities of computer nations show new workshops,
+   battalions appear and grow; the diplomacy history shows their alliances.
+4. **Small nations expanding / large powers threatening:** from round 3 computers declare wars on
+   weaker neighbours (Aurelia often attacks Frisia); watch occupation colours, battle reports and,
+   later, peace conferences between computers that pause the game briefly and end in cessions.
+5. **War against you:** keep your army small and a computer neighbour will declare war, march to
+   your border, attack your weak stacks and besiege your fortresses; recruit and garrison to deter it.
+6. **Coalitions:** offer a defensive pact to a computer neighbour (it answers on its turn), call it to
+   arms when attacked, and see whether it honours or declines (which ends the alliance).
+7. **Negotiation:** ask a computer enemy for peace; a clearly stronger one refuses while the war is
+   young. In a conference it drafts demands, judges every revision you submit (approve / reject /
+   counter-draft) and never approves an older revision.
+8. **Performance:** note how long the computers take per round on your machine.
 
 ### Manual multiplayer test (Grand Campaign, Phase 10)
 

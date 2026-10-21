@@ -83,7 +83,13 @@ class ModuleBoundariesTest {
 			}
 		}
 		assertThat(cycles).as("modules on a dependency cycle, graph " + uses).isEmpty();
-		uses.forEach((module, targets) -> assertThat(targets).as(module).doesNotContain("diplomacy"));
+		// Diplomacy sits on top of the game modules; only the computer opponent (Phase 11) uses it.
+		uses.forEach((module, targets) -> {
+			if (!module.equals("ai")) {
+				assertThat(targets).as(module).doesNotContain("diplomacy");
+			}
+		});
+		uses.forEach((module, targets) -> assertThat(targets).as(module).doesNotContain("ai"));
 	}
 
 	private static boolean reaches(Map<String, Set<String>> uses, String from, String goal, Set<String> seen) {
@@ -111,6 +117,25 @@ class ModuleBoundariesTest {
 				Matcher matcher = forbidden.matcher(Files.readString(file));
 				if (matcher.find()) {
 					violations.add(MAIN_SOURCES.relativize(file) + " imports " + matcher.group(1));
+				}
+			}
+		}
+		assertThat(violations).isEmpty();
+	}
+
+	/**
+	 * Computer accounts are only ever acted for by the in-process computer opponent: no web layer may
+	 * obtain a computer actor (Phase 11, docs/AI.md §3).
+	 */
+	@Test
+	void noWebLayerCanActForAComputer() throws IOException {
+		List<String> violations = new ArrayList<>();
+		try (Stream<Path> files = Files.walk(MAIN_SOURCES)) {
+			for (Path file : files.filter(path -> path.toString().endsWith(".java"))
+				.filter(path -> path.getParent().getFileName().toString().equals("web"))
+				.toList()) {
+				if (Files.readString(file).contains("ComputerPlayers")) {
+					violations.add(MAIN_SOURCES.relativize(file).toString());
 				}
 			}
 		}
