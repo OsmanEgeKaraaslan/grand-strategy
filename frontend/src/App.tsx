@@ -4,6 +4,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { GamePage } from './pages/GamePage'
 import { LobbyPage } from './pages/LobbyPage'
 import { LoginPage } from './pages/LoginPage'
+import { MyProfileRedirect, ProfilePage } from './pages/ProfilePage'
 import { RegisterPage } from './pages/RegisterPage'
 
 export function App() {
@@ -32,6 +33,22 @@ export function App() {
         element={
           <RequireAuth>
             <GamePage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <RequireAuth>
+            <MyProfileRedirect />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/players/:username"
+        element={
+          <RequireAuth>
+            <ProfilePage />
           </RequireAuth>
         }
       />

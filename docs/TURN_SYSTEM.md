@@ -370,6 +370,44 @@ an equality check, and neither value is touched by regrouping armies.
   sweep finds such games). A conference pause stops a computer turn; it resumes when the pause ends.
 - Eliminated computer seats are skipped like eliminated humans.
 
+## 9d. Quick Match, invitations and active-match recovery (Phases 13A–13B)
+
+**Quick Match** pairs two humans for a Grand Campaign game (map key `strategy.social.matchmaking.map-key`)
+with every other nation played by the computer, using `strategy.ruleset.current-version` — so a
+future ruleset is picked up by configuration, and existing games never change ruleset.
+
+- **Queue consistency.** Join, heartbeat (which also looks for an opponent) and cancel each start
+  with `pg_advisory_xact_lock(hashtext('matchmaking:QUICK_2P'))`. All queue changes are therefore
+  serialized in PostgreSQL — across threads and across backend instances — and the second of two
+  simultaneous joins sees the first's committed ticket. Pairing takes the longest-waiting live
+  ticket of a non-blocked player, creates and starts the game through `game.api.MatchCreation`
+  (the same lobby, nation and start code as a private game) and marks both tickets MATCHED, all in
+  one transaction: a ticket is matched at most once, a pair creates exactly one game, a failure rolls
+  everything back (no partial game), and a retried join returns the existing search or match.
+  Database backstops: one WAITING ticket per player, `(matched_game_id, player_id)` unique.
+- **Cancel versus match.** Serialized by the same lock: either the cancel wins (CANCELLED, the other
+  player keeps searching) or the match committed first — then cancel does not undo it and returns
+  MATCHED with the game, because the opponent is in that game too.
+- **Factions** (`game.rules.QuickMatchNations`): playable nations of the tier with the most playable
+  nations (Grand Campaign: the four POWERs); pairs whose capitals are ≥ 4 borders apart preferred;
+  a random seed picks the pair and who gets which. The player who waited longer takes seat 0.
+- **Search heartbeat versus turn timer.** A search must be refreshed (every 10 s by the client); a
+  ticket without a heartbeat for 90 s is never matched and becomes EXPIRED, so nobody is paired with
+  a closed tab. This concerns the *search only*. Games still have **no turn timer, no deadline and no
+  automatic forfeit** (§7): a matched game waits for its players indefinitely.
+- **Recovery.** A matched ticket stays "unopened" until the player opens the game; joining again
+  meanwhile returns that match instead of a new search (unless its game has finished). The game is
+  also always listed under *My active games*.
+- **Bounds.** No new search with 5 or more unfinished games (`max-unfinished-games`).
+
+**Lobby invitations** never bypass the lobby rules: acceptance admits through the game module
+under the game row lock, and nation choice and the host's start follow as usual.
+
+**Active matches.** Leaving the game screen ends nothing: no forfeit, no lobby deletion, no turn
+end. `GET /games` returns every game with map, faction, round and whether it is the player's turn.
+The game screen is keyed by game id, so switching games never carries selections or windows over;
+every request names its game, and polling subscriptions belong to the screen that is mounted.
+
 ## 10. Testing the turn system
 
 | Test | Kind |

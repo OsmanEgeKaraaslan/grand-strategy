@@ -466,15 +466,44 @@ Full description: [AI.md](AI.md).
 - **Not done:** difficulty levels, multi-turn campaign planning, computers attaching their own
   troops, opinion/reputation, a human playtest of balance and pacing (Q-AI1).
 
-## Phase 12 — Accounts & Player Profiles
+## Phases 12–13 — Profiles, Friends, Invitations & Quick Match — **implemented (2026-10-22)**
 
-- Profile pages, statistics and history, account settings and deletion; the analytics and
-  email ideas of [BACKGROUND_JOBS.md](BACKGROUND_JOBS.md) are revisited here (unscheduled until
-  then).
+New module `social` (depends on `identity.api` and `game.api` only); migrations V16–V19.
 
-## Phase 13 — Public/Private Games & Friends
+- **12A — profiles and statistics:** unique lowercase handle per human account (3–20, reserved names,
+  case-insensitive unique index, race-safe), display name, predefined emblem, match-history visibility;
+  existing accounts receive a derived handle in migration V16 (onboarding note on the dashboard until a
+  player picks one); public profile by username with statistics computed from stored results
+  (completed, wins, losses, draws, win rate in basis points rounded down, favourite = most-played
+  faction, matches per faction) and recent matches; no email, Supabase id or player id exposed.
+- **12B — friends:** bounded username search (exact, then prefix of ≥ 3 characters, at most 10),
+  requests PENDING → ACCEPTED / DECLINED / CANCELLED, crossed requests become one friendship,
+  symmetric friendships, removal by either side, blocks (end friendship, cancel requests and
+  invitations, stop new ones both ways), in-app notifications with unread count.
+- **13A — invitations and active games:** host invites friends into a waiting lobby; invitations
+  reserve no seat, acceptance admits under the game row lock (simultaneous acceptances cannot
+  overfill), unusable invitations become INVALIDATED; game started / finished notifications after
+  commit; "my games" carries map, faction, round, your-turn, humans and computers for resuming.
+- **13B — Quick Match:** database queue with a per-queue advisory lock, one WAITING ticket per player,
+  pairing and game creation in one transaction (exactly one game per pair, rollback on failure),
+  server-side faction assignment (`game.rules.QuickMatchNations`), every other nation a computer seat,
+  current ruleset, search heartbeat/expiry (not a turn timer), recovery of an unopened match.
+- **Frontend:** dashboard with Quick Match, private game, join, *My active games*, social panel and
+  profile link; notification bell; profile pages with settings; lobby "Invite friends"; in-game Social
+  window over the map (selection and camera kept).
+- **Tests:** unit (handles, emblems, statistics, request state machine, queue decisions, faction
+  assignment), PostgreSQL ITs (`ProfileIT`, `FriendsIT`, `InvitationsIT`, `MatchmakingIT`,
+  `MatchmakingRollbackIT`, scenario A `FriendsPrivateGameScenarioIT`, scenario B in `MatchmakingIT`,
+  scenario C in `ProfileIT`), frontend tests (`Social.test.tsx`).
+- **Not done (deferred):** public lobby discovery, account deletion, ranked play, chat, email or push
+  notifications, a user-facing "leave game", per-user rate limiting (Phase 15).
 
-- Public lobby discovery alongside private invitation codes; friends list and invitations.
+## After Phases 12–13 — agreed order (product owner, 2026-10-22)
+
+Manual multiplayer/social/gameplay testing → urgent gameplay fixes and balancing → password reset and
+required legal/account flows → security audit, rate limiting and cost protection (Phase 15) → staging
+deployment and closed beta (Phase 16). Much of Phase 14's UI/UX overhaul was done early
+([FRONTEND_OVERHAUL_PLAN.md](FRONTEND_OVERHAUL_PLAN.md)).
 
 ## Phase 14 — UI/UX Overhaul
 

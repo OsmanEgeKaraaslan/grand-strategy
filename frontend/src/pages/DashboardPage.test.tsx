@@ -39,7 +39,7 @@ describe('DashboardPage', () => {
     )
 
     expect(await screen.findByRole('heading', { name: 'Welcome, Aldric' })).toBeInTheDocument()
-    const games = screen.getByRole('region', { name: 'Your games' })
+    const games = screen.getByRole('region', { name: 'My active games' })
     expect(await within(games).findByText('Twin Shores')).toBeInTheDocument()
     expect(within(games).getByText('1/2 players · Host')).toBeInTheDocument()
     expect(within(games).getByText('Waiting for players')).toBeInTheDocument()
@@ -79,7 +79,7 @@ describe('DashboardPage', () => {
 
     const map = await screen.findByRole('combobox', { name: /^Map/ })
     expect(map).toHaveValue('grand-campaign')
-    expect(screen.getByText(/played by the computer/)).toBeInTheDocument()
+    expect(screen.getByText(/Nations nobody chooses are played by the computer/)).toBeInTheDocument()
     // A two-player map offers only two players.
     await userEvent.selectOptions(map, 'sundered-reach')
     expect(screen.getByRole('combobox', { name: /Human players/ })).toHaveValue('2')

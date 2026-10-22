@@ -73,7 +73,7 @@ class SecurityConfigTest {
 		UUID playerId = UUID.randomUUID();
 		when(playerService.resolve(any())).thenReturn(new CurrentPlayer(playerId, "Aldric"));
 		when(playerService.profile(playerId))
-			.thenReturn(new PlayerProfile(playerId, "Aldric", Instant.EPOCH, Instant.EPOCH));
+			.thenReturn(new PlayerProfile(playerId, "aldric", "Aldric", "crown", true, true, Instant.EPOCH, Instant.EPOCH));
 
 		mockMvc.perform(get("/api/v1/me").header(HttpHeaders.AUTHORIZATION,
 				bearer(ISSUER.tokenFor(supabaseUser).displayName("Aldric").sign())))

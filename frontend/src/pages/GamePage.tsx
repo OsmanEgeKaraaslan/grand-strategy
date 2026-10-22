@@ -24,6 +24,7 @@ import type {
   MilitaryOverview,
   ProvinceState,
 } from '../api/types'
+import { useUnreadCount } from '../api/social'
 import { useAuth } from '../auth/AuthContext'
 import { Alert } from '../components/Alert'
 import { ArmyInspector } from '../components/ArmyInspector'
@@ -35,13 +36,14 @@ import { GameToolbar, type PanelKey } from '../components/GameToolbar'
 import { Icon } from '../components/icons'
 import { ConferenceCard } from '../components/PeaceConference'
 import { ProvinceInspector } from '../components/ProvinceInspector'
-import { ProvinceMap, type NationStyle, type TargetKind, type UnitCounts } from '../components/ProvinceMap'
+import { ProvinceMap, type DiplomaticView, type NationStyle, type TargetKind, type UnitCounts } from '../components/ProvinceMap'
 import { ResearchPanel } from '../components/ResearchPanel'
 import { ResourceBar } from '../components/ResourceBar'
 import { SiegesCard } from '../components/SiegesCard'
+import { SocialPanel } from '../components/social/SocialPanel'
 import { Spinner } from '../components/Spinner'
 import { TreasuryPanel } from '../components/TreasuryPanel'
-import { relationsOf, type Names, type Relations } from '../lib/diplomacy'
+import { perspectiveOf, relationsOf, type Names, type Relations } from '../lib/diplomacy'
 import { formatGold } from '../lib/gold'
 
 /**
@@ -54,7 +56,8 @@ export function GamePage() {
   const state = useGameState(gameId)
   const map = useGameMap(state.data?.mapId)
 
-  if (state.data && map.data) return <GameView state={state.data} map={map.data} />
+  // Keyed by game: switching to another game never carries over selections, panels or windows.
+  if (state.data && map.data && state.data.id === gameId) return <GameView key={gameId} state={state.data} map={map.data} />
   return (
     <div className="game-shell game-shell--loading">
       <Link to="/" className="back-link">
@@ -106,6 +109,22 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
   const requestedBattle = useBattle(state.id, requestedBattleId)
   const yourNationId = state.players.find((p) => p.you)?.nationId
   const relations = useMemo(() => relationsOf(diplomacy.data, yourNationId), [diplomacy.data, yourNationId])
+  // Whose relations the diplomatic map shows. View-only: orders, permissions and commands always
+  // use `relations` (the viewer's own nation), never this.
+  const [diplomaticReference, setDiplomaticReference] = useState<string | null>(null)
+  const referenceId = diplomaticReference ?? yourNationId
+  const diplomaticView = useMemo<DiplomaticView | undefined>(
+    () =>
+      diplomacy.data?.available && referenceId
+        ? {
+            referenceId,
+            yourNationId,
+            standing: perspectiveOf(diplomacy.data, referenceId),
+            onReference: (id) => setDiplomaticReference(id === yourNationId ? null : id),
+          }
+        : undefined,
+    [diplomacy.data, referenceId, yourNationId],
+  )
   const names = useMemo<Names>(() => {
     const cities = new Map(state.provinces.map((p) => [p.city.id, p.city.name]))
     return {
@@ -140,7 +159,9 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
   )
   const waiting = diplomacyBusiness(diplomacy.data)
   const notices = (economy.data?.nation.inArrears ? 1 : 0) + (state.pausedConferenceId ? 1 : 0)
-  const badges = { diplomacy: waiting, notifications: waiting + notices }
+  // Friend requests, invitations and matches arrive here without leaving the game (Phase 13).
+  const socialUnread = useUnreadCount().data?.unread ?? 0
+  const badges = { diplomacy: waiting, notifications: waiting + notices, social: socialUnread }
   const conference = state.pausedConferenceId
     ? (diplomacy.data?.conferences ?? []).find((c) => c.id === state.pausedConferenceId)
     : undefined
@@ -283,7 +304,7 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
           units={units}
           targets={orders.targets}
           origin={selectedBattalions.length > 0 ? selectedKey : null}
-          standing={diplomacy.data?.available ? relations.standing : undefined}
+          diplomacy={diplomaticView}
           income={income}
           onCommand={selectedBattalions.length > 0 ? command : undefined}
           onSelectArmy={selectArmy}
@@ -340,6 +361,7 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
               />
             )}
             {panel === 'players' && <PlayersCard state={state} />}
+            {panel === 'social' && <SocialPanel currentGameId={state.id} />}
             {panel === 'notifications' && (
               <NotificationsPanel
                 state={state}

@@ -3,7 +3,10 @@ import { Link, Navigate, useParams } from 'react-router'
 import { describeError } from '../api/client'
 import { useChooseNation, useLobby, useStartGame } from '../api/queries'
 import type { Lobby } from '../api/types'
+import { useFriends, useInviteToGame, useSentInvitations } from '../api/social'
 import { Alert } from '../components/Alert'
+import { Icon } from '../components/icons'
+import { PersonChip } from '../components/social/People'
 import { AppShell } from '../components/AppShell'
 import { Spinner } from '../components/Spinner'
 import { StatusBadge } from '../components/StatusBadge'
@@ -86,6 +89,7 @@ function LobbyDetails({ lobby }: { lobby: Lobby }) {
 
         <div className="stack">
           <InviteCard code={lobby.inviteCode} />
+          {lobby.youAreHost && lobby.status === 'WAITING_FOR_PLAYERS' && <InviteFriendsCard lobby={lobby} />}
           <StartCard lobby={lobby} />
         </div>
       </div>
@@ -205,6 +209,63 @@ function InviteCard({ code }: { code: string }) {
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
+    </section>
+  )
+}
+
+/**
+ * The host invites friends directly (Phase 13A). An invitation reserves no seat: whoever accepts
+ * while a slot is free joins; the others are told the lobby is full.
+ */
+function InviteFriendsCard({ lobby }: { lobby: Lobby }) {
+  const friends = useFriends()
+  const sent = useSentInvitations(lobby.id, true)
+  const invite = useInviteToGame()
+  const inLobby = new Set(lobby.participants.map((p) => p.displayName))
+  const pending = new Map((sent.data ?? []).filter((i) => i.status === 'PENDING').map((i) => [i.invitee?.username, i]))
+  const answered = (sent.data ?? []).filter((i) => i.status !== 'PENDING')
+
+  return (
+    <section className="card" aria-labelledby="invite-friends-title">
+      <h2 id="invite-friends-title">Invite friends</h2>
+      {friends.data && friends.data.friends.length === 0 && (
+        <p className="muted">Add friends from the dashboard to invite them here directly — or share the code above.</p>
+      )}
+      {invite.error && <Alert>{describeError(invite.error)}</Alert>}
+      <ul className="people-list">
+        {friends.data?.friends
+          .filter((f) => !inLobby.has(f.displayName))
+          .map((f) => (
+            <li key={f.username}>
+              <PersonChip username={f.username} displayName={f.displayName} emblem={f.emblem} />
+              <span className="people-list__actions">
+                {pending.has(f.username) ? (
+                  <span className="tag">Invited</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`Invite ${f.displayName}`}
+                    title="Invite to this lobby"
+                    disabled={invite.isPending}
+                    onClick={() => invite.mutate({ gameId: lobby.id, username: f.username })}
+                  >
+                    <Icon name="mail" />
+                  </button>
+                )}
+              </span>
+            </li>
+          ))}
+      </ul>
+      {answered.length > 0 && (
+        <ul className="invitation-history muted">
+          {answered.slice(0, 5).map((i) => (
+            <li key={i.id}>
+              {i.invitee?.displayName}: {i.status === 'ACCEPTED' ? 'joined' : i.status === 'DECLINED' ? 'declined' : i.status === 'INVALIDATED' ? 'could not join (lobby full or started)' : 'withdrawn'}
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   )
 }

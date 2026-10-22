@@ -13,4 +13,6 @@ public interface GamePlayerRepository extends JpaRepository<GamePlayer, UUID> {
 
 	List<GamePlayer> findByPlayerId(UUID playerId);
 
+	List<GamePlayer> findByGameIdIn(java.util.Collection<UUID> gameIds);
+
 }

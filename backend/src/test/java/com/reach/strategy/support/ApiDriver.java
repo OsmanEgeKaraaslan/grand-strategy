@@ -366,6 +366,40 @@ public final class ApiDriver {
 		return perform(as(get("/api/v1/games/" + gameId + "/result"), token));
 	}
 
+	// --- Generic requests (Phase 12–13 social endpoints) ------------------------------------
+
+	public MvcResult getJson(String token, String path) throws Exception {
+		return perform(as(get("/api/v1" + path), token));
+	}
+
+	public MvcResult postJson(String token, String path, String json) throws Exception {
+		return perform(as(post("/api/v1" + path), token).contentType(MediaType.APPLICATION_JSON).content(json));
+	}
+
+	public MvcResult patchJson(String token, String path, String json) throws Exception {
+		return perform(as(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1" + path), token)
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(json));
+	}
+
+	public MvcResult deleteJson(String token, String path) throws Exception {
+		return perform(as(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1" + path), token));
+	}
+
+	/** A new signed-in player with a chosen, unique handle (returned with the token). */
+	public Account newAccount(String handlePrefix) throws Exception {
+		String token = newPlayer();
+		String username = (handlePrefix + "_" + UUID.randomUUID().toString().replace("-", "")).substring(0, 20);
+		MvcResult result = patchJson(token, "/me", "{\"username\":\"" + username + "\"}");
+		if (status(result) != 200) {
+			throw new IllegalStateException("Could not set username: " + body(result));
+		}
+		return new Account(token, username, read(result, "$.id"));
+	}
+
+	public record Account(String token, String username, String id) {
+	}
+
 	/** A request without any credentials (for the security tests). */
 	public MvcResult anonymous(String path) throws Exception {
 		return perform(get(path));

@@ -12,7 +12,10 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import com.reach.strategy.game.api.ComputerOpponents;
+import com.reach.strategy.game.api.GameLifecycle;
 import com.reach.strategy.game.api.GameStartInitializer;
+import com.reach.strategy.game.api.MatchCreation;
+import com.reach.strategy.game.rules.QuickMatchNations;
 import com.reach.strategy.game.domain.Game;
 import com.reach.strategy.game.domain.GameFullException;
 import com.reach.strategy.game.domain.GamePlayer;
@@ -28,9 +31,11 @@ import com.reach.strategy.world.api.WorldApi;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -39,7 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
  * the game does not exist (404). Every mutation first takes the game's row lock.
  */
 @Service
-public class LobbyService {
+public class LobbyService implements MatchCreation {
 
 	private static final int INVITE_CODE_ATTEMPTS = 5;
 
@@ -52,11 +57,14 @@ public class LobbyService {
 	private final Clock clock;
 	private final ObjectProvider<ComputerOpponents> computerOpponents;
 	private final ComputerPlayers computerPlayers;
+	private final ApplicationEventPublisher events;
 
 	LobbyService(GameRepository games, GamePlayerRepository memberships, PlayerDirectory playerDirectory, WorldApi world,
 			List<GameStartInitializer> startInitializers,
 			@Value("${strategy.ruleset.current-version}") String currentRulesetVersion, Clock clock,
-			ObjectProvider<ComputerOpponents> computerOpponents, ComputerPlayers computerPlayers) {
+			ObjectProvider<ComputerOpponents> computerOpponents, ComputerPlayers computerPlayers,
+			ApplicationEventPublisher events) {
+		this.events = events;
 		this.computerOpponents = computerOpponents;
 		this.computerPlayers = computerPlayers;
 		this.games = games;
@@ -97,15 +105,27 @@ public class LobbyService {
 		return view(created.game(), List.of(created.host()), me);
 	}
 
+	/** The caller's games with what the dashboard needs to resume them; two queries plus cached maps. */
 	@Transactional(readOnly = true)
 	public List<GameSummary> myGames(CurrentPlayer me) {
-		Map<UUID, Integer> mySeats = memberships.findByPlayerId(me.id())
+		List<Game> mine = games.findAllForMember(me.id());
+		Map<UUID, List<GamePlayer>> seatsByGame = memberships
+			.findByGameIdIn(mine.stream().map(Game::id).toList())
 			.stream()
-			.collect(Collectors.toMap(GamePlayer::gameId, GamePlayer::seatOrder));
-		return games.findAllForMember(me.id())
-			.stream()
-			.map(game -> GameSummary.of(game, mySeats.get(game.id()), me.id()))
-			.toList();
+			.collect(Collectors.groupingBy(GamePlayer::gameId));
+		Map<UUID, WorldApi.MapSummary> maps = new java.util.HashMap<>();
+		return mine.stream().map(game -> {
+			List<GamePlayer> seats = seatsByGame.getOrDefault(game.id(), List.of());
+			GamePlayer seat = seats.stream().filter(s -> s.playerId().equals(me.id())).findFirst().orElseThrow();
+			WorldApi.MapSummary map = maps.computeIfAbsent(game.mapTemplateId(), world::mapSummary);
+			GameSummary.Nation nation = seat.nationTemplateId() == null ? null
+					: map.nation(seat.nationTemplateId())
+						.map(n -> new GameSummary.Nation(n.key(), n.name(), n.color()))
+						.orElse(null);
+			int computers = (int) seats.stream().filter(GamePlayer::computer).count();
+			return GameSummary.of(game, seat.seatOrder(), me.id(), map.name(), nation, seat.eliminated(),
+					seats.size() - computers, computers);
+		}).toList();
 	}
 
 	@Transactional(readOnly = true)
@@ -200,6 +220,21 @@ public class LobbyService {
 			throw new ApiException(HttpStatus.CONFLICT, "NATIONS_NOT_SELECTED",
 					"Every player must choose a different nation first.");
 		}
+		instantiateAndStart(game, members, map);
+		// Reported after commit (notifications); the host started it, so is not told.
+		events.publishEvent(new GameLifecycle.Started(game.id(), members.stream()
+			.filter(m -> !m.computer() && !m.playerId().equals(me.id()))
+			.map(GamePlayer::playerId)
+			.collect(Collectors.toSet())));
+		return view(game, members, me, map);
+	}
+
+	/**
+	 * Gives every nation nobody chose a computer seat (Phase 11, rulesets with computer opponents),
+	 * instantiates the game's world, runs the start initializers and starts the game. Shared by the
+	 * host's start and Quick Match creation; the caller holds the game row lock.
+	 */
+	private void instantiateAndStart(Game game, List<GamePlayer> members, WorldApi.MapSummary map) {
 		List<GamePlayer> seats = new ArrayList<>(members);
 		Set<UUID> computerSeats = new HashSet<>();
 		ComputerOpponents opponents = computerOpponents.getIfAvailable();
@@ -226,7 +261,47 @@ public class LobbyService {
 		// e.g. treasuries and starting workshops; the game keeps the ruleset it was created with.
 		startInitializers.forEach(initializer -> initializer.initialize(game.id(), game.mapTemplateId(), game.rulesetVersion()));
 		game.start(clock.instant());
-		return view(game, members, me, map);
+	}
+
+	/**
+	 * Quick Match (Phase 13B): a started game for exactly the given players, created in the caller's
+	 * transaction with the current ruleset; the first player hosts. Nothing here differs from a private
+	 * game except that the factions are assigned ({@link QuickMatchNations}) instead of chosen.
+	 */
+	@Override
+	@Transactional(propagation = Propagation.MANDATORY)
+	public CreatedMatch createQuickMatch(String mapKey, List<UUID> playerIds, long seed) {
+		if (playerIds.size() != 2 || playerIds.get(0).equals(playerIds.get(1))) {
+			throw new IllegalArgumentException("A Quick Match needs two different players");
+		}
+		Instant now = clock.instant();
+		UUID mapId = world.mapId(mapKey).orElseThrow(() -> new IllegalStateException("Quick Match map missing: " + mapKey));
+		WorldApi.MapSummary map = world.mapSummary(mapId);
+		WorldApi.Topology topology = world.topology(mapId);
+		QuickMatchNations.Pair pair = QuickMatchNations.choose(map.nations()
+			.stream()
+			.map(n -> new QuickMatchNations.Candidate(n.key(), n.tier(), n.playable(), n.capitalProvinceKey()))
+			.toList(), topology::neighbours, seed);
+		Game.Created created = Game.create("Quick Match", playerIds.get(0), 2, mapId, currentRulesetVersion,
+				freshInviteCode(), now);
+		Game game = created.game();
+		games.save(game);
+		GamePlayer host = created.host();
+		GamePlayer guest = game.admit(playerIds.get(1), now);
+		WorldApi.NationOption first = nationByKey(map, pair.first());
+		WorldApi.NationOption second = nationByKey(map, pair.second());
+		host.chooseNation(first.id());
+		guest.chooseNation(second.id());
+		memberships.save(host);
+		memberships.saveAndFlush(guest);
+		instantiateAndStart(game, List.of(host, guest), map);
+		return new CreatedMatch(game.id(), game.name(), map.name(), game.rulesetVersion(),
+				List.of(new Assignment(playerIds.get(0), first.key(), first.name(), first.color()),
+						new Assignment(playerIds.get(1), second.key(), second.name(), second.color())));
+	}
+
+	private static WorldApi.NationOption nationByKey(WorldApi.MapSummary map, String key) {
+		return map.nations().stream().filter(n -> n.key().equals(key)).findFirst().orElseThrow();
 	}
 
 	private List<GamePlayer> membersOf(Game game, CurrentPlayer me) {

@@ -62,7 +62,7 @@ without a full separate domain model mirrored onto JPA.
 |---|---|---|---|
 | `platform` | Technical foundation, no game logic: security policy, RFC 9457 error handling (`ApiException`, `ApiExceptionHandler`), request-id correlation, health endpoint | — | 1 |
 | `shared` | Domain value types (`Gold`, `Population`, ids), apportionment utils | — | 4 |
-| `identity` | JWT → `Principal`, player provisioning, profile | `player` | 2 |
+| `identity` | JWT → `Principal`, player provisioning, own account (handle, display name, emblem, history visibility); `identity.api.PublicProfiles` for the public fields | `player` | 2, 12 |
 | `world` | Map templates (topology + SVG geometry, read-only, validated at startup by `MapValidator`); per-game world instantiation and state (nations, province owner/controller, cities) until economy and military take over their columns | `map_template`, `province_template`, `province_adjacency`, `nation_template`, `nation_start_province`, `nation`, `province_state`, `city` | 3 |
 | `game` | Game lifecycle: lobby (create, join by code, nation choice), start, sequential turns, **command pipeline**, `RoundProcessor` (round-end extension point), later ruleset snapshot and history. Absorbed the Phase 2 `lobby` package in Phase 3 | `game`, `game_player`, `game_command`, `round_resolution` (later `game_event`, `game_incident`) | 2–3 |
 | `economy` | **Implemented (Phase 4).** Pure rules (`economy.rules`: employment, collectible income — zero for occupied cities, Q-W2 —, settlement, construction checks), ruleset files per version, treasury, workshops and construction projects, round-end phases `ECONOMY` and `CONSTRUCTION`, start-up economy, queries. Later: repairs, upgrades, growth | `nation_economy`, `building`, `economy_round_report` | 4 |
@@ -70,7 +70,8 @@ without a full separate domain model mirrored onto JPA.
 | `siege` | **Implemented (Phase 7).** Pure rules (`siege.rules`: `SiegeMath` — required progress, progress per round, attrition, bombardment targets, repair price and timing; `ControlDecision` — the single occupation/siege policy; `FortressWorks` — build/upgrade/repair checks), ruleset files `rulesets/<version>/siege.json`, fortifications, sieges and their round history, round steps `SIEGES` (replacing the Phase 5 occupation phase) and `FORTIFICATIONS`, fortress upkeep, starting fortresses, queries and fortress commands. Implements `military.api.SiegeGate` and `economy.api.SiegeStatus`; reads `military.api.MilitaryPresence`, `economy.api.WorkshopsApi`, `world.api` | `fortification`, `siege`, `siege_round` | 7 |
 | `research` | **Implemented (Phase 8)** (planned as `technology`). Pure rules (`research.rules`: `ResearchRules` — validated, declarative ruleset; `Research` — points, unlock quotes, effects, institution checks), ruleset files `rulesets/<version>/research.json`, institutions, national research and doctrines, round steps `RESEARCH` and `INSTITUTIONS`, institution upkeep, research rows for new games, queries and commands. Implements `military.api.MilitaryModifiers` and `economy.api.EconomyTechnology` | `institution`, `nation_research`, `nation_doctrine`, `research_round_report`, `research_unlock` | 8 |
 | `diplomacy` | **Implemented (Phase 9).** Pure rules (`diplomacy.rules`: `DiplomacyRules` — validated ruleset; `Diplomacy` — standings, war and alliance blockers, defensive response, termination; `WarScore`; `PeaceTerms` — term validation, settlement order, tribute arithmetic; `Victory` — round-limit standings), ruleset files `rulesets/<version>/diplomacy.json`, war/alliance/peace commands with atomic settlement, round steps `TRIBUTE` and `DIPLOMACY`, diplomacy rows for new games, queries. Implements `military.api.Hostility`, `military.api.WarEvents` and `game.api.VictoryCondition`; uses `military.api.ForceWithdrawal`, `economy.api.EconomyApi` (`transfer`, `grossIncome`), `world.api.WorldApi` (`transferOwnership`, `setController`, `changePopulation`) and `game.api` | `diplomacy_game`, `alliance`, `war`, `war_participant`, `war_front`, `war_score_event`, `peace_proposal`, `peace_treaty`, `truce`, `tribute`, `tribute_payment`, `diplomacy_event` (the game module owns `game_result`, `game_result_standing`) | 9 |
-| `analytics` | Activity aggregation, player statistics | `player_activity_daily`, `player_game_result` | 10 |
+| `social` | **Implemented (Phases 12–13).** Public profiles and statistics (pure `social.rules.MatchStatistics` over `game.api.MatchRecords`), friend requests (`FriendRequestRules`), friendships, blocks, in-app notifications, lobby invitations (admission through `game.api.Lobbies`), the Quick Match queue (`QuickMatchQueue`; games created by `game.api.MatchCreation`). Depends on `identity.api` and `game.api` only; nothing depends on it | `friend_request`, `friendship`, `player_block`, `notification`, `game_invitation`, `matchmaking_ticket` | 12–13 |
+| `analytics` | Activity aggregation (unscheduled; player statistics are served by `social` from stored results) | `player_activity_daily` | — |
 | `communication` | Email preferences, outbox, provider integration, unsubscribe | `communication_preference`, `email_message`, `email_campaign`, `email_delivery_event` | 10 |
 
 Rules for cross-module interaction:
@@ -345,3 +346,33 @@ the image without rolling back the schema.
 - Computer commands are ordinary commands of the computer seat's account: same lock, membership,
   active-seat, idempotency and recording. No new infrastructure: the worker pool and the recovery
   sweep live inside the monolith.
+
+## 12. Phases 12–13 additions — profiles, friends, invitations, Quick Match
+
+- **New module `social`** (`api`-only dependencies on `identity` and `game`; nothing depends on it).
+  Its stores use `JdbcTemplate`; its pure rules (`MatchStatistics`, `FriendRequestRules`,
+  `QuickMatchQueue`) are unit-tested without Spring.
+- **identity** keeps the single account record: the Supabase `sub` still resolves the player; the
+  handle, emblem and settings are columns of `player`; `PublicProfiles` exposes only public fields and
+  never computer accounts. No second authentication system, no credentials.
+- **game.api** gains `MatchRecords` (completed matches from stored results), `Lobbies` (lobby facts,
+  admission of an invited player under the game row lock, factions, unfinished-game count),
+  `MatchCreation` (Quick Match: create, assign factions, start — the same code path as a private game,
+  in the caller's transaction) and `GameLifecycle` events (`Started` from the host's start, `Finished`
+  with the stored result), which the social module turns into notifications after commit.
+- **Matchmaking consistency** relies only on PostgreSQL: a transaction-level advisory lock per queue,
+  unique partial indexes and one transaction per pairing — correct with several backend instances, no
+  broker or cache ([TURN_SYSTEM.md §9d](TURN_SYSTEM.md)).
+- **Authorization rules:** the acting player is always the token's account; other players are
+  addressed by username; a friend request is answered only by its recipient and withdrawn only by its
+  sender (anyone else gets 404); only a lobby's host invites, only friends, only into a waiting lobby;
+  only the invitee accepts; notifications, invitations and tickets are read and changed only by their
+  owner (no endpoint takes another player's id); statistics come only from server-stored results.
+- **Baseline safeguards** (configurable under `strategy.social.*`; Phase 15 adds real rate limits):
+  search ≤ 10 results and ≥ 3 characters for prefixes, ≤ 50 pending friend requests, ≤ 200 friends,
+  ≤ 10 pending invitations per lobby, notifications pruned to 200 per player, no Quick Match search
+  with 5 or more unfinished games, bounded request DTOs.
+- **Frontend:** social server state lives in `api/social.ts` (TanStack Query): the unread count polls
+  every 20 s, lists only while mounted, the search heartbeat every 10 s only while searching; all
+  intervals stop on unmount. Social components live in `components/social/`; the in-game Social
+  window is a management window over the map, so map, camera and army selection stay as they were.

@@ -2,9 +2,9 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { OSTRA, VARN, gameStateFixture, mapFixture } from '../test/fixtures'
-import type { Standing } from '../lib/diplomacy'
+import type { Perspective } from '../lib/diplomacy'
 import type { Map3DProps } from './Map3D'
-import { ProvinceMap, type NationStyle, type TargetKind, type UnitCounts } from './ProvinceMap'
+import { ProvinceMap, type DiplomaticView, type NationStyle, type TargetKind, type UnitCounts } from './ProvinceMap'
 
 const webgl = vi.hoisted(() => ({ available: false }))
 vi.mock('../lib/mapGeometry', async (original) => ({
@@ -42,12 +42,23 @@ function renderMap(props: Partial<Parameters<typeof ProvinceMap>[0]> = {}) {
       nations={nations}
       selectedKey={null}
       onSelect={vi.fn()}
-      standing={(id: string): Standing => (id === VARN ? 'SELF' : 'WAR')}
+      diplomacy={diplomaticView()}
       income={new Map([['varnhold', 12000], ['elmsford', 3000]])}
       {...props}
     />,
   )
   return screen.getByRole('group', { name: /^Map of/ })
+}
+
+/** Varn sees Ostra as an enemy; another reference can be passed in. */
+function diplomaticView(overrides: Partial<DiplomaticView> = {}): DiplomaticView {
+  return {
+    referenceId: VARN,
+    yourNationId: VARN,
+    standing: (id: string): Perspective => (id === VARN ? 'SELF' : 'WAR'),
+    onReference: vi.fn(),
+    ...overrides,
+  }
 }
 
 function shape(svg: HTMLElement, name: RegExp) {
@@ -78,7 +89,7 @@ describe('Map modes (UI-B)', () => {
   })
 
   it('offers no diplomatic mode without diplomacy', () => {
-    renderMap({ standing: undefined })
+    renderMap({ diplomacy: undefined })
     expect(within(screen.getByRole('group', { name: 'Map mode' })).queryByRole('button', { name: 'Diplomatic' })).not.toBeInTheDocument()
   })
 })
@@ -179,6 +190,85 @@ describe('Optional 3D view (UI-B)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '3D' }))
     expect(screen.getByRole('group', { name: /^Map of/ })).toBeInTheDocument()
+    webgl.available = false
+  })
+})
+
+describe('Diplomatic perspective', () => {
+  async function diplomatic() {
+    await userEvent.click(within(screen.getByRole('group', { name: 'Map mode' })).getByRole('button', { name: 'Diplomatic' }))
+  }
+
+  it('makes the owner of a clicked province the reference nation, and still selects the province', async () => {
+    const onSelect = vi.fn()
+    const onReference = vi.fn()
+    const svg = renderMap({ onSelect, diplomacy: diplomaticView({ onReference }) })
+    await diplomatic()
+    await userEvent.click(shape(svg, /^Sablewater/))
+    expect(onSelect).toHaveBeenCalledWith('sablewater')
+    expect(onReference).toHaveBeenCalledWith(OSTRA)
+  })
+
+  it('leaves the reference alone outside the diplomatic mode and when an army marker is clicked', async () => {
+    const onReference = vi.fn()
+    const onSelectArmy = vi.fn()
+    const units = new Map<string, UnitCounts>([['sablewater', { friendly: 1, hostile: 0 }]])
+    const svg = renderMap({ units, onSelectArmy, diplomacy: diplomaticView({ onReference }) })
+    await userEvent.click(shape(svg, /^Sablewater/))
+    expect(onReference).not.toHaveBeenCalled()
+
+    await diplomatic()
+    await userEvent.click(shape(svg, /^Select your army in Sablewater/))
+    expect(onSelectArmy).toHaveBeenCalledWith('sablewater')
+    expect(onReference).not.toHaveBeenCalled()
+  })
+
+  it('takes the legal owner of an occupied province, not the occupier', async () => {
+    const onReference = vi.fn()
+    const occupied = new Map(provinces)
+    occupied.set('elmsford', { ...provinces.get('elmsford')!, controllerNationId: OSTRA })
+    const svg = renderMap({ provinces: occupied, diplomacy: diplomaticView({ referenceId: OSTRA, onReference }) })
+    await diplomatic()
+    await userEvent.click(shape(svg, /^Elmsford/))
+    expect(onReference).toHaveBeenCalledWith(VARN)
+  })
+
+  it('names the reference nation, colours by its relations and resets to the viewer', async () => {
+    const onReference = vi.fn()
+    const standing = (id: string): Perspective => (id === OSTRA ? 'SELF' : 'DEFENSIVE_ALLY')
+    const svg = renderMap({ diplomacy: diplomaticView({ referenceId: OSTRA, standing, onReference }) })
+    expect(screen.queryByRole('status', { name: 'Diplomatic perspective' })).not.toBeInTheDocument()
+    await diplomatic()
+
+    const bar = screen.getByRole('status', { name: 'Diplomatic perspective' })
+    expect(bar).toHaveTextContent('Relations of Ostran Confederacy')
+    expect(shape(svg, /^Sablewater/)).toHaveAttribute('data-standing', 'self')
+    expect(shape(svg, /^Varnhold/)).toHaveAttribute('data-standing', 'defensive-ally')
+    const legend = screen.getByRole('list', { name: 'Map legend' })
+    expect(within(legend).getByText('At war with Ostran Confederacy')).toBeInTheDocument()
+    expect(within(legend).getByText('Defensive allies')).toBeInTheDocument()
+    expect(within(legend).getByText('Same side of a war, not allied')).toBeInTheDocument()
+
+    await userEvent.click(within(bar).getByRole('button', { name: 'Reset to my nation' }))
+    expect(onReference).toHaveBeenCalledWith(VARN)
+  })
+
+  it('offers no reset while the map shows the viewer’s own relations', async () => {
+    renderMap()
+    await diplomatic()
+    const bar = screen.getByRole('status', { name: 'Diplomatic perspective' })
+    expect(bar).toHaveTextContent('Relations of your nation')
+    expect(within(bar).queryByRole('button', { name: 'Reset to my nation' })).not.toBeInTheDocument()
+  })
+
+  it('picks the reference from the 3D view too', async () => {
+    webgl.available = true
+    const onReference = vi.fn()
+    renderMap({ diplomacy: diplomaticView({ onReference }) })
+    await diplomatic()
+    await userEvent.click(screen.getByRole('button', { name: '3D' }))
+    await userEvent.click(await screen.findByRole('button', { name: '3D Sablewater' }))
+    expect(onReference).toHaveBeenCalledWith(OSTRA)
     webgl.available = false
   })
 })

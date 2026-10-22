@@ -46,6 +46,14 @@ import type {
   MilitaryOverview,
   MoveResult,
   PlayerProfile,
+  PlayerCard,
+  ProfileChanges,
+  PublicProfile,
+  FriendRequest,
+  FriendsOverview,
+  NotificationsView,
+  Invitation,
+  QuickMatch,
   Problem,
   RecruitResult,
   TurnResult,
@@ -119,7 +127,31 @@ export function createApiClient({ baseUrl, accessToken, onUnauthorized, fetch: f
 
   return {
     getMe: () => request<PlayerProfile>('GET', '/me'),
-    updateMe: (displayName: string) => request<PlayerProfile>('PATCH', '/me', { displayName }),
+    updateMe: (changes: ProfileChanges) => request<PlayerProfile>('PATCH', '/me', changes),
+    getProfile: (username: string) => request<PublicProfile>('GET', `/profiles/${encodeURIComponent(username)}`),
+    searchPlayers: (query: string) => request<PlayerCard[]>('GET', `/players/search?q=${encodeURIComponent(query)}`),
+    getFriends: () => request<FriendsOverview>('GET', '/friends'),
+    sendFriendRequest: (username: string) => request<FriendRequest>('POST', '/friends/requests', { username }),
+    answerFriendRequest: (requestId: string, action: 'accept' | 'decline' | 'cancel') =>
+      request<FriendRequest>('POST', `/friends/requests/${encodeURIComponent(requestId)}/${action}`),
+    removeFriend: (username: string) => request<void>('DELETE', `/friends/${encodeURIComponent(username)}`),
+    blockPlayer: (username: string) => request<PlayerCard>('POST', '/blocks', { username }),
+    unblockPlayer: (username: string) => request<void>('DELETE', `/blocks/${encodeURIComponent(username)}`),
+    getNotifications: () => request<NotificationsView>('GET', '/notifications'),
+    getUnreadCount: () => request<{ unread: number }>('GET', '/notifications/unread-count'),
+    /** Marks the given notifications read, or all of them without ids. */
+    markNotificationsRead: (ids?: string[]) => request<NotificationsView>('POST', '/notifications/read', { ids: ids ?? [] }),
+    getInvitations: () => request<{ incoming: Invitation[] }>('GET', '/invitations'),
+    getSentInvitations: (gameId: string) => request<Invitation[]>('GET', `/games/${encodeURIComponent(gameId)}/invitations`),
+    inviteToGame: (gameId: string, username: string) => request<Invitation>('POST', '/invitations', { gameId, username }),
+    answerInvitation: (invitationId: string, action: 'accept' | 'decline' | 'cancel') =>
+      request<Invitation>('POST', `/invitations/${encodeURIComponent(invitationId)}/${action}`),
+    getQuickMatch: () => request<QuickMatch>('GET', '/matchmaking/quick'),
+    /** Joins the queue (idempotent): returns the running search or an unopened match instead of a new one. */
+    joinQuickMatch: () => request<QuickMatch>('POST', '/matchmaking/quick/join'),
+    quickMatchHeartbeat: () => request<QuickMatch>('POST', '/matchmaking/quick/heartbeat'),
+    cancelQuickMatch: () => request<QuickMatch>('POST', '/matchmaking/quick/cancel'),
+    acknowledgeQuickMatch: () => request<QuickMatch>('POST', '/matchmaking/quick/acknowledge'),
     listGames: () => request<GameSummary[]>('GET', '/games'),
     getGame: (gameId: string) => request<Lobby>('GET', `/games/${encodeURIComponent(gameId)}`),
     /** maxPlayers: humans (2 up to the map's maximum); mapKey: omitted for the default map. */
@@ -574,6 +606,32 @@ export function describeError(error: unknown): string {
         return 'The game has not finished yet.'
       case 'DISPLAY_NAME_TAKEN':
         return 'That display name is already taken.'
+      case 'USERNAME_TAKEN':
+        return 'That username is already taken.'
+      case 'USERNAME_RESERVED':
+        return 'That username is reserved; please choose another.'
+      case 'INVALID_USERNAME':
+        return 'Usernames have 3–20 lowercase letters, digits or _ and start with a letter.'
+      case 'PLAYER_NOT_FOUND':
+        return 'No player has that username.'
+      case 'PLAYER_UNAVAILABLE':
+        return 'You cannot contact this player.'
+      case 'ALREADY_FRIENDS':
+        return 'You are already friends.'
+      case 'CANNOT_FRIEND_SELF':
+        return 'You cannot send a friend request to yourself.'
+      case 'REQUEST_NOT_PENDING':
+        return 'This request has already been answered or withdrawn.'
+      case 'NOT_FRIENDS':
+        return 'You can invite friends only.'
+      case 'ALREADY_IN_GAME':
+        return 'That player is already in this game.'
+      case 'LOBBY_NOT_JOINABLE':
+        return 'The lobby is full or has started.'
+      case 'INVITATION_NOT_PENDING':
+        return 'This invitation is no longer open.'
+      case 'INVITATION_INVALID':
+        return 'This invitation can no longer be used.'
       case 'UNAUTHENTICATED':
         return 'Your session has expired. Please sign in again.'
       case 'VALIDATION_FAILED':

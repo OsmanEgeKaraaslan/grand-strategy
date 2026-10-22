@@ -28,8 +28,8 @@ generates its TypeScript types.
 | Method | Path | Purpose | Status |
 |---|---|---|---|
 | GET | `/me` | Current player's profile. **First call provisions the player** (race-free `INSERT … ON CONFLICT DO NOTHING` keyed by the token `sub`); the sign-up `user_metadata.display_name` is used when valid and free, otherwise a generated `Commander-XXXXXX` | Implemented |
-| PATCH | `/me` | `{displayName}` — rename yourself. 409 `DISPLAY_NAME_TAKEN`, 422 `INVALID_DISPLAY_NAME` | Implemented |
-| GET | `/me/statistics` | Lifetime stats | Phase 12 |
+| PATCH | `/me` | Any of `{displayName, username, emblem, matchHistoryPublic}` (at least one) — change your own account. 409 `DISPLAY_NAME_TAKEN` / `USERNAME_TAKEN`, 422 `INVALID_DISPLAY_NAME` / `INVALID_USERNAME` / `USERNAME_RESERVED` / `INVALID_EMBLEM` | Implemented (Phase 12A) |
+| GET | `/profiles/{username}` | Public profile with statistics (see §2.8) | Implemented (Phase 12A) |
 | GET / PUT | `/me/communication-preferences` | Email opt-ins | Phase 12 (unscheduled) |
 | DELETE | `/me` | Account deletion / anonymization | Phase 12 |
 
@@ -351,12 +351,47 @@ Content-Type: application/json
 { "battalionIds": ["b01…", "b02…"], "toProvinceId": "e55…", "expectedTurnNumber": 37 }
 ```
 
-### 2.6 Communication (unscheduled; revisited in Phase 12)
+### 2.6 Communication (unscheduled; still deferred after Phases 12–13: in-app notifications only, see §2.8)
 
 | Method | Path | Notes |
 |---|---|---|
 | GET/POST | `/public/unsubscribe?token=` | No auth; signed token; supports RFC 8058 one-click `POST` |
 | POST | `/webhooks/email/{provider}` | Provider delivery events; verified by provider signature |
+
+### 2.8 Profiles, friends, invitations, notifications, Quick Match (Phases 12–13 — implemented)
+
+Every endpoint acts for the authenticated caller only; other players are addressed by **username**,
+never by an id taken from the request. Players' internal ids, emails and Supabase ids are never
+returned. These are plain idempotent state transitions (no `Idempotency-Key`): repeating one after a
+lost response returns the same outcome. Inputs are bounded (usernames ≤ 32 characters in requests,
+search ≤ 32, lists ≤ 100 ids).
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/profiles/{username}` | `{username, displayName, emblem, memberSince, you, relation, matchHistoryPublic, statistics{completed, wins, losses, draws, winRateBps, favouriteFaction, factions[]}, recentMatches[] or null}`; `recentMatches[].gameId` only on your own profile. 404 `PLAYER_NOT_FOUND` (also computer accounts) |
+| GET | `/players/search?q=` | Exact handle first, then handles starting with `q` (≥ 3 characters), at most 10: `[{username, displayName, emblem, relation}]` |
+| GET | `/friends` | `{friends[], incoming[], outgoing[], blocked[]}` |
+| POST | `/friends/requests` | `{username}` → the request (`PENDING`, or `ACCEPTED` if they had asked you). 404 `PLAYER_NOT_FOUND`, 409 `ALREADY_FRIENDS` / `PLAYER_UNAVAILABLE` / `TOO_MANY_PENDING_REQUESTS` / `TOO_MANY_FRIENDS`, 422 `CANNOT_FRIEND_SELF` |
+| POST | `/friends/requests/{id}/accept`, `/decline` (recipient), `/cancel` (sender) | 404 `FRIEND_REQUEST_NOT_FOUND` for anyone else, 409 `REQUEST_NOT_PENDING` |
+| DELETE | `/friends/{username}` | End a friendship (204, idempotent) |
+| POST / DELETE | `/blocks`, `/blocks/{username}` | Block (`{username}`) / unblock |
+| GET | `/notifications` | `{unread, items[{id, kind, actor, gameId, gameName, referenceId, createdAt, read}]}` (newest 30) |
+| GET | `/notifications/unread-count` | `{unread}` — the cheap poll |
+| POST | `/notifications/read` | `{ids?}` — mark yours read (all when empty) |
+| GET | `/invitations` | `{incoming[]}`: your pending invitations with lobby name, map, capacity, inviter, `joinable` |
+| GET | `/games/{gameId}/invitations` | Invitations you sent for a lobby you are in (404 otherwise) |
+| POST | `/invitations` | `{gameId, username}` — host invites a friend. 403 `NOT_HOST`, 404 `GAME_NOT_FOUND` (not a member), 409 `NOT_FRIENDS` / `PLAYER_UNAVAILABLE` / `ALREADY_IN_GAME` / `LOBBY_NOT_JOINABLE` / `TOO_MANY_INVITATIONS`; a repeat returns the pending invitation |
+| POST | `/invitations/{id}/accept` (invitee) | Joins the lobby → invitation `ACCEPTED`. 409 `GAME_FULL` / `GAME_ALREADY_STARTED` / `INVITATION_INVALID` (the invitation is INVALIDATED), `INVITATION_NOT_PENDING`; 404 `INVITATION_NOT_FOUND` for anyone else |
+| POST | `/invitations/{id}/decline` (invitee), `/cancel` (inviter) | |
+| GET | `/matchmaking/quick` | `{state: NONE \| SEARCHING \| MATCHED \| CANCELLED \| EXPIRED, ticketId, searchingSince, match{gameId, gameName, mapName, yourFaction, opponent{username, displayName, emblem, faction}, opened}}` — read-only, never starts a search |
+| POST | `/matchmaking/quick/join` | Start searching (or return the running search / unopened match); looks for an opponent at once. 409 `TOO_MANY_ACTIVE_GAMES` |
+| POST | `/matchmaking/quick/heartbeat` | Keep the search alive and look for an opponent (clients call it every 10 s while searching) |
+| POST | `/matchmaking/quick/cancel` | Stop searching; returns `MATCHED` if a match was already committed |
+| POST | `/matchmaking/quick/acknowledge` | The matched game was opened; the next join searches again |
+
+`GET /games` (my games) additionally returns `mapName`, `yourNation{key, name, color}`,
+`currentRound`, `yourTurn`, `paused`, `youAreEliminated`, `humanPlayers`, `computerPlayers` and
+`lastActivityAt` (Phase 13A).
 
 ### 2.7 Operator (Phase 15–16)
 
@@ -386,9 +421,9 @@ RFC 9457 problem details with a stable machine `code`:
 | 400 | Malformed request, DTO validation | `VALIDATION_FAILED` (with `errors[]` per field), `IDEMPOTENCY_KEY_MISSING` |
 | 401 | Missing/invalid/expired token | `UNAUTHENTICATED` |
 | 403 | Authenticated but not allowed | `NOT_HOST`, `NOT_OWNER` |
-| 404 | Not found **or not visible to you** | `GAME_NOT_FOUND`, `INVITE_CODE_NOT_FOUND`, `MAP_NOT_FOUND`, `CITY_NOT_FOUND`, `RESOURCE_NOT_FOUND` |
-| 409 | State conflict — retry after refresh may help | `NOT_ACTIVE_PLAYER`, `TURN_CHANGED`, `GAME_NOT_IN_PROGRESS`, `GAME_FINISHED`, `ALREADY_AT_WAR`, `TRUCE_IN_EFFECT`, `PEACE_TERMS_NO_LONGER_VALID`, `GAME_FULL`, `DISPLAY_NAME_TAKEN`, `NATION_TAKEN`, `GAME_NOT_READY`, `NATIONS_NOT_SELECTED`, `GAME_ALREADY_STARTED`, `PROVINCE_OCCUPIED` |
-| 422 | Well-formed but illegal game action | `INVALID_DISPLAY_NAME`, `NATION_NOT_FOUND`, `TIER_LOCKED`, `WORKSHOP_LIMIT_REACHED`, `INSUFFICIENT_GOLD`, `INSUFFICIENT_POPULATION`, `NOT_ADJACENT`, `BATTALION_ALREADY_MOVED`, `BATTALION_NOT_READY` (recruited this turn), `BATTALIONS_NOT_COLOCATED`, `CITY_BESIEGED`, `NOT_FRIENDLY_TERRITORY`, `IN_ARREARS`, `TECH_REQUIRED`, `IDEMPOTENCY_KEY_REUSED` |
+| 404 | Not found **or not visible to you** | `GAME_NOT_FOUND`, `INVITE_CODE_NOT_FOUND`, `MAP_NOT_FOUND`, `CITY_NOT_FOUND`, `RESOURCE_NOT_FOUND`, `PLAYER_NOT_FOUND`, `FRIEND_REQUEST_NOT_FOUND`, `INVITATION_NOT_FOUND` |
+| 409 | State conflict — retry after refresh may help | `NOT_ACTIVE_PLAYER`, `TURN_CHANGED`, `GAME_NOT_IN_PROGRESS`, `GAME_FINISHED`, `ALREADY_AT_WAR`, `TRUCE_IN_EFFECT`, `PEACE_TERMS_NO_LONGER_VALID`, `GAME_FULL`, `DISPLAY_NAME_TAKEN`, `NATION_TAKEN`, `GAME_NOT_READY`, `NATIONS_NOT_SELECTED`, `GAME_ALREADY_STARTED`, `PROVINCE_OCCUPIED`, `USERNAME_TAKEN`, `ALREADY_FRIENDS`, `PLAYER_UNAVAILABLE`, `REQUEST_NOT_PENDING`, `TOO_MANY_PENDING_REQUESTS`, `TOO_MANY_FRIENDS`, `NOT_FRIENDS`, `ALREADY_IN_GAME`, `LOBBY_NOT_JOINABLE`, `TOO_MANY_INVITATIONS`, `INVITATION_NOT_PENDING`, `INVITATION_INVALID`, `TOO_MANY_ACTIVE_GAMES` |
+| 422 | Well-formed but illegal game action | `INVALID_DISPLAY_NAME`, `INVALID_USERNAME`, `USERNAME_RESERVED`, `INVALID_EMBLEM`, `CANNOT_FRIEND_SELF`, `CANNOT_BLOCK_SELF`, `NATION_NOT_FOUND`, `TIER_LOCKED`, `WORKSHOP_LIMIT_REACHED`, `INSUFFICIENT_GOLD`, `INSUFFICIENT_POPULATION`, `NOT_ADJACENT`, `BATTALION_ALREADY_MOVED`, `BATTALION_NOT_READY` (recruited this turn), `BATTALIONS_NOT_COLOCATED`, `CITY_BESIEGED`, `NOT_FRIENDLY_TERRITORY`, `IN_ARREARS`, `TECH_REQUIRED`, `IDEMPOTENCY_KEY_REUSED` |
 | 429 | Rate limited | `RATE_LIMITED` |
 | 500 | Bug; transaction rolled back | `INTERNAL_ERROR`, `ROUND_PROCESSING_FAILED` |
 | 503 | Lock timeout / maintenance | `GAME_BUSY` (with `Retry-After`) |

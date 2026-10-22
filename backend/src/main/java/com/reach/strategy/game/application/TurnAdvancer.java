@@ -10,6 +10,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import com.reach.strategy.game.api.ComputerSeats;
+import com.reach.strategy.game.api.GameLifecycle;
 import com.reach.strategy.game.api.VictoryCondition;
 import com.reach.strategy.game.domain.Game;
 import com.reach.strategy.game.domain.GamePlayer;
@@ -122,6 +123,11 @@ class TurnAdvancer {
 		results.insert(new GameResultRepository.Result(game.id(), round, outcome.reason(), outcome.winnerNationId(),
 				game.rulesetVersion(), jsonMapper.writeValueAsString(new TreeMap<>(outcome.statistics())), now),
 				standings);
+		events.publishEvent(new GameLifecycle.Finished(game.id(), memberships.findByGameIdOrderBySeatOrder(game.id())
+			.stream()
+			.filter(m -> !m.computer())
+			.map(GamePlayer::playerId)
+			.collect(Collectors.toSet())));
 	}
 
 }

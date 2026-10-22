@@ -1,7 +1,7 @@
 package com.reach.strategy.identity.web;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Size;
 
 import com.reach.strategy.identity.api.CurrentPlayer;
@@ -15,8 +15,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The authenticated player's own profile. There is deliberately no endpoint addressing a
- * profile by id: a player can only ever read or change their own.
+ * The authenticated player's own account. Only the owner reads or changes it: the account is the
+ * one behind the access token, never an id from the request. Public profiles of anyone (including
+ * oneself) are served by the social module.
  */
 @RestController
 @RequestMapping("/api/v1/me")
@@ -36,10 +37,19 @@ class MeController {
 
 	@PatchMapping
 	PlayerProfile update(CurrentPlayer me, @Valid @RequestBody UpdateProfileRequest request) {
-		return playerService.rename(me.id(), request.displayName());
+		return playerService.update(me.id(), new PlayerService.ProfileChanges(request.displayName(), request.username(),
+				request.emblem(), request.matchHistoryPublic()));
 	}
 
-	record UpdateProfileRequest(@NotBlank @Size(max = 64) String displayName) {
+	/** Every field is optional; at least one must be present. */
+	record UpdateProfileRequest(@Size(min = 1, max = 64) String displayName, @Size(min = 1, max = 32) String username,
+			@Size(min = 1, max = 16) String emblem, Boolean matchHistoryPublic) {
+
+		@AssertTrue(message = "Change at least one field.")
+		boolean isAnyFieldPresent() {
+			return displayName != null || username != null || emblem != null || matchHistoryPublic != null;
+		}
+
 	}
 
 }

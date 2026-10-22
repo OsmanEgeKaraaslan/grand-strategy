@@ -66,3 +66,19 @@ strategy:
     worker-threads: 2
     recovery-enabled: true
     recovery-interval-ms: 15000
+  # Social features (Phases 12–13): modest baseline bounds, not a substitute for Phase 15 rate limits.
+  social:
+    search-limit: 10
+    max-pending-friend-requests: 50
+    max-friends: 200
+    max-pending-invitations-per-lobby: 10
+    notification-list-limit: 30
+    notifications-kept-per-player: 200
+    matchmaking:
+      # Quick Match: two humans on this map, every other nation played by the computer. New games use
+      # strategy.ruleset.current-version, so a future ruleset is picked up without code changes.
+      map-key: grand-campaign
+      # A search without a heartbeat for this long is never matched (the search only: games have no timer).
+      search-timeout: PT90S
+      # No new search while the player has this many unfinished games (bounds game creation).
+      max-unfinished-games: 5

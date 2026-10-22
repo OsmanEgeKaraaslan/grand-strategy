@@ -45,7 +45,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 		WorldService.class, EconomyService.class, MilitaryService.class, BattalionService.class,
 		SiegeService.class, ResearchService.class, GameResultService.class, DiplomacyQueries.class,
 		DiplomacyService.class, PeaceService.class, GiftService.class, CallToArmsService.class,
-		ConferenceService.class, AttachmentService.class })
+		ConferenceService.class, AttachmentService.class, com.reach.strategy.social.application.ProfileService.class,
+		com.reach.strategy.social.application.FriendService.class, com.reach.strategy.social.application.Notifications.class,
+		com.reach.strategy.social.application.InvitationService.class,
+		com.reach.strategy.social.application.MatchmakingService.class })
 public @interface ApiSliceTest {
 
 	@AliasFor(annotation = WebMvcTest.class, attribute = "controllers")

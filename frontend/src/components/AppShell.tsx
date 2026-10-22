@@ -3,9 +3,11 @@ import { Link, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../auth/AuthContext'
 import { useMe } from '../api/queries'
+import { EmblemBadge } from './social/People'
+import { NotificationBell } from './social/NotificationBell'
 
 /** Header and frame for signed-in pages. */
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, onOpenSocial }: { children: ReactNode; onOpenSocial?: () => void }) {
   const { signOut } = useAuth()
   const me = useMe()
   const queryClient = useQueryClient()
@@ -25,10 +27,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="brand__name">Sundered Reach</span>
         </Link>
         <div className="shell__account">
+          <NotificationBell onOpenSocial={onOpenSocial} />
           {me.data && (
-            <span className="shell__player" title="Signed in as">
+            <Link to="/profile" className="shell__player" title="Your profile">
+              <EmblemBadge emblem={me.data.emblem} size={13} />
               {me.data.displayName}
-            </span>
+            </Link>
           )}
           <button type="button" className="button button--ghost" onClick={handleSignOut}>
             Log out

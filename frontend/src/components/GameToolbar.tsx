@@ -1,7 +1,16 @@
 import { Icon, type IconName } from './icons'
 
 /** The management windows the left toolbar opens over the map. */
-export type PanelKey = 'nation' | 'economy' | 'military' | 'technology' | 'diplomacy' | 'players' | 'notifications' | 'settings'
+export type PanelKey =
+  | 'nation'
+  | 'economy'
+  | 'military'
+  | 'technology'
+  | 'diplomacy'
+  | 'players'
+  | 'social'
+  | 'notifications'
+  | 'settings'
 
 interface ToolbarEntry {
   key: PanelKey
@@ -16,6 +25,7 @@ const GAME_PANELS: ToolbarEntry[] = [
   { key: 'technology', label: 'Technology', icon: 'technology' },
   { key: 'diplomacy', label: 'Diplomacy', icon: 'diplomacy' },
   { key: 'players', label: 'Players', icon: 'players' },
+  { key: 'social', label: 'Social', icon: 'social' },
   { key: 'notifications', label: 'Notifications', icon: 'bell' },
   { key: 'settings', label: 'Settings', icon: 'settings' },
 ]

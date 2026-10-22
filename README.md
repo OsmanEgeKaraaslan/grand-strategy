@@ -29,9 +29,10 @@ The project has two equal goals:
 | **9 — Diplomacy, war, peace, victory** | **Implemented**: peace by default, war declarations that gate movement, battles, occupation and sieges, normal alliances and defensive pacts, server-side war score, peace proposals settled atomically (provinces, reparations, ten-round tribute, population transfers), truce and withdrawal, round-30 match completion with stored results. All backend (unit + PostgreSQL) and frontend tests pass locally |
 | **10 — World expansion, N-faction multiplayer, coalitions** | **Implemented**: Grand Campaign map (72 provinces, 10 factions), 2–4 human players with passive game-controlled nations, starting values per tier, gold gifts, defensive calls to arms, coalition battles, attached battalions, peace conferences with revisions and approvals that pause the game, separate peace, elimination and domination (ruleset v6). All backend (unit + PostgreSQL) and frontend tests pass locally |
 | **11 — Autonomous nation AI** | **Implemented**: every nation nobody chooses is played by the computer (ruleset v7) — it builds, recruits, researches, moves, fights, besieges, allies, answers calls, negotiates and concludes peace through the same rules and command pipeline as players ([docs/AI.md](docs/AI.md)). All backend (unit + PostgreSQL) and frontend tests pass locally |
-| Your manual playtest | Next: play a Grand Campaign game against the computer (see “Manual test with computer opponents” below). Phase 12 is not started |
+| **12–13 — Profiles, friends, invitations, Quick Match** | **Implemented**: unique usernames, emblems and public profiles with statistics from stored results; friend requests, friendships, blocks and in-app notifications; host invitations of friends into private lobbies; *My active games* with resume; unranked Quick Match (two humans, eight computer nations) on a race-safe PostgreSQL queue; social panel on the dashboard and inside a running game. All backend (unit + PostgreSQL) and frontend tests pass locally |
+| Next | Manual multiplayer/social/gameplay testing (see “Manual social test” below), then gameplay fixes and balance, password reset and legal flows, the security audit (Phase 15) and staging/beta (Phase 16) |
 
-Playable so far: create a lobby, invite a rival, choose nations, start, take turns on the map, earn gold and build workshops, recruit, reinforce and disband battalions, move them, fight battles, occupy open provinces, besiege fortresses and repair the damage, build research institutions, unlock technology and doctrines, upgrade workshops to Tier 2 and watch cities grow. Declare war, form alliances, negotiate peace with territory, gold, tribute and people, and play a complete game to its round-30 result. See [docs/ROADMAP.md](docs/ROADMAP.md).
+Playable so far: create a lobby, invite a rival, choose nations, start, take turns on the map, earn gold and build workshops, recruit, reinforce and disband battalions, move them, fight battles, occupy open provinces, besiege fortresses and repair the damage, build research institutions, unlock technology and doctrines, upgrade workshops to Tier 2 and watch cities grow. Declare war, form alliances, negotiate peace with territory, gold, tribute and people, and play a complete game to its round-30 result. Pick a username, add friends, invite them into a private game, resume any of your games from the dashboard, or find an opponent with Quick Match. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Tech stack
 
@@ -136,6 +137,34 @@ guest, then round 2 begins. Changes appear on the other screen within ~3 seconds
 Economy check: click one of your provinces to see its farmers, workshop workers and income, order
 a Tier 1 workshop (40 gold) on your turn, and end the round — your treasury grows by the projected
 income and the workshop becomes active, producing from the following round.
+
+### Manual social test (Phases 12–13)
+
+Use three separate authenticated sessions — e.g. a normal window, a private window and a second
+browser — each signed in with its own account (A, B, C).
+
+1. **Profiles.** In each window open your name in the header → *Profile settings*: pick a username
+   (try `admin` → reserved; try another window's username in capitals → already taken), an emblem and
+   whether your recent matches are public. The dashboard note disappears once a username is chosen.
+2. **Friends.** In A's *Social → Friends* search B's username (exact, or its first three letters) and
+   press *Add friend*. B's bell shows 1 unread; B accepts in *Friends* (or C declines a request from A).
+   Both lists now show each other; open B's profile from A (relation *Friend*). Try blocking C from A:
+   C can no longer send A requests.
+3. **Private game by invitation.** A creates a private game (Grand Campaign, 2 players). In the lobby's
+   *Invite friends* card A invites B. B sees it in *Social → Invitations* (and the bell), presses *Join*
+   and lands in the lobby. Both choose different nations; A starts. B's bell says the game started.
+4. **Resume.** Close B's tab, reopen the dashboard: *My active games* shows the game with B's faction,
+   round and *Your turn* when it is B's turn; *Resume* opens it where it was.
+5. **In-game social.** Inside the game open the *Social* icon in the left toolbar: friends, requests,
+   invitations, games and Quick Match open over the map; select an army first and check that the
+   selection and camera are unchanged after closing the window.
+6. **Quick Match.** In A press *Find a match* (dashboard or in-game). The card says *Searching for an
+   opponent…* without any time estimate and offers alternatives; cancel and search again. In C press
+   *Find a match*: both see *Match found* with both factions and *Play now*; exactly one new game with
+   eight computer nations appears in both game lists. Close A's tab before pressing *Play now*, sign in
+   again: the same match is offered, not a new search.
+7. **Expiry.** Start a search in one window and close it; after about 90 seconds a new searcher is
+   not paired with it, and the closed window shows *Your last search stopped…* when reopened.
 
 ### Manual test with computer opponents (Phase 11)
 

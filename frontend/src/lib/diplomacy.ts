@@ -1,4 +1,4 @@
-import type { DiplomacyEvent, DiplomacyOverview, PeaceTerm } from '../api/types'
+import type { AllianceKind, DiplomacyEvent, DiplomacyOverview, PeaceTerm } from '../api/types'
 import { formatGold } from './gold'
 
 /**
@@ -55,6 +55,50 @@ export function relationsOf(overview: DiplomacyOverview | undefined, yourNationI
       if (status === 'ALLIED' || coBelligerents.has(id)) return 'ALLY'
       return 'NEUTRAL'
     },
+  }
+}
+
+/** How the diplomatic map colours a nation, seen from a chosen reference nation. */
+export type Perspective = 'SELF' | 'ALLY' | 'DEFENSIVE_ALLY' | 'CO_BELLIGERENT' | 'WAR' | 'NEUTRAL'
+
+/**
+ * Any nation's relations, for the diplomatic map only (view-only: orders always use relationsOf).
+ * Built from the public parts of the server's overview — active alliances with their kind, and the
+ * active participants of active wars — so an alliance is never inferred from fighting together.
+ * For the viewer's own nation the server's per-nation status (war / alliance) is used directly.
+ */
+export function perspectiveOf(overview: DiplomacyOverview, referenceId: string): (nationId: string) => Perspective {
+  const alliances = new Map<string, AllianceKind>()
+  for (const a of overview.alliances) {
+    if (a.status !== 'ACTIVE' || (a.nationA !== referenceId && a.nationB !== referenceId)) continue
+    const other = a.nationA === referenceId ? a.nationB : a.nationA
+    // A normal alliance outranks a defensive one should both ever exist.
+    if (alliances.get(other) !== 'NORMAL') alliances.set(other, a.kind)
+  }
+  const enemies = new Set<string>()
+  const sameSide = new Set<string>()
+  for (const war of overview.wars ?? []) {
+    const mine = war.participants.find((p) => p.nationId === referenceId && p.leftRound == null)
+    if (war.status !== 'ACTIVE' || !mine) continue
+    for (const p of war.participants) {
+      if (p.nationId === referenceId || p.leftRound != null) continue
+      ;(p.side === mine.side ? sameSide : enemies).add(p.nationId)
+    }
+  }
+  const own = referenceId === overview.yourNationId ? new Map(overview.nations.map((n) => [n.nationId, n])) : null
+  return (id) => {
+    if (id === referenceId) return 'SELF'
+    if (own) {
+      const relation = own.get(id)
+      if (relation?.status === 'WAR') return 'WAR'
+      if (relation?.status === 'ALLIED') return relation.allianceKind === 'DEFENSIVE' ? 'DEFENSIVE_ALLY' : 'ALLY'
+    }
+    else {
+      if (enemies.has(id)) return 'WAR'
+      const kind = alliances.get(id)
+      if (kind) return kind === 'DEFENSIVE' ? 'DEFENSIVE_ALLY' : 'ALLY'
+    }
+    return sameSide.has(id) ? 'CO_BELLIGERENT' : 'NEUTRAL'
   }
 }
 

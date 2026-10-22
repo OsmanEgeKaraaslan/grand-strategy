@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react'
 import type { GameMap, MapProvince, ProvinceState } from '../api/types'
-import type { Standing } from '../lib/diplomacy'
+import type { Perspective } from '../lib/diplomacy'
 import { webglAvailable } from '../lib/mapGeometry'
 
 // three.js is only downloaded when a player opens the 3D view.
@@ -54,8 +54,8 @@ interface ProvinceMapProps {
   fortresses?: Map<string, { level: number; damaged: boolean }>
   /** Provinces whose city is under an active siege. */
   besieged?: Set<string>
-  /** The viewer's standing with a nation (diplomatic mode). */
-  standing?: (nationId: string) => Standing
+  /** Diplomatic mode (absent in games without diplomacy). View-only: it never affects orders. */
+  diplomacy?: DiplomaticView
   /** Collectible income per round of the viewer's own provinces, in milligold (economy mode). */
   income?: Map<string, number>
 }
@@ -77,18 +77,36 @@ const MODES: { key: MapMode; label: string }[] = [
   { key: 'economy', label: 'Economy' },
 ]
 
-const STANDING_COLORS: Record<Standing, string> = {
+/** Whose relations the diplomatic map shows, and how a click on the map picks another nation. */
+export interface DiplomaticView {
+  /** The reference nation (the viewer's own by default). */
+  referenceId: string
+  yourNationId: string | undefined
+  /** The reference nation's relation to a nation. */
+  standing: (nationId: string) => Perspective
+  onReference: (nationId: string) => void
+}
+
+const PERSPECTIVES: Perspective[] = ['SELF', 'ALLY', 'DEFENSIVE_ALLY', 'CO_BELLIGERENT', 'WAR', 'NEUTRAL']
+
+const STANDING_COLORS: Record<Perspective, string> = {
   SELF: '#c9a24d',
   ALLY: '#4f9d6a',
+  DEFENSIVE_ALLY: '#4f8fb8',
+  CO_BELLIGERENT: '#9bb85a',
   WAR: '#b8443a',
   NEUTRAL: '#68717c',
 }
 
-const STANDING_LABELS: Record<Standing, string> = {
-  SELF: 'Your nation',
-  ALLY: 'Allies and co-belligerents',
-  WAR: 'At war with you',
-  NEUTRAL: 'At peace',
+function standingLabels(reference: string, yours: boolean): Record<Perspective, string> {
+  return {
+    SELF: yours ? 'Your nation' : reference,
+    ALLY: 'Allies',
+    DEFENSIVE_ALLY: 'Defensive allies',
+    CO_BELLIGERENT: 'Same side of a war, not allied',
+    WAR: yours ? 'At war with you' : `At war with ${reference}`,
+    NEUTRAL: 'At peace',
+  }
 }
 
 const TERRAIN_COLORS = { PLAINS: '#7f8f5c', MOUNTAINS: '#8d7b67' } as const
@@ -190,7 +208,7 @@ export function ProvinceMap({
   alliedColor = '#4f9d6a',
   fortresses = new Map(),
   besieged = new Set(),
-  standing,
+  diplomacy,
   income = new Map(),
 }: ProvinceMapProps) {
   const controllers = new Set(
@@ -280,13 +298,23 @@ export function ProvinceMap({
       suppressClick.current = false
       return
     }
+    choose(key)
+  }
+
+  /**
+   * Selects a province; in diplomatic mode its legal owner (not an occupier) also becomes the map's
+   * reference nation. Army markers never get here: they select armies only.
+   */
+  function choose(key: string) {
     onSelect(key)
+    const owner = provinces.get(key)?.ownerNationId
+    if (mode === 'diplomatic' && diplomacy && owner && owner !== diplomacy.referenceId) diplomacy.onReference(owner)
   }
 
   function handleKey(event: KeyboardEvent, key: string) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
-      onSelect(key)
+      choose(key)
     }
     else if ((event.key === 'm' || event.key === 'M') && onCommand) {
       event.preventDefault()
@@ -367,7 +395,7 @@ export function ProvinceMap({
     const owner = state ? nations.get(state.ownerNationId) : undefined
     switch (mode) {
       case 'diplomatic':
-        return state && standing ? STANDING_COLORS[standing(state.ownerNationId)] : '#5b6470'
+        return state && diplomacy ? STANDING_COLORS[diplomacy.standing(state.ownerNationId)] : '#5b6470'
       case 'terrain':
         return TERRAIN_COLORS[province.terrain]
       case 'economy':
@@ -406,7 +434,7 @@ export function ProvinceMap({
         </button>
       </div>
       <div className="province-map__modes" role="group" aria-label="Map mode">
-        {MODES.filter((m) => m.key !== 'diplomatic' || standing).map((m) => (
+        {MODES.filter((m) => m.key !== 'diplomatic' || diplomacy).map((m) => (
           <button
             key={m.key}
             type="button"
@@ -418,7 +446,18 @@ export function ProvinceMap({
           </button>
         ))}
       </div>
-      <MapLegend mode={mode} />
+      {mode === 'diplomatic' && diplomacy && (
+        <PerspectiveBar diplomacy={diplomacy} nations={nations} />
+      )}
+      <MapLegend
+        mode={mode}
+        reference={
+          diplomacy && {
+            name: nations.get(diplomacy.referenceId)?.name ?? 'this nation',
+            yours: diplomacy.referenceId === diplomacy.yourNationId,
+          }
+        }
+      />
       {threeD ? (
         <Suspense fallback={<p className="province-map province-map--loading">Loading 3D view…</p>}>
           <Map3D
@@ -431,7 +470,7 @@ export function ProvinceMap({
             enemyColor={enemyColor}
             alliedColor={alliedColor}
             view={view}
-            onSelect={onSelect}
+            onSelect={choose}
             onCommand={onCommand}
             onSelectArmy={onSelectArmy}
             onHover={hoverAt}
@@ -516,7 +555,7 @@ export function ProvinceMap({
                 aria-pressed={selected}
                 data-province={province.key}
                 data-target={targets.get(province.key)?.toLowerCase()}
-                data-standing={mode === 'diplomatic' && state && standing ? standing(state.ownerNationId).toLowerCase() : undefined}
+                data-standing={mode === 'diplomatic' && state && diplomacy ? diplomacy.standing(state.ownerNationId).toLowerCase().replace('_', '-') : undefined}
                 data-income={mode === 'economy' ? incomeLevel(income.get(province.key), maxIncome) : undefined}
                 onClick={() => select(province.key)}
                 onContextMenu={(event) => handleContextMenu(event, province.key)}
@@ -708,10 +747,31 @@ export function ProvinceMap({
   )
 }
 
-function MapLegend({ mode }: { mode: MapMode }) {
+/** Names the diplomatic map's reference nation and leads back to the viewer's own. */
+function PerspectiveBar({ diplomacy, nations }: { diplomacy: DiplomaticView; nations: Map<string, NationStyle> }) {
+  const reference = nations.get(diplomacy.referenceId)
+  const yours = diplomacy.referenceId === diplomacy.yourNationId
+  return (
+    <div className="province-map__perspective" role="status" aria-label="Diplomatic perspective">
+      <span className="swatch" style={{ background: reference?.color }} aria-hidden="true" />
+      <span>
+        Relations of <strong>{yours ? 'your nation' : (reference?.name ?? 'another nation')}</strong>
+      </span>
+      {!yours && diplomacy.yourNationId && (
+        <button type="button" className="button button--small" onClick={() => diplomacy.onReference(diplomacy.yourNationId!)}>
+          Reset to my nation
+        </button>
+      )}
+      <span className="muted province-map__perspective-hint">Click a province to see its owner&apos;s relations.</span>
+    </div>
+  )
+}
+
+function MapLegend({ mode, reference }: { mode: MapMode; reference?: { name: string; yours: boolean } }) {
+  const labels = standingLabels(reference?.name ?? '', reference?.yours ?? true)
   const entries: [string, string][] =
     mode === 'diplomatic'
-      ? (Object.keys(STANDING_COLORS) as Standing[]).map((s) => [STANDING_COLORS[s], STANDING_LABELS[s]])
+      ? PERSPECTIVES.map((s) => [STANDING_COLORS[s], labels[s]])
       : mode === 'terrain'
         ? [
             [TERRAIN_COLORS.PLAINS, 'Plains'],

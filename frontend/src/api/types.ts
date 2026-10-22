@@ -1,11 +1,156 @@
 // Shapes of the Spring Boot REST API (docs/API_DESIGN.md). Hand-written for Phase 2; to be
 // replaced by types generated from the backend's OpenAPI document once it is published.
 
+/** The caller's own account (GET/PATCH /me): never credentials or email. */
 export interface PlayerProfile {
   id: string
+  /** Unique public handle (lowercase); older test fixtures may omit it. */
+  username?: string
   displayName: string
+  emblem?: Emblem
+  /** False until the player picked their handle (migrated and new accounts get a derived one). */
+  usernameChosen?: boolean
+  matchHistoryPublic?: boolean
   createdAt: string
   updatedAt: string
+}
+
+/** The predefined profile emblems (no uploaded images). */
+export type Emblem = 'crown' | 'shield' | 'swords' | 'tower' | 'flag' | 'scholar' | 'mountain' | 'wheat'
+
+export interface ProfileChanges {
+  displayName?: string
+  username?: string
+  emblem?: Emblem
+  matchHistoryPublic?: boolean
+}
+
+/** Who a player is to the viewer. */
+export type Relation = 'YOU' | 'NONE' | 'FRIEND' | 'REQUEST_SENT' | 'REQUEST_RECEIVED' | 'BLOCKED'
+
+export interface PersonRef {
+  username: string
+  displayName: string
+  emblem: Emblem
+}
+
+export interface FactionRecord {
+  key: string
+  name: string
+  played: number
+  wins: number
+}
+
+export interface RecentMatch {
+  gameId: string | null
+  gameName: string
+  mapName: string
+  finishedAt: string
+  finishedRound: number
+  outcome: 'WIN' | 'LOSS' | 'DRAW'
+  rank: number
+  factionName: string
+}
+
+export interface PublicProfile {
+  username: string
+  displayName: string
+  emblem: Emblem
+  memberSince: string
+  you: boolean
+  relation: Relation
+  matchHistoryPublic: boolean
+  statistics: {
+    completed: number
+    wins: number
+    losses: number
+    draws: number
+    /** Wins per 10 000 completed matches, rounded down; null without completed matches. */
+    winRateBps: number | null
+    favouriteFaction: FactionRecord | null
+    factions: FactionRecord[]
+  }
+  /** Newest first; null when the owner hides them from others. */
+  recentMatches: RecentMatch[] | null
+}
+
+export interface PlayerCard extends PersonRef {
+  relation: Relation
+}
+
+export interface FriendRequest extends PersonRef {
+  id: string
+  createdAt: string
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED'
+}
+
+export interface FriendsOverview {
+  friends: (PersonRef & { since: string })[]
+  incoming: FriendRequest[]
+  outgoing: FriendRequest[]
+  blocked: PlayerCard[]
+}
+
+export type NotificationKind =
+  | 'FRIEND_REQUEST'
+  | 'FRIEND_ACCEPTED'
+  | 'GAME_INVITATION'
+  | 'INVITATION_ACCEPTED'
+  | 'INVITATION_DECLINED'
+  | 'MATCH_FOUND'
+  | 'GAME_STARTED'
+  | 'GAME_FINISHED'
+
+export interface NotificationItem {
+  id: string
+  kind: NotificationKind
+  actor: PersonRef | null
+  gameId: string | null
+  gameName: string | null
+  referenceId: string | null
+  createdAt: string
+  read: boolean
+}
+
+export interface NotificationsView {
+  unread: number
+  items: NotificationItem[]
+}
+
+export interface Invitation {
+  id: string
+  gameId: string
+  gameName: string
+  mapName: string
+  playerCount: number
+  maxPlayers: number
+  /** Whether the lobby can still be joined right now (acceptance decides). */
+  joinable: boolean
+  inviter: PersonRef | null
+  invitee: PersonRef | null
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'INVALIDATED'
+  reason: string | null
+  createdAt: string
+}
+
+export interface QuickMatchFaction {
+  key: string
+  name: string
+  color: string
+}
+
+export interface QuickMatch {
+  state: 'NONE' | 'SEARCHING' | 'MATCHED' | 'CANCELLED' | 'EXPIRED'
+  ticketId: string | null
+  searchingSince: string | null
+  match: {
+    gameId: string
+    gameName: string
+    mapName: string
+    yourFaction: QuickMatchFaction | null
+    opponent: (PersonRef & { faction: QuickMatchFaction | null }) | null
+    opened: boolean
+  } | null
 }
 
 export type GameStatus = 'WAITING_FOR_PLAYERS' | 'READY' | 'IN_PROGRESS' | 'FINISHED'
@@ -19,6 +164,16 @@ export interface GameSummary {
   yourSeat: number
   youAreHost: boolean
   createdAt: string
+  /** Phase 13A: what the dashboard needs to resume a game (older fixtures may omit these). */
+  mapName?: string
+  yourNation?: { key: string; name: string; color: string } | null
+  currentRound?: number | null
+  yourTurn?: boolean
+  paused?: boolean
+  youAreEliminated?: boolean
+  humanPlayers?: number
+  computerPlayers?: number
+  lastActivityAt?: string
 }
 
 export interface Participant {

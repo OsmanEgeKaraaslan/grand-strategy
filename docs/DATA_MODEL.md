@@ -97,6 +97,15 @@ migrations V1–V11 are unchanged.
 |---|---|
 | `V15__computer_opponents.sql` | `player.kind` (HUMAN/COMPUTER) with `supabase_user_id` nullable exactly for computer accounts; `game_player.computer`; `game.active_seat` no longer bounded by `max_players` (computer seats follow the human seats); nation `control` gains `AI` (a computer seat has a game_player, NPC has none); `ai_turn` (game, turn number → round, seat, nation, RUNNING/DONE, goal, actions, failures, observations, refused signatures, last error, duration; composite FKs); `ai_decision` (major decisions with reason and details, per game/round/nation) |
 
+### 3.0c Phases 12–13 migrations (V16–V19)
+
+| Migration | Changes |
+|---|---|
+| `V16__player_profiles.sql` | `player.username` (lowercase handle, `^[a-z][a-z0-9_]{2,19}$`, unique `text_pattern_ops` index — case-insensitive because stored lowercase — that also serves prefix search; present exactly for HUMAN accounts), `username_chosen`, `emblem` (one of 8 keys), `match_history_public`; backfill of existing humans (see §3.2) |
+| `V17__friends.sql` | `friend_request`, `friendship`, `player_block`, `notification` (§3.8) |
+| `V18__game_invitations.sql` | `game_invitation` (§3.8) |
+| `V19__matchmaking.sql` | `matchmaking_ticket` (§3.8) |
+
 ### 3.1 Static world templates (Phase 3)
 
 **map_template**
@@ -157,7 +166,32 @@ at most one nation.
 | display_name | varchar(24) | `CHECK (char_length BETWEEN 3 AND 24)`; unique index on `lower(display_name)` |
 | created_at, updated_at | timestamptz | |
 
-Later (Phase 12): `deleted_at` for account deletion / anonymization; `last_seen_at` if needed.
+**Phase 12A additions (V16):**
+
+| Column | Type | Notes |
+|---|---|---|
+| username | varchar(20) | Public handle, lowercase `[a-z][a-z0-9_]{2,19}`; unique; NOT NULL exactly for HUMAN accounts (computer accounts have none and are never profiles). Reserved names (admin, system, ai, npc, …) and the `player_` prefix cannot be chosen |
+| username_chosen | boolean | false for derived handles; the dashboard suggests choosing one |
+| emblem | varchar(16) | One of `crown, shield, swords, tower, flag, scholar, mountain, wheat` (no uploaded images) |
+| match_history_public | boolean | Whether other players see the recent completed matches (statistics are always public) |
+
+Existing accounts (migration backfill): the display name lowercased with other characters turned into
+`_`; the oldest account keeps a contested candidate, every other one — and every invalid or reserved
+candidate — gets `player_` + 12 hex digits of its id (unique by construction). New accounts get a
+handle suggested from the sign-up name, else `commander_xxxxxx`; never the email. Changing a handle
+is checked first and enforced by the unique index (409 `USERNAME_TAKEN` for the loser of a race).
+
+**Public profile** = username, display name, emblem, creation date, statistics and (if public)
+recent matches. Never the email, Supabase id, internal player id or other account data.
+
+**Statistics** are computed per read from `game_result` / `game_result_standing` (indexed by
+player) joined with the player's own `game_player` seat for the faction: only finished games with a
+stored result count (its primary key on `game_id` rules out double counting); WIN when the player's
+nation is the result's winner, DRAW for a drawn game, LOSS otherwise — including when a computer
+nation won. Win rate = wins × 10 000 / completed in basis points, rounded down; favourite faction =
+most played, then more wins, then key. Games of rulesets without a result (v1–v4) never count.
+
+Later: `deleted_at` for account deletion / anonymization (deferred).
 
 No password, no email (email is in Supabase; copied into `communication_preference`
 only when the user opts into email — see BACKGROUND_JOBS). First-login provisioning uses
@@ -343,7 +377,72 @@ re-run the calculation). Index `(game_id, round)`.
   relation kind, terms as validated JSONB instead of typed term rows, fronts for the unordered-pair
   uniqueness of wars): see the V11 row in §3.0 and [DIPLOMACY.md](DIPLOMACY.md).
 - **player_game_result**, **player_activity_daily**, communication tables:
-  see [BACKGROUND_JOBS.md](BACKGROUND_JOBS.md).
+  see [BACKGROUND_JOBS.md](BACKGROUND_JOBS.md). Phase 12 computes player statistics from the
+  stored results instead (§3.2); a denormalized `player_game_result` is not needed at beta scale.
+
+### 3.8 Social and matchmaking (Phases 12B–13B, module `social`)
+
+These tables are not per-game state: they link accounts (and, for invitations and tickets, a game
+by id). Only the `social` module writes them; lobby membership itself is still changed only by the
+game module, under the game row lock.
+
+**friend_request** — `sender_id`, `recipient_id` (different), `status`, `created_at`, `responded_at`
+(set exactly when not PENDING). Partial unique index on the unordered pair
+`(least, greatest) WHERE status = 'PENDING'`: one pending request per pair whoever sent it.
+
+```
+PENDING ──accept (recipient)──▶ ACCEPTED   (+ friendship row)
+PENDING ──decline (recipient)─▶ DECLINED
+PENDING ──cancel (sender)─────▶ CANCELLED  (also when either player blocks the other)
+```
+
+Repeating the same answer is a no-op; any other transition is refused (409 `REQUEST_NOT_PENDING`);
+a party that may not act sees 404. A request to someone who already asked you accepts their request
+(crossed requests); concurrent crossed inserts are serialized by the unique index
+(`INSERT … ON CONFLICT DO NOTHING`, then the winner's row is locked and accepted).
+
+**friendship** — `PK (player_low_id, player_high_id)` with `low < high` (PostgreSQL uuid order): one
+symmetric row per pair; either side deletes it.
+
+**player_block** — `PK (blocker_id, blocked_id)`. A block in either direction forbids requests,
+invitations and Quick Match pairing between the two; blocking ends the friendship, cancels pending
+requests and invitations and removes the blocked player's notifications to the blocker. Being
+blocked is not revealed (requests fail with `PLAYER_UNAVAILABLE`, profiles show NONE).
+
+**notification** — `player_id` (recipient), `kind` (FRIEND_REQUEST, FRIEND_ACCEPTED, GAME_INVITATION,
+INVITATION_ACCEPTED, INVITATION_DECLINED, MATCH_FOUND, GAME_STARTED, GAME_FINISHED), optional
+`actor_player_id`, `game_id`, `reference_id`, `created_at`, `read_at`. Written in the transaction of
+the change (game start/finish: after commit, in their own transaction). Indexed per recipient; the
+newest 200 per player are kept.
+
+**game_invitation** — `game_id`, `inviter_id`, `invitee_id`, `status`, `reason`, `created_at`,
+`responded_at`; partial unique `(game_id, invitee_id) WHERE status = 'PENDING'`.
+
+```
+PENDING ──accept (invitee; admitted)──────────────▶ ACCEPTED
+PENDING ──decline (invitee)───────────────────────▶ DECLINED
+PENDING ──cancel (inviter) or block───────────────▶ CANCELLED
+PENDING ──accept, but full / started / gone / the
+          inviter no longer hosts (reason) ───────▶ INVALIDATED
+```
+
+Invitations reserve no seat (at most 10 pending per lobby). Acceptance locks the invitation row,
+then `game.api.Lobbies.admitInvited` locks the game row and admits exactly like a code join; an
+INVALIDATED outcome is committed before the 409 is returned.
+
+**matchmaking_ticket** — `player_id`, `queue` (`QUICK_2P`), `status`, `created_at`, `heartbeat_at`,
+`matched_game_id`, `opponent_player_id`, `matched_at`, `acknowledged_at`, `ended_at`.
+Partial unique `(player_id, queue) WHERE status = 'WAITING'`; unique `(matched_game_id, player_id)`;
+`(status = 'MATCHED') = (matched_game_id IS NOT NULL)`.
+
+```
+WAITING ──paired (game created in the same transaction)──▶ MATCHED
+WAITING ──cancel──────────────────────────────────────────▶ CANCELLED
+WAITING ──no heartbeat for the search timeout (90 s)──────▶ EXPIRED (never matched)
+MATCHED ──player opens the game──────────────────────────▶ (acknowledged_at set)
+```
+
+Concurrency strategy and the distinction from turn timers: [TURN_SYSTEM.md §9d](TURN_SYSTEM.md).
 
 ## 4. Game instantiation (start transaction)
 

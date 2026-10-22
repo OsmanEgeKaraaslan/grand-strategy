@@ -246,6 +246,34 @@ describe('Movement and war', () => {
   })
 })
 
+describe('Diplomatic map perspective', () => {
+  it('shows another nation’s relations without changing whose orders are given', async () => {
+    renderGame({ getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('WAR')) })
+    const svg = await screen.findByRole('group', { name: /^Map of/ })
+    await userEvent.click(await screen.findByRole('button', { name: 'Diplomatic' }))
+    expect(screen.getByRole('status', { name: 'Diplomatic perspective' })).toHaveTextContent('Relations of your nation')
+
+    // A click on an Ostran province shows the map from Ostra, and still opens the province.
+    await userEvent.click(within(svg).getByRole('button', { name: /^Sablewater,/ }))
+    const bar = screen.getByRole('status', { name: 'Diplomatic perspective' })
+    expect(bar).toHaveTextContent('Relations of Ostran Confederacy')
+    expect(within(svg).getByRole('button', { name: /^Sablewater,/ })).toHaveAttribute('data-standing', 'self')
+    expect(within(svg).getByRole('button', { name: /^Varnhold,/ })).toHaveAttribute('data-standing', 'war')
+    expect(screen.getByRole('region', { name: 'Sablewater' })).toBeInTheDocument()
+
+    // Selecting your army keeps the perspective, and orders still come from your own nation.
+    await userEvent.click(within(svg).getByRole('button', { name: /^Select your army in Elmsford/ }))
+    expect(screen.getByRole('region', { name: 'Army in Elmsford' })).toBeInTheDocument()
+    expect(bar).toHaveTextContent('Relations of Ostran Confederacy')
+    expect(within(svg).getByRole('button', { name: /^Sablewater.*attack target/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'End turn' })).toBeInTheDocument()
+
+    await userEvent.click(within(bar).getByRole('button', { name: 'Reset to my nation' }))
+    expect(bar).toHaveTextContent('Relations of your nation')
+    expect(within(svg).getByRole('button', { name: /^Varnhold,/ })).toHaveAttribute('data-standing', 'self')
+  })
+})
+
 describe('Peace negotiation', () => {
   it('builds terms, summarizes gains and losses and confirms a major settlement before sending', async () => {
     const proposePeace = vi.fn().mockResolvedValue({ proposal: proposalFixture({ incoming: false }) })

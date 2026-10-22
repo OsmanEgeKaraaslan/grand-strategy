@@ -430,3 +430,43 @@ shortcuts), then UI-C (notifications feed and the remaining gameplay panels) on 
 map-first shell is in place (§5, session 4). Keep the floating-window model, the accessible names
 and the `showPanel` / `openProvince` / `openForces` test helpers; run focused tests, then the full
 frontend checks. Do not commit."
+
+### Session 5 — 2026-10-22 (diplomatic map perspective, focused patch)
+
+**Request:** let the diplomatic map show any nation's relations, not only the viewer's. View-only.
+
+**Data (no backend change):** the diplomacy overview already publishes every **active alliance**
+with its kind (only unanswered proposals are private) and every **war with its participants**
+(`leftRound` for nations that left). `lib/diplomacy.ts` `perspectiveOf(overview, referenceId)`
+derives, for any reference nation: `SELF`, `ALLY` (normal alliance), `DEFENSIVE_ALLY`, `WAR`
+(opposite sides of an active war, both still in it), `CO_BELLIGERENT` (same side, not allied —
+never turned into an alliance), `NEUTRAL`. For the viewer's own nation it uses the server's
+per-nation status (`nations[].status` / `allianceKind`) directly.
+
+**Behaviour:**
+- In Diplomatic mode a left-click on a province selects it as usual (the province window opens)
+  **and** makes its **legal owner** (not an occupier) the reference nation; this works the same
+  from the 3D view. Army markers only select armies; other map modes ignore the reference.
+- A compact indicator at the top of the map ("Relations of X") with **Reset to my nation**; the
+  legend names the reference ("At war with X") and shows the six categories (defensive allies in
+  their own colour).
+- **Authorization separation:** the reference is UI state in `GameView`
+  (`diplomaticReference`, `DiplomaticView` prop of `ProvinceMap`). Orders, move targets, army
+  markers, End turn and every diplomatic command keep using `relationsOf(...)` of the viewer's own
+  nation; nothing else reads the reference.
+
+**Files:** `lib/diplomacy.ts` (`Perspective`, `perspectiveOf`), `components/ProvinceMap.tsx`
+(`DiplomaticView` replaces the `standing` prop; `choose()`, `PerspectiveBar`, legend labels),
+`pages/GamePage.tsx` (reference state), `index.css` (indicator). Tests: `lib/perspective.test.ts`
+(3: categories by kind, no alliance inferred from shared wars / ended wars / proposals / separate
+peace, own view from the server's relations), `ProvinceMap.test.tsx` +6 (click sets owner as
+reference and still selects, no change outside the mode or from army markers, owner not occupier,
+indicator + colours + legend + reset, no reset for your own view, 3D), `GameDiplomacy.test.tsx` +1
+(page: perspective switch keeps your army selection, attack targets and End turn; reset).
+
+**Verification (actually run):** `npx vitest run` — 22 files, **165 tests passed**; `npx tsc -b`
+clean; `npm run lint` 3 pre-existing warnings; `npm run build` OK. Not checked in a browser against
+the real backend.
+
+**Next:** unchanged from session 4 (shell polish, then UI-C). Do not commit without the user's
+permission.

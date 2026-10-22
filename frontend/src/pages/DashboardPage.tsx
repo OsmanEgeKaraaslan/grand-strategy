@@ -1,62 +1,50 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { describeError } from '../api/client'
-import { useCreateGame, useJoinGame, useMaps, useMe, useMyGames } from '../api/queries'
+import { useCreateGame, useJoinGame, useMaps, useMe } from '../api/queries'
 import { Alert } from '../components/Alert'
 import { AppShell } from '../components/AppShell'
-import { Spinner } from '../components/Spinner'
-import { StatusBadge } from '../components/StatusBadge'
+import { ActiveGames } from '../components/social/ActiveGames'
+import { QuickMatchCard } from '../components/social/QuickMatchCard'
+import { SocialPanel, type SocialTab } from '../components/social/SocialPanel'
 
 export function DashboardPage() {
   const me = useMe()
+  const [socialKey, setSocialKey] = useState(0)
+  const [socialTab, setSocialTab] = useState<SocialTab>('friends')
+  const social = useRef<HTMLDivElement>(null)
+
+  function openSocial(tab: SocialTab = 'friends') {
+    setSocialTab(tab)
+    setSocialKey((k) => k + 1)
+    social.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   return (
-    <AppShell>
+    <AppShell onOpenSocial={() => openSocial('friends')}>
       <section className="hero">
         <h1>{me.data ? `Welcome, ${me.data.displayName}` : 'Welcome'}</h1>
-        <p className="muted">Gather a rival, then claim the Reach.</p>
+        <p className="muted">Find a rival, gather your friends, then claim the Reach.</p>
         {me.error && <Alert>{describeError(me.error)}</Alert>}
+        {me.data && me.data.usernameChosen === false && (
+          <p className="onboarding-note">
+            Your username is <strong>@{me.data.username}</strong>. Friends find you by it —{' '}
+            <Link to="/profile">choose your own</Link>.
+          </p>
+        )}
       </section>
+      <div className="dashboard-actions">
+        <QuickMatchCard onInviteFriend={() => openSocial('friends')} />
+        <CreateGameCard />
+        <JoinGameCard />
+      </div>
       <div className="dashboard-grid">
-        <MyGames />
-        <div className="stack">
-          <CreateGameCard />
-          <JoinGameCard />
+        <ActiveGames />
+        <div ref={social} className="stack">
+          <SocialPanel key={socialKey} initialTab={socialTab} />
         </div>
       </div>
     </AppShell>
-  )
-}
-
-function MyGames() {
-  const games = useMyGames()
-
-  return (
-    <section className="card" aria-labelledby="my-games-title">
-      <h2 id="my-games-title">Your games</h2>
-      {games.isPending && <Spinner label="Loading your games…" />}
-      {games.error && <Alert>{describeError(games.error)}</Alert>}
-      {games.data && games.data.length === 0 && (
-        <p className="empty">You are not in any game yet. Create one or join with an invitation code.</p>
-      )}
-      {games.data && games.data.length > 0 && (
-        <ul className="game-list">
-          {games.data.map((game) => (
-            <li key={game.id}>
-              <Link
-                to={game.status === 'IN_PROGRESS' || game.status === 'FINISHED' ? `/games/${game.id}/play` : `/games/${game.id}`}
-                className="game-list__item"
-              >
-                <span className="game-list__name">{game.name}</span>
-                <span className="game-list__meta">
-                  {game.playerCount}/{game.maxPlayers} players · {game.youAreHost ? 'Host' : `Seat ${game.yourSeat + 1}`}
-                </span>
-                <StatusBadge status={game.status} />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   )
 }
 
@@ -82,7 +70,7 @@ function CreateGameCard() {
 
   return (
     <section className="card" aria-labelledby="create-title">
-      <h2 id="create-title">Create a game</h2>
+      <h2 id="create-title">Create a private game</h2>
       <form className="form" onSubmit={handleSubmit}>
         <label className="field">
           <span>Game name</span>
