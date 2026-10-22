@@ -50,7 +50,7 @@ no alliance that would bind a nation to an enemy of one of its allies (`ALLIANCE
 | Retreat | A defeated defender may retreat only where no battalions **at war with it** stand |
 
 Movement access (`military.api.Hostility.Relations.mayEnter`): own territory (owned or controlled),
-territory of a nation one is at war with, or territory whose controller grants access. **Neutral
+territory whose legal owner or current controller one is at war with, or territory whose controller grants access. **Neutral
 foreign territory is closed** (`422 NO_MILITARY_ACCESS`).
 
 ### 2.3 Coalitions

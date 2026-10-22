@@ -157,4 +157,42 @@ public final class CampaignScenario {
 		return world.treasury(game.lobby(), nationKey);
 	}
 
+	/**
+	 * Battalions standing where their nation may not stand, by the movement access rule
+	 * ({@code military.api.Hostility.Relations.mayEnter}, DIPLOMACY.md §3): allowed are the nation's own
+	 * territory (owned or controlled), territory whose legal owner <em>or</em> controller it is at war
+	 * with, and territory whose controller grants it access — in rulesets v6/v7 a normal alliance or
+	 * fighting on the same side of an active war; a defensive pact grants none. Returns readable rows
+	 * (nation, province, owner, controller) so a violation explains itself.
+	 */
+	public List<java.util.Map<String, Object>> battalionsWithoutAccess(Game game) {
+		return jdbc.queryForList("""
+				SELECT bt.key AS nation, pt.key AS province, ot.key AS owner, ct.key AS controller, b.id AS battalion
+				FROM game.battalion b
+				JOIN game.province_state ps ON ps.id = b.province_state_id
+				JOIN game.province_template pt ON pt.id = ps.province_template_id
+				JOIN game.nation bn ON bn.id = b.nation_id JOIN game.nation_template bt ON bt.id = bn.nation_template_id
+				JOIN game.nation onat ON onat.id = ps.owner_nation_id JOIN game.nation_template ot ON ot.id = onat.nation_template_id
+				JOIN game.nation cn ON cn.id = ps.controller_nation_id JOIN game.nation_template ct ON ct.id = cn.nation_template_id
+				WHERE b.game_id = ?::uuid
+				  AND b.nation_id <> ps.owner_nation_id AND b.nation_id <> ps.controller_nation_id
+				  -- at war with the owner or the controller
+				  AND NOT EXISTS (SELECT 1 FROM game.war_front f WHERE f.game_id = b.game_id AND f.active
+				      AND ((f.nation_a_id = b.nation_id AND f.nation_b_id IN (ps.owner_nation_id, ps.controller_nation_id))
+				        OR (f.nation_b_id = b.nation_id AND f.nation_a_id IN (ps.owner_nation_id, ps.controller_nation_id))))
+				  -- access from the controller: a normal alliance ...
+				  AND NOT EXISTS (SELECT 1 FROM game.alliance a WHERE a.game_id = b.game_id AND a.status = 'ACTIVE'
+				      AND a.kind = 'NORMAL'
+				      AND ((a.nation_a_id = b.nation_id AND a.nation_b_id = ps.controller_nation_id)
+				        OR (a.nation_b_id = b.nation_id AND a.nation_a_id = ps.controller_nation_id)))
+				  -- ... or the same side of an active war, both still fighting
+				  AND NOT EXISTS (SELECT 1 FROM game.war w
+				      JOIN game.war_participant mine ON mine.war_id = w.id AND mine.nation_id = b.nation_id AND mine.left_round IS NULL
+				      JOIN game.war_participant theirs ON theirs.war_id = w.id AND theirs.nation_id = ps.controller_nation_id
+				          AND theirs.left_round IS NULL AND theirs.side = mine.side
+				      WHERE w.game_id = b.game_id AND w.status = 'ACTIVE')
+				ORDER BY bt.key, pt.key
+				""", game.gameId());
+	}
+
 }

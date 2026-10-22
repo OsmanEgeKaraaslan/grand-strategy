@@ -86,17 +86,8 @@ class ComputerBehaviourIT {
 		assertThat(commands(game, null, "END_TURN")).isEqualTo(4 * 8);
 		// Nothing the computers did broke an invariant: soldiers stay attributed to their cities ...
 		assertThat(c.world.inconsistentCohorts(game.lobby())).isEmpty();
-		// ... every battalion stands where its nation may stand ...
-		assertThat(jdbc.queryForObject("""
-				SELECT count(*) FROM game.battalion b JOIN game.province_state ps ON ps.id = b.province_state_id
-				WHERE b.game_id = ?::uuid AND ps.controller_nation_id <> b.nation_id AND ps.owner_nation_id <> b.nation_id
-				  AND NOT EXISTS (SELECT 1 FROM game.war_front f WHERE f.game_id = b.game_id AND f.active
-				      AND ((f.nation_a_id = b.nation_id AND f.nation_b_id = ps.controller_nation_id)
-				        OR (f.nation_b_id = b.nation_id AND f.nation_a_id = ps.controller_nation_id)))
-				  AND NOT EXISTS (SELECT 1 FROM game.alliance a WHERE a.game_id = b.game_id AND a.status = 'ACTIVE'
-				      AND ((a.nation_a_id = b.nation_id AND a.nation_b_id = ps.controller_nation_id)
-				        OR (a.nation_b_id = b.nation_id AND a.nation_a_id = ps.controller_nation_id)))
-				""", Integer.class, game.gameId())).isZero();
+		// ... every battalion stands where its nation may stand (the movement access rule) ...
+		assertThat(c.battalionsWithoutAccess(game)).isEmpty();
 		// ... and no computer turn hit an internal error.
 		assertThat(jdbc.queryForObject("""
 				SELECT count(*) FROM game.ai_turn WHERE game_id = ?::uuid AND last_error LIKE 'INTERNAL%'
@@ -105,6 +96,40 @@ class ComputerBehaviourIT {
 		int aurelia = jdbc.queryForObject("SELECT count(*) FROM game.battalion WHERE nation_id = ?::uuid", Integer.class,
 				c.nationId(game, "aurelia"));
 		assertThat(aurelia).isLessThanOrEqualTo(7 + commands(game, "aurelia", "RECRUIT"));
+	}
+
+	/**
+	 * Regression for the CI failure of the test above: a nation at war with a province's legal owner may
+	 * enter it while a third nation — not its enemy — occupies it (computers produced exactly this:
+	 * Aestia, at war with Nordmark, marching into Nordmark's Marchia held by Karpathia). The access
+	 * invariant must accept that and still reject a position in neutral foreign territory.
+	 */
+	@Test
+	void enteringAnEnemyOwnedProvinceHeldByAThirdNationIsLegal() throws Exception {
+		CampaignScenario.Game game = c.start("grand-campaign", List.of("castavar", "nordmark"));
+		c.declareWar(game, "castavar", "aurelia");
+		// Aurelian Aquivelle is occupied by Nordmark, which is at peace with Castavar; nobody defends it.
+		c.world.occupy(game.lobby(), "aquivelle", "nordmark");
+		jdbc.update("""
+				UPDATE game.battalion b SET province_state_id = cap.id
+				FROM game.province_state ps, game.province_state cap, game.province_template pt, game.province_template ct
+				WHERE b.province_state_id = ps.id AND ps.province_template_id = pt.id AND pt.key = 'aquivelle'
+				  AND cap.game_id = ps.game_id AND cap.province_template_id = ct.id AND ct.key = 'aurel'
+				  AND b.game_id = ?::uuid
+				""", game.gameId());
+		String battalion = c.place(game, "castavar", "sierravel", "INFANTRY", 1000);
+
+		MvcResult moved = api.move(c.turnOf(game, "castavar"), game.gameId(), List.of(battalion), "aquivelle",
+				UUID.randomUUID());
+
+		assertThat(status(moved)).as(body(moved)).isEqualTo(200);
+		assertThat(c.world.provinceOf(battalion)).isEqualTo("aquivelle");
+		assertThat(c.battalionsWithoutAccess(game)).isEmpty();
+
+		// The invariant is not vacuous: a battalion in neutral Serenna has no right to stand there.
+		c.place(game, "castavar", "lombarda", "INFANTRY", 1000);
+		assertThat(c.battalionsWithoutAccess(game)).singleElement()
+			.satisfies(row -> assertThat(row).containsEntry("nation", "castavar").containsEntry("province", "lombarda"));
 	}
 
 	// --- war against a human ------------------------------------------------------------------------
