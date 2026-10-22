@@ -11,14 +11,32 @@ export interface Relations {
   mayEnter: (controllerNationId: string) => boolean
   /** Nations you may lend battalions to (allies and nations on your side of a war; Phase 10). */
   partners: string[]
+  /** The caller's standing with a nation, for the diplomatic map mode and army markers. */
+  standing: (nationId: string) => Standing
 }
+
+export type Standing = 'SELF' | 'ALLY' | 'WAR' | 'NEUTRAL'
 
 export function relationsOf(overview: DiplomacyOverview | undefined, yourNationId: string | undefined): Relations {
   if (!overview || !overview.available) {
-    return { atWar: (id) => id !== yourNationId, mayEnter: () => true, partners: [] }
+    return {
+      atWar: (id) => id !== yourNationId,
+      mayEnter: () => true,
+      partners: [],
+      standing: (id) => (id === yourNationId ? 'SELF' : 'WAR'),
+    }
   }
   const byId = new Map(overview.nations.map((n) => [n.nationId, n]))
   const partners = new Set(overview.nations.filter((n) => n.status === 'ALLIED').map((n) => n.nationId))
+  // Nations fighting on the caller's side of an active war count as allies on the map.
+  const coBelligerents = new Set<string>()
+  for (const war of overview.wars ?? []) {
+    const mine = war.participants.find((p) => p.nationId === yourNationId && p.leftRound == null)
+    if (war.status !== 'ACTIVE' || !mine) continue
+    war.participants
+      .filter((p) => p.side === mine.side && p.leftRound == null && p.nationId !== yourNationId)
+      .forEach((p) => coBelligerents.add(p.nationId))
+  }
   for (const war of overview.rules?.features?.attachments ? overview.wars : []) {
     const mine = war.participants.find((p) => p.nationId === yourNationId && p.leftRound == null)
     if (war.status !== 'ACTIVE' || !mine) continue
@@ -30,6 +48,13 @@ export function relationsOf(overview: DiplomacyOverview | undefined, yourNationI
     partners: overview.rules?.features?.attachments ? [...partners].sort() : [],
     atWar: (id) => byId.get(id)?.status === 'WAR',
     mayEnter: (id) => id === yourNationId || byId.get(id)?.weMayEnter === true,
+    standing: (id) => {
+      if (id === yourNationId) return 'SELF'
+      const status = byId.get(id)?.status
+      if (status === 'WAR') return 'WAR'
+      if (status === 'ALLIED' || coBelligerents.has(id)) return 'ALLY'
+      return 'NEUTRAL'
+    },
   }
 }
 

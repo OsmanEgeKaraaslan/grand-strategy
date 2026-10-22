@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { DiplomacyOverview, Lobby, NationRelation } from '../api/types'
-import { fakeApi, renderPage } from '../test/render'
+import { fakeApi, renderPage, showPanel } from '../test/render'
 import { OSTRA, VARN, economyFixture, gameStateFixture, lobbyFixture, mapFixture, militaryFixture } from '../test/fixtures'
 import { GamePage } from './GamePage'
 import { LobbyPage } from './LobbyPage'
@@ -103,6 +103,7 @@ describe('Send gold', () => {
       treasuryMg: 37500,
     })
     renderGame({ sendGold })
+    await showPanel('diplomacy')
 
     const group = await screen.findByRole('group', { name: 'Send gold' })
     const recipient = within(group).getByRole('combobox', { name: 'Recipient' })
@@ -123,6 +124,7 @@ describe('Send gold', () => {
   it('refuses amounts above the treasury before asking the server', async () => {
     const sendGold = vi.fn()
     renderGame({ sendGold })
+    await showPanel('diplomacy')
 
     const group = await screen.findByRole('group', { name: 'Send gold' })
     await userEvent.selectOptions(within(group).getByRole('combobox', { name: 'Recipient' }), OSTRA)
@@ -133,6 +135,7 @@ describe('Send gold', () => {
 
   it('is hidden in games without gifts', async () => {
     renderGame({ getDiplomacy: vi.fn().mockResolvedValue(overview({ rules: { ...overview().rules!, giftMaxMg: null } })) })
+    await showPanel('diplomacy')
 
     await screen.findByRole('region', { name: 'Diplomacy' })
     expect(screen.queryByRole('group', { name: 'Send gold' })).not.toBeInTheDocument()
@@ -205,6 +208,7 @@ describe('Computer seats', () => {
     })
     expect(await screen.findByText('Aurelian Empire (computer) is playing its turn…')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'End turn' })).not.toBeInTheDocument()
+    await showPanel('players')
     const seats = screen.getByRole('region', { name: 'Players' })
     expect(within(seats).getByText('Computer', { selector: '.tag' })).toBeInTheDocument()
   })

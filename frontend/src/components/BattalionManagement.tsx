@@ -1,29 +1,11 @@
 import { useState } from 'react'
 import { describeError } from '../api/client'
 import { useBattalion, useDisband, useReinforce } from '../api/queries'
-import type { DisbandBlocker, DisbandResult, ReinforceBlocker } from '../api/types'
+import type { DisbandResult } from '../api/types'
+import { DISBAND_BLOCKER_TEXT, REINFORCE_BLOCKER_TEXT } from '../lib/blockers'
 import { formatGold } from '../lib/gold'
 import { UNIT_LABELS } from '../lib/units'
 import { Alert } from './Alert'
-
-const REINFORCE_BLOCKER_TEXT: Record<ReinforceBlocker, string> = {
-  NOT_YOUR_TURN: 'You can reinforce on your turn.',
-  AT_FULL_STRENGTH: 'Already at full strength.',
-  EXCEEDS_MAXIMUM_MANPOWER: 'A battalion cannot exceed its maximum manpower.',
-  TURN_LIMIT_REACHED: 'This battalion has received the maximum of 500 replacements this turn.',
-  NOT_OWNED_CITY: 'Only in a city your nation owns — move the battalion home first.',
-  OCCUPIED: 'This city is occupied by another nation.',
-  BESIEGED: 'This city is under siege.',
-  IN_ARREARS: 'Your nation is in arrears.',
-  INSUFFICIENT_POPULATION: 'Not enough civilians left in this city.',
-  INSUFFICIENT_GOLD: 'Not enough gold in the treasury.',
-}
-
-const DISBAND_BLOCKER_TEXT: Record<DisbandBlocker, string> = {
-  NOT_YOUR_TURN: 'You can disband on your turn.',
-  NOT_FRIENDLY_TERRITORY: 'Only in a province your nation controls.',
-  BESIEGED: 'Not inside a province under siege.',
-}
 
 /** Replacement cost as the server computes it (recruitment cost pro rata, rounded up) — display only. */
 function replacementCost(recruitCostMg: number, battalionManpower: number, soldiers: number): number {
@@ -31,18 +13,20 @@ function replacementCost(recruitCostMg: number, battalionManpower: number, soldi
 }
 
 /**
- * Reinforcement and disbanding for one of your battalions. Every limit, price and destination is
- * the server's quote; the server re-checks the command when it arrives.
+ * Reinforcement or disbanding (mode) of one of your battalions, opened from the army window. Every
+ * limit, price and destination is the server's quote; the server re-checks the command when it arrives.
  */
 export function BattalionManagement({
   gameId,
   battalionId,
   stateVersion,
+  mode,
   onDisbanded,
 }: {
   gameId: string
   battalionId: string
   stateVersion: number
+  mode: 'reinforce' | 'disband'
   onDisbanded: (result: DisbandResult) => void
 }) {
   const details = useBattalion(gameId, battalionId, stateVersion)
@@ -70,9 +54,7 @@ export function BattalionManagement({
       {
         onSuccess: (result) => {
           setAmountText(null)
-          setMessage(
-            `Added ${result.soldiersAdded.toLocaleString('en-US')} soldiers for ${formatGold(result.costMg)} gold.`,
-          )
+          setMessage(`Added ${result.soldiersAdded.toLocaleString('en-US')} soldiers for ${formatGold(result.costMg)} gold.`)
         },
       },
     )
@@ -96,103 +78,102 @@ export function BattalionManagement({
         {UNIT_LABELS[battalion.unitType]} battalion · {battalion.manpower.toLocaleString('en-US')} /{' '}
         {battalion.maxManpower.toLocaleString('en-US')}
       </h4>
-      <p className="muted">
-        Soldiers from:{' '}
-        {cohorts.map((c) => `${c.cityName} ${c.soldiers.toLocaleString('en-US')}`).join(', ')}
-      </p>
+      <p className="muted">Soldiers from: {cohorts.map((c) => `${c.cityName} ${c.soldiers.toLocaleString('en-US')}`).join(', ')}</p>
 
-      <section className="reinforce" aria-label="Reinforce">
-        <h5>Reinforce from {quote.cityName}</h5>
-        <dl className="facts">
-          <dt>Missing</dt>
-          <dd>{quote.missing.toLocaleString('en-US')}</dd>
-          <dt>Available now</dt>
-          <dd>{quote.maxSoldiers.toLocaleString('en-US')} (at most 500 per turn)</dd>
-        </dl>
-        {quote.allowed ? (
-          <>
-            <label className="reinforce__amount">
-              Soldiers to add
-              <input
-                type="number"
-                min={1}
-                max={quote.maxSoldiers}
-                value={text}
-                onChange={(event) => setAmountText(event.target.value)}
-              />
-            </label>
-            {!validAmount && (
-              <p className="muted">Enter a number from 1 to {quote.maxSoldiers.toLocaleString('en-US')}.</p>
-            )}
-            <dl className="facts">
-              <dt>Cost</dt>
-              <dd>{formatGold(cost)} gold</dd>
-              <dt>Civilians</dt>
-              <dd>
-                −{soldiers.toLocaleString('en-US')} ({quote.cityName}: {quote.cityPopulation.toLocaleString('en-US')} →{' '}
-                {(quote.cityPopulation - soldiers).toLocaleString('en-US')})
-              </dd>
-            </dl>
-            <p className="muted">A reinforced battalion still defends but cannot move or attack this turn.</p>
-          </>
-        ) : (
-          <ul className="blockers">
-            {quote.blockers.map((b) => (
-              <li key={b}>{REINFORCE_BLOCKER_TEXT[b]}</li>
-            ))}
-          </ul>
-        )}
-        <button
-          type="button"
-          className="button button--primary"
-          disabled={!quote.allowed || !validAmount || reinforce.isPending}
-          onClick={handleReinforce}
-        >
-          {reinforce.isPending ? 'Reinforcing…' : `Reinforce with ${soldiers.toLocaleString('en-US')}`}
-        </button>
-        {message && <p role="status">{message}</p>}
-        {reinforce.error && <Alert>{describeError(reinforce.error)}</Alert>}
-      </section>
-
-      <section className="disband" aria-label="Disband">
-        <h5>Disband</h5>
-        {!preview.allowed && (
-          <ul className="blockers">
-            {preview.blockers.map((b) => (
-              <li key={b}>{DISBAND_BLOCKER_TEXT[b]}</li>
-            ))}
-          </ul>
-        )}
-        {!confirming ? (
-          <button type="button" className="button button--danger" disabled={!preview.allowed} onClick={() => setConfirming(true)}>
-            Disband…
-          </button>
-        ) : (
-          <div className="confirm" role="alertdialog" aria-labelledby={`disband-${battalionId}`}>
-            <p id={`disband-${battalionId}`}>
-              Disband this battalion? {preview.soldiers.toLocaleString('en-US')} surviving soldiers return to civilian life:
-            </p>
-            <ul>
-              {preview.returns.map((r) => (
-                <li key={r.cityId}>
-                  {r.cityName}: +{r.soldiers.toLocaleString('en-US')}
-                  {r.fallback && <span className="tag">origin lost — settles here</span>}
-                </li>
+      {mode === 'reinforce' && (
+        <section className="reinforce" aria-label="Reinforce">
+          <h5>Reinforce from {quote.cityName}</h5>
+          <dl className="facts facts--compact">
+            <dt>Missing</dt>
+            <dd>{quote.missing.toLocaleString('en-US')}</dd>
+            <dt>Available now</dt>
+            <dd>{quote.maxSoldiers.toLocaleString('en-US')} (at most 500 per turn)</dd>
+          </dl>
+          {quote.allowed ? (
+            <>
+              <label className="reinforce__amount">
+                Soldiers to add
+                <input
+                  type="number"
+                  min={1}
+                  max={quote.maxSoldiers}
+                  value={text}
+                  onChange={(event) => setAmountText(event.target.value)}
+                />
+              </label>
+              {!validAmount && <p className="muted">Enter a number from 1 to {quote.maxSoldiers.toLocaleString('en-US')}.</p>}
+              <dl className="facts facts--compact">
+                <dt>Cost</dt>
+                <dd>{formatGold(cost)} gold</dd>
+                <dt>Civilians</dt>
+                <dd>
+                  −{soldiers.toLocaleString('en-US')} ({quote.cityName}: {quote.cityPopulation.toLocaleString('en-US')} →{' '}
+                  {(quote.cityPopulation - soldiers).toLocaleString('en-US')})
+                </dd>
+              </dl>
+              <p className="muted">A reinforced battalion still defends but cannot move or attack this turn.</p>
+            </>
+          ) : (
+            <ul className="blockers">
+              {quote.blockers.map((b) => (
+                <li key={b}>{REINFORCE_BLOCKER_TEXT[b]}</li>
               ))}
             </ul>
-            <p className="muted">Upkeep saved: {formatGold(preview.upkeepSavedMg)} gold per round. This cannot be undone.</p>
-            <div className="confirm__actions">
-              <button type="button" className="button button--danger" disabled={disband.isPending} onClick={handleDisband}>
-                {disband.isPending ? 'Disbanding…' : 'Confirm disband'}
-              </button>
-              <button type="button" className="button button--ghost" onClick={() => setConfirming(false)}>
-                Cancel
-              </button>
+          )}
+          <button
+            type="button"
+            className="button button--primary button--small"
+            disabled={!quote.allowed || !validAmount || reinforce.isPending}
+            onClick={handleReinforce}
+          >
+            {reinforce.isPending ? 'Reinforcing…' : `Reinforce with ${soldiers.toLocaleString('en-US')}`}
+          </button>
+          {message && <p role="status">{message}</p>}
+          {reinforce.error && <Alert>{describeError(reinforce.error)}</Alert>}
+        </section>
+      )}
+
+      {mode === 'disband' && (
+        <section className="disband" aria-label="Disband">
+          <h5>Disband</h5>
+          {!preview.allowed && (
+            <ul className="blockers">
+              {preview.blockers.map((b) => (
+                <li key={b}>{DISBAND_BLOCKER_TEXT[b]}</li>
+              ))}
+            </ul>
+          )}
+          {!confirming ? (
+            <button type="button" className="button button--danger button--small" disabled={!preview.allowed} onClick={() => setConfirming(true)}>
+              Disband…
+            </button>
+          ) : (
+            <div className="confirm" role="alertdialog" aria-labelledby={`disband-${battalionId}`}>
+              <p id={`disband-${battalionId}`}>
+                Disband this battalion? {preview.soldiers.toLocaleString('en-US')} surviving soldiers return to civilian life:
+              </p>
+              <ul>
+                {preview.returns.map((r) => (
+                  <li key={r.cityId}>
+                    {r.cityName}: +{r.soldiers.toLocaleString('en-US')}
+                    {r.fallback && <span className="tag">origin lost — settles here</span>}
+                  </li>
+                ))}
+              </ul>
+              <p className="muted">Upkeep saved: {formatGold(preview.upkeepSavedMg)} gold per round. This cannot be undone.</p>
+              <div className="confirm__actions">
+                <button type="button" className="button button--danger button--small" disabled={disband.isPending} onClick={handleDisband}>
+                  {disband.isPending ? 'Disbanding…' : 'Confirm disband'}
+                </button>
+                <button type="button" className="button button--ghost button--small" onClick={() => setConfirming(false)}>
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-        )}
-        {disband.error && <Alert>{describeError(disband.error)}</Alert>}
-      </section>
+          )}
+          {disband.error && <Alert>{describeError(disband.error)}</Alert>}
+        </section>
+      )}
     </div>
   )
 }

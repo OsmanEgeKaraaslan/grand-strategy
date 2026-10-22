@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
 import { formatGold } from '../lib/gold'
-import { fakeApi, renderPage } from '../test/render'
+import { fakeApi, renderPage, showPanel } from '../test/render'
 import { OSTRA, cityEconomyFixture, economyFixture, gameStateFixture, mapFixture, militaryFixture } from '../test/fixtures'
 import { GamePage } from './GamePage'
 
@@ -49,6 +49,7 @@ describe('Game economy', () => {
         }),
       ),
     })
+    await showPanel('economy')
 
     const treasury = await screen.findByRole('region', { name: 'Treasury' })
     expect(within(treasury).getByText('10 gold')).toBeInTheDocument()
@@ -58,12 +59,14 @@ describe('Game economy', () => {
 
   it('warns about arrears', async () => {
     renderGame({ getEconomy: vi.fn().mockResolvedValue(economyFixture({ inArrears: true })) })
+    await showPanel('economy')
 
     expect(await screen.findByText(/Your nation is in arrears/)).toBeInTheDocument()
   })
 
   it('shows population, employment, production and workshops of the selected city', async () => {
     renderGame()
+    await showPanel('economy')
     await openProvince(/^Varnhold/)
 
     const panel = screen.getByRole('region', { name: 'Varnhold' })
@@ -88,6 +91,7 @@ describe('Game economy', () => {
         ]),
       ),
     })
+    await showPanel('economy')
     await openProvince(/^Varnhold/)
 
     const panel = screen.getByRole('region', { name: 'Varnhold' })
@@ -105,6 +109,7 @@ describe('Game economy', () => {
       city: cityEconomyFixture(),
     })
     renderGame({ buildWorkshop })
+    await showPanel('economy')
     await openProvince(/^Elmsford/)
 
     const panel = screen.getByRole('region', { name: 'Elmsford' })
@@ -118,6 +123,7 @@ describe('Game economy', () => {
   it('shows why a construction was rejected', async () => {
     const buildWorkshop = vi.fn().mockRejectedValue(new ApiError({ status: 422, code: 'INSUFFICIENT_GOLD' }))
     renderGame({ buildWorkshop })
+    await showPanel('economy')
     await openProvince(/^Elmsford/)
 
     await userEvent.click(screen.getByRole('button', { name: /Build Tier 1 workshop/ }))
@@ -139,6 +145,7 @@ describe('Game economy', () => {
         ]),
       ),
     })
+    await showPanel('economy')
     await openProvince(/^Varnhold/)
 
     expect(screen.getByRole('button', { name: /Build Tier 1 workshop/ })).toBeDisabled()
@@ -149,6 +156,7 @@ describe('Game economy', () => {
 
   it('offers no construction in other nations’ cities', async () => {
     renderGame()
+    await showPanel('economy')
     await openProvince(/^Sablewater/)
 
     const panel = screen.getByRole('region', { name: 'Sablewater' })
@@ -166,6 +174,7 @@ describe('Game economy', () => {
       .mockResolvedValueOnce(economyFixture({ treasuryMg: 10000 }))
       .mockResolvedValue(economyFixture({ treasuryMg: 60000 }))
     const { queryClient } = renderGame({ getGameState, getEconomy })
+    await showPanel('economy')
 
     expect(await screen.findByText('10 gold')).toBeInTheDocument()
     await act(() => queryClient.invalidateQueries({ queryKey: ['games', 'g1', 'state'] }))

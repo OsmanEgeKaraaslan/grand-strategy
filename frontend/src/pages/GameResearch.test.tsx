@@ -1,8 +1,8 @@
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { CityInstitutions, ResearchOverview } from '../api/types'
-import { fakeApi, renderPage } from '../test/render'
+import { fakeApi, renderPage, showPanel } from '../test/render'
 import {
   VARN,
   cityEconomyFixture,
@@ -104,6 +104,7 @@ async function openVarnhold() {
 describe('Research panel', () => {
   it('shows the three pools with points and income per round', async () => {
     renderGame()
+    await showPanel('technology')
 
     const panel = await screen.findByRole('region', { name: 'Research' })
     expect(within(panel).getByText('45 points')).toBeInTheDocument()
@@ -115,6 +116,7 @@ describe('Research panel', () => {
   it('unlocks the next military level and explains its effect', async () => {
     const unlockTechnology = vi.fn().mockResolvedValue({ kind: 'TECHNOLOGY', subject: 'MILITARY', level: 2, costPoints: 40, research: researchFixture() })
     renderGame({ unlockTechnology })
+    await showPanel('technology')
 
     const track = await screen.findByRole('group', { name: 'Military technology' })
     expect(within(track).getByText(/Level 2: \+10% damage for all units/)).toBeInTheDocument()
@@ -126,6 +128,7 @@ describe('Research panel', () => {
 
   it('shows why a civilian level cannot be bought and what it would unlock', async () => {
     renderGame()
+    await showPanel('technology')
 
     const track = await screen.findByRole('group', { name: 'Civilian technology' })
     expect(within(track).getByText(/Level 2: unlocks Tier 2 workshops/)).toBeInTheDocument()
@@ -137,6 +140,7 @@ describe('Research panel', () => {
   it('chooses a doctrine with doctrine points', async () => {
     const unlockDoctrine = vi.fn().mockResolvedValue({ kind: 'DOCTRINE', subject: 'RIVER_ENGINEERING', level: null, costPoints: 30, research: researchFixture() })
     renderGame({ unlockDoctrine })
+    await showPanel('technology')
 
     const doctrines = await screen.findByRole('group', { name: 'Doctrines' })
     expect(within(doctrines).getByText(/river crossing penalty reduced by 50%/)).toBeInTheDocument()
@@ -152,6 +156,7 @@ describe('Research panel', () => {
       d.key === 'MOUNTAIN_WARFARE' ? { ...d, chosen: true } : { ...d, allowed: false, blockers: ['TIER_FULL'] },
     )
     renderGame({ getResearch: vi.fn().mockResolvedValue(chosen) })
+    await showPanel('technology')
 
     const doctrines = await screen.findByRole('group', { name: 'Doctrines' })
     expect(within(doctrines).getByText('Chosen')).toBeInTheDocument()
@@ -165,6 +170,7 @@ describe('Research panel', () => {
     const military = militaryFixture()
     military.modifiers = { ...military.modifiers, militaryLevel: 2, damageBonusBps: { INFANTRY: 1000 }, riverAttackMultiplier: 0.9, upkeepReductionBps: 2000 }
     renderGame({ getMilitary: vi.fn().mockResolvedValue(military) })
+    await showPanel('technology')
 
     const effects = await screen.findByRole('group', { name: 'Active effects' })
     expect(within(effects).getByText('+10%')).toBeInTheDocument()
@@ -175,9 +181,12 @@ describe('Research panel', () => {
   })
 
   it('is hidden for games without research', async () => {
-    renderGame({ getResearch: vi.fn().mockResolvedValue(researchFixture({ available: false })) })
+    const getResearch = vi.fn().mockResolvedValue(researchFixture({ available: false }))
+    renderGame({ getResearch })
+    await showPanel('technology')
 
-    await screen.findByRole('region', { name: 'Treasury' })
+    await screen.findByRole('region', { name: 'Resources' })
+    await waitFor(() => expect(getResearch).toHaveBeenCalled())
     expect(screen.queryByRole('region', { name: 'Research' })).not.toBeInTheDocument()
   })
 
@@ -185,9 +194,15 @@ describe('Research panel', () => {
     const getGameState = vi.fn().mockResolvedValueOnce(gameStateFixture()).mockResolvedValue(gameStateFixture({ stateVersion: 9, round: 2, turnNumber: 3 }))
     const later = researchFixture()
     later.pools = later.pools.map((p) => (p.pool === 'MILITARY' ? { ...p, points: 55 } : p))
-    const getResearch = vi.fn().mockResolvedValueOnce(researchFixture()).mockResolvedValue(later)
-    const endTurn = vi.fn().mockResolvedValue({ round: 2, activeSeat: 0, turnNumber: 3, stateVersion: 9, roundCompleted: true, replayed: false })
+    // The research view changes with the round, however often it is fetched (resource bar and panel both read it).
+    let resolved = false
+    const getResearch = vi.fn(() => Promise.resolve(resolved ? later : researchFixture()))
+    const endTurn = vi.fn(() => {
+      resolved = true
+      return Promise.resolve({ round: 2, activeSeat: 0, turnNumber: 3, stateVersion: 9, roundCompleted: true, replayed: false })
+    })
     renderGame({ getGameState, getResearch, endTurn })
+    await showPanel('technology')
 
     const panel = await screen.findByRole('region', { name: 'Research' })
     expect(within(panel).getByText('45 points')).toBeInTheDocument()
@@ -200,6 +215,7 @@ describe('Institutions, Tier 2 and growth in the province panel', () => {
   it('builds an institution and shows existing ones and reasons', async () => {
     const buildInstitution = vi.fn().mockResolvedValue({ institution: researchFixture().institutions[1], costMg: 60000, treasuryMg: 0 })
     renderGame({ buildInstitution })
+    await showPanel('technology')
 
     const panel = await openVarnhold()
     const institutions = await within(panel).findByRole('region', { name: 'Institutions' })
@@ -222,6 +238,7 @@ describe('Institutions, Tier 2 and growth in the province panel', () => {
     ]
     const upgradeWorkshop = vi.fn().mockResolvedValue({ workshop: city.workshops[0], costMg: 60000, treasuryMg: 0 })
     renderGame({ getEconomy: vi.fn().mockResolvedValue(economyFixture({}, [city])), upgradeWorkshop })
+    await showPanel('technology')
 
     const panel = await openVarnhold()
     expect(await within(panel).findByText(/Production 20 → 28 gold from round 2; keeps Tier 1 output until then/)).toBeInTheDocument()
@@ -239,6 +256,7 @@ describe('Institutions, Tier 2 and growth in the province panel', () => {
       { ...city.workshops[0], id: 'w2', upgradeTargetTier: 2, upgradeCompletesAfterRound: 3, upgrade: null },
     ]
     renderGame({ getEconomy: vi.fn().mockResolvedValue(economyFixture({}, [city])) })
+    await showPanel('technology')
 
     const panel = await openVarnhold()
     expect(await within(panel).findByText('Requires the civilian technology that unlocks Tier 2.')).toBeInTheDocument()
@@ -248,6 +266,7 @@ describe('Institutions, Tier 2 and growth in the province panel', () => {
 
   it('shows next round growth', async () => {
     renderGame()
+    await showPanel('technology')
 
     const panel = await openVarnhold()
     expect(await within(panel).findByText(/Growth: \+60 people at the end of this round \(0.5% per round\)/)).toBeInTheDocument()
@@ -256,6 +275,7 @@ describe('Institutions, Tier 2 and growth in the province panel', () => {
   it('explains why a besieged city does not grow', async () => {
     const besieged = cityEconomyFixture({ growth: { eligible: false, rateBps: 50, nextRoundGrowth: 0, blockers: ['BESIEGED'] } })
     renderGame({ getEconomy: vi.fn().mockResolvedValue(economyFixture({}, [besieged])) })
+    await showPanel('technology')
 
     const panel = await openVarnhold()
     expect(await within(panel).findByText(/No growth this round: the city is under siege \(it loses 5% instead\)/))

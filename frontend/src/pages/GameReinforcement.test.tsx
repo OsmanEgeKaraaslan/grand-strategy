@@ -1,7 +1,7 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { fakeApi, renderPage } from '../test/render'
+import { fakeApi, openForces, renderPage, showPanel } from '../test/render'
 import {
   battalionDetailsFixture,
   battalionFixture,
@@ -28,12 +28,14 @@ function renderGame(overrides = {}) {
   return renderPage(<GamePage />, { route: '/games/g1/play', path: '/games/:gameId/play', api })
 }
 
-/** Opens Elmsford and selects the damaged 650-man battalion b2. */
-async function selectDamagedBattalion() {
-  const map = await screen.findByRole('group', { name: /^Map of/ })
-  await userEvent.click(within(map).getByRole('button', { name: /^Elmsford/ }))
-  const panel = screen.getByRole('region', { name: 'Elmsford' })
+/** Opens the forces in Elmsford, selects the damaged 650-man battalion b2 and picks a command for it. */
+async function selectDamagedBattalion(tool: 'Reinforce' | 'Disband') {
+  const panel = await openForces('Elmsford')
+  const command = within(panel).getByRole('button', { name: tool })
+  // Reinforce and disband act on exactly one of your battalions.
+  expect(command).toBeDisabled()
   await userEvent.click(await within(panel).findByRole('checkbox', { name: 'Select Infantry, 650 of 1,000 men' }))
+  await userEvent.click(command)
   return panel
 }
 
@@ -57,7 +59,7 @@ describe('Reinforcement and disbanding', () => {
     })
     renderGame({ getGameState, getEconomy, reinforce })
 
-    await selectDamagedBattalion()
+    await selectDamagedBattalion('Reinforce')
     const section = await screen.findByRole('region', { name: 'Reinforce' })
     expect(within(section).getByText('350 (at most 500 per turn)')).toBeInTheDocument()
     expect(within(section).getByText('3.5 gold')).toBeInTheDocument()
@@ -74,7 +76,8 @@ describe('Reinforcement and disbanding', () => {
 
     expect(reinforce).toHaveBeenCalledWith('g1', 'b2', 350, expect.stringMatching(/^[0-9a-f-]{36}$/))
     expect(await within(section).findByText('Added 350 soldiers for 3.5 gold.')).toBeInTheDocument()
-    const treasury = screen.getByRole('region', { name: 'Treasury' })
+    await showPanel('economy')
+    const treasury = await screen.findByRole('region', { name: 'Treasury' })
     expect(await within(treasury).findByText('46.5 gold')).toBeInTheDocument()
   })
 
@@ -83,7 +86,7 @@ describe('Reinforcement and disbanding', () => {
     details.reinforcement = { ...details.reinforcement, allowed: false, maxSoldiers: 0, costOfMaxMg: 0, blockers: ['NOT_OWNED_CITY'] }
     renderGame({ getBattalion: vi.fn().mockResolvedValue(details) })
 
-    await selectDamagedBattalion()
+    await selectDamagedBattalion('Reinforce')
     const section = await screen.findByRole('region', { name: 'Reinforce' })
     expect(within(section).getByText('Only in a city your nation owns — move the battalion home first.')).toBeInTheDocument()
     expect(within(section).getByRole('button', { name: /^Reinforce with/ })).toBeDisabled()
@@ -110,7 +113,7 @@ describe('Reinforcement and disbanding', () => {
     })
     renderGame({ getBattalion: vi.fn().mockResolvedValue(details), disband })
 
-    const panel = await selectDamagedBattalion()
+    const panel = await selectDamagedBattalion('Disband')
     const section = await screen.findByRole('region', { name: 'Disband' })
     await userEvent.click(within(section).getByRole('button', { name: 'Disband…' }))
     const dialog = within(section).getByRole('alertdialog')
@@ -136,7 +139,7 @@ describe('Reinforcement and disbanding', () => {
     details.disband = { ...details.disband, allowed: false, blockers: ['NOT_FRIENDLY_TERRITORY'] }
     renderGame({ getBattalion: vi.fn().mockResolvedValue(details) })
 
-    await selectDamagedBattalion()
+    await selectDamagedBattalion('Disband')
     const section = await screen.findByRole('region', { name: 'Disband' })
     expect(within(section).getByText('Only in a province your nation controls.')).toBeInTheDocument()
     expect(within(section).getByRole('button', { name: 'Disband…' })).toBeDisabled()
@@ -149,8 +152,7 @@ describe('Reinforcement and disbanding', () => {
       ),
     })
 
-    const map = await screen.findByRole('group', { name: /^Map of/ })
-    await userEvent.click(within(map).getByRole('button', { name: /^Elmsford/ }))
+    await openForces('Elmsford')
     expect(await screen.findByText('Reinforced this turn — defends, cannot move')).toBeInTheDocument()
   })
 })
@@ -192,6 +194,7 @@ describe('Enhanced battle report', () => {
       getBattle,
     })
 
+    await showPanel('military')
     const forces = await screen.findByRole('region', { name: 'Your forces' })
     await userEvent.click(within(forces).getByRole('button', { name: 'Battle of Sablewater' }))
     const report = await screen.findByRole('region', { name: 'Battle of Sablewater' })

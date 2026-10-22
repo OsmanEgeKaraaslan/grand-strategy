@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
-import { fakeApi, renderPage } from '../test/render'
+import { fakeApi, renderPage, showPanel } from '../test/render'
 import { OSTRA, VARN, economyFixture, gameStateFixture, mapFixture, militaryFixture } from '../test/fixtures'
 import { GamePage } from './GamePage'
 
@@ -51,6 +51,7 @@ describe('GamePage', () => {
 
     expect(await screen.findByText(/Waiting for Bryn \(Ostran Confederacy\)/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'End turn' })).not.toBeInTheDocument()
+    await showPanel('players')
     const players = screen.getByRole('region', { name: 'Players' })
     expect(within(players).getByText('Active')).toBeInTheDocument()
   })
@@ -61,10 +62,10 @@ describe('GamePage', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Elmsford/ }))
     const panel = screen.getByRole('region', { name: 'Elmsford' })
     expect(within(panel).getByText('Plains')).toBeInTheDocument()
-    expect(within(panel).getAllByText('Kingdom of Varn')).toHaveLength(2)
+    expect(within(panel).getByText(/· Kingdom of Varn/)).toBeInTheDocument()
     expect(within(panel).getAllByText('8,000')).toHaveLength(2) // population and farmers
     expect(within(panel).getByText('across river')).toBeInTheDocument()
-    expect(within(panel).getByRole('heading', { name: 'Forces' })).toBeInTheDocument()
+    expect(await within(panel).findByRole('button', { name: 'Forces in Elmsford' })).toBeInTheDocument()
 
     within(screen.getByRole('group', { name: /^Map of/ })).getByRole('button', { name: /^Sablewater/ }).focus()
     await userEvent.keyboard('{Enter}')

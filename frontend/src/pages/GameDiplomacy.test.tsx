@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { DiplomacyOverview, GameResult, PeaceProposal, WarView } from '../api/types'
-import { fakeApi, renderPage } from '../test/render'
+import { fakeApi, openForces, renderPage, showPanel } from '../test/render'
 import { OSTRA, VARN, economyFixture, gameStateFixture, mapFixture, militaryFixture } from '../test/fixtures'
 import { GamePage } from './GamePage'
 
@@ -153,6 +153,7 @@ async function diplomacyPanel() {
 describe('Diplomacy panel', () => {
   it('shows every nation at peace and explains access', async () => {
     renderGame()
+    await showPanel('diplomacy')
 
     const panel = await diplomacyPanel()
     expect(within(panel).getByText('At peace')).toBeInTheDocument()
@@ -163,6 +164,7 @@ describe('Diplomacy panel', () => {
   it('declares war only after an explicit confirmation', async () => {
     const declareWar = vi.fn().mockResolvedValue({ war: warFixture(), joinedDefenders: [] })
     renderGame({ declareWar })
+    await showPanel('diplomacy')
 
     const panel = await diplomacyPanel()
     await userEvent.click(within(panel).getByRole('button', { name: 'Declare war' }))
@@ -176,6 +178,7 @@ describe('Diplomacy panel', () => {
   it('proposes an alliance of the chosen kind', async () => {
     const proposeAlliance = vi.fn().mockResolvedValue({ alliance: {}, withdrawals: [] })
     renderGame({ proposeAlliance })
+    await showPanel('diplomacy')
 
     const panel = await diplomacyPanel()
     await userEvent.selectOptions(within(panel).getByRole('combobox', { name: /Alliance type/ }), 'DEFENSIVE')
@@ -186,6 +189,7 @@ describe('Diplomacy panel', () => {
 
   it('shows the war with its server-computed score, duration and history', async () => {
     renderGame({ getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('WAR')) })
+    await showPanel('diplomacy')
 
     const war = await screen.findByRole('article', { name: /War: Kingdom of Varn against Ostran Confederacy/ })
     expect(within(war).getByText(/Declared in round 2 · 3 round\(s\)/)).toBeInTheDocument()
@@ -204,6 +208,7 @@ describe('Diplomacy panel', () => {
       ],
     })
     renderGame({ getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('WAR', { wars: [war] })) })
+    await showPanel('diplomacy')
 
     const card = await screen.findByRole('article', { name: /War:/ })
     expect(within(card).getByText(/Third Realm \(joined to defend an ally\)/)).toBeInTheDocument()
@@ -212,6 +217,7 @@ describe('Diplomacy panel', () => {
 
   it('explains that older games have no diplomacy', async () => {
     renderGame({ getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('PEACE', { available: false, rules: null })) })
+    await showPanel('diplomacy')
 
     expect(await within(await diplomacyPanel()).findByText(/every nation is permanently at war/)).toBeInTheDocument()
   })
@@ -220,10 +226,9 @@ describe('Diplomacy panel', () => {
 describe('Movement and war', () => {
   it('closes neutral territory and calls a peaceful neighbour’s battalions neutral', async () => {
     renderGame()
+    await showPanel('diplomacy')
 
-    const map = await screen.findByRole('group', { name: /^Map of/ })
-    await userEvent.click(within(map).getByRole('button', { name: /^Elmsford/ }))
-    const province = screen.getByRole('region', { name: 'Elmsford' })
+    const province = await openForces('Elmsford')
     await userEvent.click(await within(province).findByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
     const sable = within(province).getByRole('button', { name: 'Move to Sablewater' })
     expect(sable).toBeDisabled()
@@ -232,11 +237,10 @@ describe('Movement and war', () => {
 
   it('offers the attack once the nations are at war', async () => {
     renderGame({ getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('WAR')) })
+    await showPanel('diplomacy')
 
-    const map = await screen.findByRole('group', { name: /^Map of/ })
     await screen.findByRole('article', { name: /War:/ })
-    await userEvent.click(within(map).getByRole('button', { name: /^Elmsford/ }))
-    const province = screen.getByRole('region', { name: 'Elmsford' })
+    const province = await openForces('Elmsford')
     await userEvent.click(await within(province).findByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
     expect(within(province).getByRole('button', { name: 'Attack Sablewater' })).toBeEnabled()
   })
@@ -246,6 +250,7 @@ describe('Peace negotiation', () => {
   it('builds terms, summarizes gains and losses and confirms a major settlement before sending', async () => {
     const proposePeace = vi.fn().mockResolvedValue({ proposal: proposalFixture({ incoming: false }) })
     renderGame({ getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('WAR')), proposePeace }, withMarrowfield)
+    await showPanel('diplomacy')
 
     await userEvent.click(await screen.findByRole('button', { name: 'Negotiate peace' }))
     const negotiation = screen.getByRole('group', { name: 'Peace negotiation' })
@@ -290,6 +295,7 @@ describe('Peace negotiation', () => {
   it('transfers people between named cities and lets the server check the terms', async () => {
     const checkPeace = vi.fn().mockResolvedValue({ valid: false, violations: [{ term: 0, code: 'SHARE_EXCEEDED' }] })
     renderGame({ getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('WAR')), checkPeace }, withMarrowfield)
+    await showPanel('diplomacy')
 
     await userEvent.click(await screen.findByRole('button', { name: 'Negotiate peace' }))
     const negotiation = screen.getByRole('group', { name: 'Peace negotiation' })
@@ -312,6 +318,7 @@ describe('Peace negotiation', () => {
       getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('WAR', { proposals: [proposalFixture()] })),
       acceptPeace,
     })
+    await showPanel('diplomacy')
 
     const proposal = await screen.findByRole('article', { name: 'Incoming peace proposal' })
     expect(within(proposal).getByText(/Ostran Confederacy pays 20 gold to Kingdom of Varn at once/)).toBeInTheDocument()
@@ -332,6 +339,7 @@ describe('Peace negotiation', () => {
       peaceAction,
       counterPeace,
     })
+    await showPanel('diplomacy')
 
     const proposal = await screen.findByRole('article', { name: 'Incoming peace proposal' })
     expect(within(proposal).getByText(/White peace/)).toBeInTheDocument()
@@ -350,6 +358,7 @@ describe('Peace negotiation', () => {
         diplomacyFixture('WAR', { proposals: [proposalFixture({ violations: ['term 1: INSUFFICIENT_GOLD'] })] }),
       ),
     })
+    await showPanel('diplomacy')
 
     const proposal = await screen.findByRole('article', { name: 'Incoming peace proposal' })
     expect(within(proposal).getByRole('alert')).toHaveTextContent(/can no longer be settled/)
@@ -380,6 +389,7 @@ describe('Game completion', () => {
       { getResult, getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('PEACE', { yourTurn: false })) },
       gameStateFixture({ status: 'FINISHED', round: 30, yourTurn: false }),
     )
+    await showPanel('diplomacy')
 
     const screenResult = await screen.findByRole('region', { name: 'Kingdom of Varn wins' })
     expect(within(screenResult).getByText(/Finished after round 30/)).toBeInTheDocument()
@@ -394,6 +404,12 @@ describe('Game completion', () => {
     expect(screen.queryByRole('button', { name: 'End turn' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Declare war' })).not.toBeInTheDocument()
     expect(screen.getByRole('group', { name: /^Map of/ })).toBeInTheDocument()
+
+    // The result can be put aside to look at the final map, and brought back from the top bar.
+    await userEvent.click(screen.getByRole('button', { name: 'Hide the result to look at the map' }))
+    expect(screen.queryByRole('region', { name: 'Kingdom of Varn wins' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Show the result' }))
+    expect(screen.getByRole('region', { name: 'Kingdom of Varn wins' })).toBeInTheDocument()
   })
 
   it('announces a draw', async () => {
@@ -401,6 +417,7 @@ describe('Game completion', () => {
       { getResult: vi.fn().mockResolvedValue({ ...result, outcome: 'DRAW', winnerNationId: null, winnerName: null }) },
       gameStateFixture({ status: 'FINISHED', round: 30, yourTurn: false }),
     )
+    await showPanel('diplomacy')
 
     expect(await screen.findByRole('heading', { name: 'The game ended in a draw' })).toBeInTheDocument()
   })

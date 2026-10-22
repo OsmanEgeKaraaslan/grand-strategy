@@ -1,9 +1,9 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Conference, DiplomacyOverview, NationRelation, WarView } from '../api/types'
 import { BattleReportView } from '../components/BattleReportView'
-import { fakeApi, renderPage } from '../test/render'
+import { fakeApi, openForces, renderPage, showPanel } from '../test/render'
 import {
   OSTRA,
   VARN,
@@ -176,6 +176,7 @@ describe('Calls to arms', () => {
       call: { id: 'call-1', warId: 'w1', callerNationId: VARN, allyNationId: ALLY, status: 'PENDING', createdRound: 2, answeredRound: null, canAnswer: false },
     })
     renderGame({ callToArms })
+    await showPanel('diplomacy')
     const card = await screen.findByRole('article', { name: /^War: Ostran Confederacy against Kingdom of Varn/ })
     expect(within(card).getByRole('combobox', { name: 'Ally to call to arms' })).toHaveDisplayValue('Helm')
     await userEvent.click(within(card).getByRole('button', { name: 'Call to arms' }))
@@ -195,6 +196,7 @@ describe('Calls to arms', () => {
         }),
       ),
     })
+    await showPanel('diplomacy')
     await userEvent.click(await screen.findByRole('button', { name: 'Decline' }))
     expect(answerCall).not.toHaveBeenCalled()
     expect(screen.getByText('Declining ends your alliance with Helm.')).toBeInTheDocument()
@@ -207,6 +209,7 @@ describe('Peace conferences', () => {
   it('lets a war leader request the general peace instead of a turn-bound proposal', async () => {
     const requestConference = vi.fn().mockResolvedValue({ conference: conference({ status: 'REQUESTED' }), treaty: null, withdrawals: [] })
     renderGame({ requestConference })
+    await showPanel('diplomacy')
     const card = await screen.findByRole('article', { name: /^War: Ostran/ })
     expect(within(card).queryByRole('button', { name: 'Negotiate peace' })).not.toBeInTheDocument()
     await userEvent.click(within(card).getByRole('button', { name: 'Request peace conference' }))
@@ -233,6 +236,7 @@ describe('Peace conferences', () => {
         }),
       ),
     })
+    await showPanel('diplomacy')
     const card = await screen.findByRole('article', { name: /^War: Ostran Confederacy against Helm/ })
     expect(within(card).getByText(/Kingdom of Varn \(answered a call to arms\)/)).toBeInTheDocument()
     await userEvent.click(within(card).getByRole('button', { name: 'Ask Ostran Confederacy for a separate peace' }))
@@ -245,6 +249,7 @@ describe('Peace conferences', () => {
       { decideDraft, getDiplomacy: vi.fn().mockResolvedValue(overview({ conferences: [conference()] })) },
       { ...state, pausedConferenceId: 'c1', yourTurn: false },
     )
+    await showPanel('diplomacy')
     expect(await screen.findByText(/Paused for a peace conference/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'End turn' })).not.toBeInTheDocument()
     const card = await screen.findByRole('article', { name: 'General peace: Ostran Confederacy and Kingdom of Varn' })
@@ -256,12 +261,25 @@ describe('Peace conferences', () => {
     expect(decideDraft).toHaveBeenCalledWith('g1', 'c1', 2, 'approve', expect.any(String))
   })
 
+  it('opens the paused conference in a blocking window over the map, which can be minimised and reopened', async () => {
+    renderGame({ getDiplomacy: vi.fn().mockResolvedValue(overview({ conferences: [conference()] })) }, { ...state, pausedConferenceId: 'c1' })
+    const dialog = await screen.findByRole('dialog', { name: 'Peace conference' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(within(dialog).getByRole('article', { name: 'General peace: Ostran Confederacy and Kingdom of Varn' })).toBeInTheDocument()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Minimise' }))
+    expect(screen.queryByRole('dialog', { name: 'Peace conference' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Open peace conference' }))
+    expect(screen.getByRole('dialog', { name: 'Peace conference' })).toBeInTheDocument()
+  })
+
   it('publishes a new revision built on the one shown', async () => {
     const submitDraft = vi.fn().mockResolvedValue({ conference: conference({ currentRevision: 3 }), treaty: null, withdrawals: [] })
     renderGame(
       { submitDraft, getDiplomacy: vi.fn().mockResolvedValue(overview({ conferences: [conference()] })) },
       { ...state, pausedConferenceId: 'c1' },
     )
+    await showPanel('diplomacy')
     const card = await screen.findByRole('article', { name: 'General peace: Ostran Confederacy and Kingdom of Varn' })
     await userEvent.click(within(card).getByRole('button', { name: 'Revise the draft' }))
     const editor = within(card).getByRole('group', { name: 'Revise the draft' })
@@ -287,13 +305,13 @@ describe('Attached battalions', () => {
         }),
       ),
     })
-    const map = await screen.findByRole('group', { name: /^Map of/ })
-    await waitFor(() => expect(within(map).getByRole('button', { name: /^Elmsford/ })).toBeInTheDocument())
-    await userEvent.click(within(map).getByRole('button', { name: /^Elmsford/ }))
-    const panel = screen.getByRole('region', { name: 'Elmsford' })
+    await showPanel('diplomacy')
+    const panel = await openForces('Elmsford')
     expect(await within(panel).findByText('Commanded by Helm')).toBeInTheDocument()
     expect(within(panel).getByText('Lent by Helm — you command it')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Lend to an ally' })).toBeDisabled()
     await userEvent.click(within(panel).getByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
+    await userEvent.click(within(panel).getByRole('button', { name: 'Lend to an ally' }))
     await userEvent.click(within(panel).getByRole('button', { name: 'Lend 1 battalion(s)' }))
     expect(attach).toHaveBeenCalledWith('g1', ['b1'], ALLY, expect.any(String))
   })

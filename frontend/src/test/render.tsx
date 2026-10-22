@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
-import { render } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Session } from '@supabase/supabase-js'
@@ -127,4 +128,24 @@ export function renderPage(ui: ReactElement, options: RenderOptions = {}) {
     </QueryClientProvider>,
   )
   return { ...result, auth, api, queryClient }
+}
+
+/** Opens a management window of the game screen through the left toolbar, e.g. 'diplomacy'. */
+export async function showPanel(name: string) {
+  const toolbar = await screen.findByRole('navigation', { name: 'Game panels' })
+  await userEvent.click(within(toolbar).getByRole('button', { name: new RegExp(`^Show ${name}`) }))
+}
+
+/** Clicks a province on the map and returns its floating province window. */
+export async function openProvince(name: string) {
+  const map = await screen.findByRole('group', { name: /^Map of/ })
+  await userEvent.click(await within(map).findByRole('button', { name: new RegExp(`^${name},`) }))
+  return screen.getByRole('region', { name })
+}
+
+/** Opens the forces window of a province from its province window, without selecting battalions. */
+export async function openForces(name: string) {
+  const province = await openProvince(name)
+  await userEvent.click(await within(province).findByRole('button', { name: `Forces in ${name}` }))
+  return screen.getByRole('region', { name: new RegExp(`^(Army|Forces) in ${name}$`) })
 }

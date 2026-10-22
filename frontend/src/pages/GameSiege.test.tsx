@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { ProvinceFortification, SiegeOverview, SiegeSummary } from '../api/types'
-import { fakeApi, renderPage } from '../test/render'
+import { fakeApi, renderPage, showPanel } from '../test/render'
 import {
   OSTRA,
   VARN,
@@ -222,6 +222,7 @@ describe('Fortifications and sieges', () => {
       .mockResolvedValue(overviewFixture({ activeSieges: [], recentSieges: [taken] }))
     const endTurn = vi.fn().mockResolvedValue({ round: 2, activeSeat: 0, turnNumber: 3, stateVersion: 9, roundCompleted: true, replayed: false })
     renderGame({ getGameState, getSieges, endTurn })
+    await showPanel('military')
 
     const card = await screen.findByRole('region', { name: 'Sieges' })
     expect(within(card).getByText(/besieged by Kingdom of Varn · 300\/600 · about 2 rounds left/)).toBeInTheDocument()
