@@ -1,0 +1,65 @@
+# Production template for the VPS (docs/PRODUCTION_READINESS.md §3). NOT deployed by this repository.
+# The API is reachable only through Caddy (TLS, headers); the database is Supabase PostgreSQL.
+#
+#   cp .env.production.example .env.production   # fill in; never commit it
+#   API_IMAGE=ghcr.io/<owner>/strategy-backend:<git-sha> API_DOMAIN=api.example.org \
+#     docker compose -f compose.prod.yaml up -d
+#
+# Rollback: start the previous image tag the same way (migrations are expand/contract, §7).
+services:
+  api:
+    image: ${API_IMAGE:?set API_IMAGE to an immutable image tag, e.g. ghcr.io/<owner>/strategy-backend:<git-sha>}
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+    # Not published on the host: only Caddy (same network) can reach it.
+    expose:
+      - "8080"
+    # Spring's graceful shutdown (20 s) plus the computer-opponent grace period (10 s) fit inside.
+    stop_grace_period: 40s
+    # Capacity bounds (adjust to the VPS; the JVM uses 75 % of the memory limit for its heap).
+    mem_limit: 1g
+    cpus: 1.5
+    pids_limit: 512
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    # The image's HEALTHCHECK probes /actuator/health/readiness.
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN, e.g. api.example.org}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+volumes:
+  # Holds the TLS certificates and keys: keep it across deployments.
+  caddy-data:
+  caddy-config:

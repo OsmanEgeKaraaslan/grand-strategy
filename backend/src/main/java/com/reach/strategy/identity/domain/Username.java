@@ -10,7 +10,7 @@ import java.util.regex.Pattern;
  * A player's unique public handle: 3–20 characters, lowercase letters, digits and '_', starting with
  * a letter. Input is matched case-insensitively (it is lowercased), so "Aldric" and "aldric" are the
  * same handle; the database's unique index is the race-free backstop. Reserved system names and the
- * {@code player_} prefix of migrated accounts cannot be chosen.
+ * {@code player_} (migrated) and {@code deleted_} (deleted accounts) prefixes cannot be chosen.
  */
 public record Username(String value) {
 
@@ -20,6 +20,9 @@ public record Username(String value) {
 	private static final Pattern ALLOWED = Pattern.compile("[a-z][a-z0-9_]{2,19}");
 	private static final String GENERATED_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 	private static final SecureRandom RANDOM = new SecureRandom();
+
+	/** Handles of deleted accounts (Phase 15A); nobody can choose one. */
+	public static final String DELETED_PREFIX = "deleted_";
 
 	/** Kept in step with the reserved list of migration V16. */
 	public static final Set<String> RESERVED = Set.of("admin", "administrator", "system", "root", "support", "moderator",
@@ -50,7 +53,7 @@ public record Username(String value) {
 		if (!ALLOWED.matcher(normalized).matches()) {
 			return Optional.of(Problem.INVALID);
 		}
-		if (RESERVED.contains(normalized) || normalized.startsWith("player_")) {
+		if (RESERVED.contains(normalized) || normalized.startsWith("player_") || normalized.startsWith(DELETED_PREFIX)) {
 			return Optional.of(Problem.RESERVED);
 		}
 		return Optional.empty();

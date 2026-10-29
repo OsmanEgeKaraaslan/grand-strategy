@@ -3209,3 +3209,100 @@ a.person:focus-visible .person__display {
   align-items: center;
   gap: 0.5rem;
 }
+
+/* ---------- Account and legal pages (Phase 15A) ---------- */
+.auth-forgot {
+  margin: -0.5rem 0 0;
+  font-size: 0.88rem;
+  text-align: right;
+}
+
+.auth-card__footer {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+.legal-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem 1rem;
+}
+
+.resend {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.card--danger {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.legal {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+
+.legal__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.legal__body h1 {
+  font-family: var(--font-display);
+}
+
+.legal__body h2 {
+  margin-top: 2rem;
+  font-size: 1.2rem;
+}
+
+.legal__body li {
+  margin-bottom: 0.35rem;
+}
+
+.legal__placeholder {
+  background: var(--info-bg);
+  color: var(--info);
+  border: 1px dashed var(--info);
+  border-radius: 4px;
+  padding: 0 0.25rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.88em;
+}
+
+.legal__table {
+  overflow-x: auto;
+}
+
+.legal__table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.legal__table th,
+.legal__table td {
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}

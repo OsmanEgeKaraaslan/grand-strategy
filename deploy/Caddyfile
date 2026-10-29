@@ -1,0 +1,35 @@
+# Reverse proxy for the API (docs/PRODUCTION_READINESS.md §6). Caddy obtains and renews the TLS
+# certificate for {$API_DOMAIN} automatically (ports 80 and 443 must reach the VPS).
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	# The API refuses bodies over 64 KB itself; this stops larger uploads at the edge.
+	request_body {
+		max_size 256KB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Actuator stays internal (the container healthcheck calls it on localhost); uptime monitors use
+	# the public GET /api/v1/health.
+	@actuator path /actuator /actuator/*
+	respond @actuator 404
+
+	reverse_proxy api:8080 {
+		health_uri /actuator/health/readiness
+		health_interval 15s
+		# Caddy sets X-Forwarded-For/-Proto; Spring trusts them only from private-network peers.
+	}
+
+	# Access logs contain client IP addresses (personal data). Enable only with a decided retention
+	# period (docs/DATA_PRIVACY_INVENTORY.md §5):
+	# log {
+	# 	output stdout
+	# 	format json
+	# }
+}

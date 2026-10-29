@@ -510,11 +510,20 @@ deployment and closed beta (Phase 16). Much of Phase 14's UI/UX overhaul was don
 - Complete visual and interaction redesign, onboarding and tutorial (the current UI keeps the
   functional dark theme until then).
 
-## Phase 15 — Security Audit & Hardening
+## Phase 15 — Closed Beta Readiness: Accounts, Legal and Security — **implemented (2026-10-22)**
 
-- Full security review; API abuse prevention, rate limiting, request and resource limits, cloud
-  cost-abuse protection; security headers; Supabase production hardening (schema not exposed,
-  RLS deny-all, least-privilege roles); dependency and secret scanning.
+- **15A** Password recovery (enumeration-safe) and new-password pages with expired-link handling,
+  resend confirmation, password change with re-authentication, account deletion (anonymization;
+  refused during unfinished games, Q-AC1), versioned Terms/Privacy acceptance (V20; existing accounts
+  asked on next visit), public draft legal pages with operator placeholders,
+  [DATA_PRIVACY_INVENTORY.md](DATA_PRIVACY_INVENTORY.md). No cookie banner (only strictly necessary storage).
+- **15B** Authorization matrix over every endpoint (no defect found), per-account rate limits with
+  429, unfinished-game cap, bounded computer-opponent queue, 64 KB bodies, API security headers,
+  dependency scan and Spring Boot 4.1.2 patch upgrade — [SECURITY_AUDIT.md](SECURITY_AUDIT.md).
+- **15C** Prod profile hardening, readiness incl. DB, Docker healthcheck and limits, Caddyfile,
+  backup/restore scripts (rehearsed locally, not against Supabase), env/secrets/CI/rollback/spending
+  guidance — [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md). Nothing deployed.
+- Non-goals kept: no gameplay balancing, no new matchmaking features, no deployment.
 
 ## Phase 16 — Cloud Deployment & Public Beta
 

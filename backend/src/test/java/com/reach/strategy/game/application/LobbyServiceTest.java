@@ -77,7 +77,7 @@ class LobbyServiceTest {
 		service = new LobbyService(games, memberships, playerDirectory, world, List.of(), "v1",
 				Clock.fixed(NOW, ZoneOffset.UTC), new org.springframework.beans.factory.support.StaticListableBeanFactory()
 					.getBeanProvider(com.reach.strategy.game.api.ComputerOpponents.class),
-				org.mockito.Mockito.mock(com.reach.strategy.identity.api.ComputerPlayers.class), event -> { });
+				org.mockito.Mockito.mock(com.reach.strategy.identity.api.ComputerPlayers.class), event -> { }, 10);
 		when(world.defaultMapId()).thenReturn(MAP);
 		when(world.mapSummary(MAP)).thenReturn(new WorldApi.MapSummary(MAP, "sundered-reach", "The Sundered Reach", 2, List.of(VARN, OSTRA)));
 		Game.Created created = Game.create("Twin Shores", host.id(), 2, MAP, "v1", InviteCode.generate(), NOW);

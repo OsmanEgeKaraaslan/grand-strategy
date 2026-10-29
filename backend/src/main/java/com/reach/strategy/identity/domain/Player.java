@@ -39,6 +39,19 @@ public class Player {
 	@Column(name = "match_history_public", nullable = false)
 	private boolean matchHistoryPublic;
 
+	@Column(name = "terms_version")
+	private String termsVersion;
+
+	@Column(name = "privacy_version")
+	private String privacyVersion;
+
+	@Column(name = "terms_accepted_at")
+	private Instant termsAcceptedAt;
+
+	/** Set once the owner deleted the account; the anonymized row stays for match integrity. */
+	@Column(name = "deleted_at")
+	private Instant deletedAt;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -82,6 +95,49 @@ public class Player {
 
 	public Instant updatedAt() {
 		return updatedAt;
+	}
+
+	public String termsVersion() {
+		return termsVersion;
+	}
+
+	public String privacyVersion() {
+		return privacyVersion;
+	}
+
+	public Instant termsAcceptedAt() {
+		return termsAcceptedAt;
+	}
+
+	public Instant deletedAt() {
+		return deletedAt;
+	}
+
+	public boolean deleted() {
+		return deletedAt != null;
+	}
+
+	public void acceptTerms(String termsVersion, String privacyVersion, Instant now) {
+		this.termsVersion = termsVersion;
+		this.privacyVersion = privacyVersion;
+		this.termsAcceptedAt = now;
+		this.updatedAt = now;
+	}
+
+	/**
+	 * Removes everything that identifies the person (docs/DATA_PRIVACY_INVENTORY.md §4): name, handle and
+	 * emblem are replaced by placeholders that no player can choose, and the match history is hidden. The
+	 * Supabase user id stays so a still-valid token of the deleted user is refused instead of creating a
+	 * fresh account; the operator removes the Supabase Auth user itself.
+	 */
+	public void anonymize(String placeholderName, String placeholderUsername, Instant now) {
+		this.displayName = placeholderName;
+		this.username = placeholderUsername;
+		this.usernameChosen = false;
+		this.emblem = Emblem.DEFAULT.key();
+		this.matchHistoryPublic = false;
+		this.deletedAt = now;
+		this.updatedAt = now;
 	}
 
 	public void rename(DisplayName newName, Instant now) {

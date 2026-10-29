@@ -1,8 +1,13 @@
 package com.reach.strategy.ai.application;
 
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import com.reach.strategy.diplomacy.api.ConferenceActivity;
 import com.reach.strategy.game.api.ComputerSeats;
@@ -38,10 +43,15 @@ class AiTriggers {
 	private final boolean manual;
 	private final boolean recovery;
 	private final ExecutorService workers;
+	/** Games waiting for a worker: one queue entry per game, however often it is triggered (Phase 15B). */
+	private final Set<UUID> queued = ConcurrentHashMap.newKeySet();
+	private final long shutdownGraceMillis;
 
 	AiTriggers(AiTurnRunner runner, ComputerSeats seats, @Value("${strategy.ai.execution:async}") String execution,
 			@Value("${strategy.ai.recovery-enabled:true}") boolean recovery,
-			@Value("${strategy.ai.worker-threads:2}") int workerThreads) {
+			@Value("${strategy.ai.worker-threads:2}") int workerThreads,
+			@Value("${strategy.ai.max-queued-games:500}") int maxQueuedGames,
+			@Value("${strategy.ai.shutdown-grace-ms:10000}") long shutdownGraceMillis) {
 		this.runner = runner;
 		this.seats = seats;
 		this.inline = "inline".equals(execution);
@@ -50,11 +60,15 @@ class AiTriggers {
 		this.recovery = recovery;
 		// Inline still plays on a worker thread (and waits): computer transactions never share the
 		// persistence context of the request that triggered them.
-		this.workers = manual ? null : Executors.newFixedThreadPool(inline ? 1 : workerThreads, r -> {
-			Thread thread = new Thread(r, WORKER);
-			thread.setDaemon(true);
-			return thread;
-		});
+		// The queue is bounded: when it is full a trigger is dropped and the recovery sweep plays that game later.
+		int threads = inline ? 1 : workerThreads;
+		this.workers = manual ? null : new ThreadPoolExecutor(threads, threads, 0, TimeUnit.MILLISECONDS,
+				new ArrayBlockingQueue<>(Math.max(1, maxQueuedGames)), r -> {
+					Thread thread = new Thread(r, WORKER);
+					thread.setDaemon(true);
+					return thread;
+				});
+		this.shutdownGraceMillis = shutdownGraceMillis;
 	}
 
 	@TransactionalEventListener(fallbackExecution = true)
@@ -100,16 +114,45 @@ class AiTriggers {
 				log.error("Computer opponent failed in game {}", gameId, e.getCause());
 			}
 		}
-		else {
-			workers.execute(() -> runner.run(gameId));
+		else if (queued.add(gameId)) {
+			try {
+				workers.execute(() -> {
+					// Leaves the queue before playing, so a trigger arriving meanwhile queues one more run.
+					queued.remove(gameId);
+					runner.run(gameId);
+				});
+			}
+			catch (RejectedExecutionException full) {
+				queued.remove(gameId);
+				log.warn("Computer opponent queue is full; game {} waits for the recovery sweep", gameId);
+			}
 		}
 	}
 
+	/**
+	 * Lets running computer turns finish their current action for a short grace period, then interrupts.
+	 * Interrupted or never-started turns are safe: progress is stored per action and the recovery sweep
+	 * resumes them after the restart (docs/AI.md).
+	 */
 	@PreDestroy
 	void stop() {
-		if (workers != null) {
-			workers.shutdownNow();
+		if (workers == null) {
+			return;
 		}
+		workers.shutdown();
+		try {
+			if (!workers.awaitTermination(shutdownGraceMillis, TimeUnit.MILLISECONDS)) {
+				workers.shutdownNow();
+			}
+		}
+		catch (InterruptedException e) {
+			workers.shutdownNow();
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	int queuedGames() {
+		return queued.size();
 	}
 
 }

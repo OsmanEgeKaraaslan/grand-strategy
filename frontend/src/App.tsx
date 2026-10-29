@@ -1,5 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router'
 import { RequireAuth } from './auth/RequireAuth'
+import { TermsGate } from './auth/TermsGate'
+import { AccountDeletedPage, AccountPage } from './pages/AccountPage'
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
+import { LegalPage } from './pages/LegalPage'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { GamePage } from './pages/GamePage'
 import { LobbyPage } from './pages/LobbyPage'
@@ -12,11 +17,27 @@ export function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/account-deleted" element={<AccountDeletedPage />} />
+      <Route path="/legal/terms" element={<LegalPage document="terms" />} />
+      <Route path="/legal/privacy" element={<LegalPage document="privacy" />} />
+      <Route path="/legal/cookies" element={<LegalPage document="cookies" />} />
+      <Route
+        path="/account"
+        element={
+          <RequireAuth>
+            <AccountPage />
+          </RequireAuth>
+        }
+      />
       <Route
         path="/"
         element={
           <RequireAuth>
-            <DashboardPage />
+            <TermsGate>
+              <DashboardPage />
+            </TermsGate>
           </RequireAuth>
         }
       />
@@ -24,7 +45,9 @@ export function App() {
         path="/games/:gameId"
         element={
           <RequireAuth>
-            <LobbyPage />
+            <TermsGate>
+              <LobbyPage />
+            </TermsGate>
           </RequireAuth>
         }
       />
@@ -32,7 +55,9 @@ export function App() {
         path="/games/:gameId/play"
         element={
           <RequireAuth>
-            <GamePage />
+            <TermsGate>
+              <GamePage />
+            </TermsGate>
           </RequireAuth>
         }
       />
@@ -40,7 +65,9 @@ export function App() {
         path="/profile"
         element={
           <RequireAuth>
-            <MyProfileRedirect />
+            <TermsGate>
+              <MyProfileRedirect />
+            </TermsGate>
           </RequireAuth>
         }
       />
@@ -48,7 +75,9 @@ export function App() {
         path="/players/:username"
         element={
           <RequireAuth>
-            <ProfilePage />
+            <TermsGate>
+              <ProfilePage />
+            </TermsGate>
           </RequireAuth>
         }
       />

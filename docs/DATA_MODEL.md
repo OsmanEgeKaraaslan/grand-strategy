@@ -106,6 +106,17 @@ migrations V1–V11 are unchanged.
 | `V18__game_invitations.sql` | `game_invitation` (§3.8) |
 | `V19__matchmaking.sql` | `matchmaking_ticket` (§3.8) |
 
+### 3.0d Phase 15A migration (V20)
+
+| Migration | Changes |
+|---|---|
+| `V20__account_lifecycle.sql` | `player.terms_version`, `privacy_version`, `terms_accepted_at` (all NULL for accounts created before V20 and for computers, so existing players are asked to accept; check: version and time set together, humans only), `player.deleted_at` (+ partial index for the operator's list); table `terms_acceptance (player_id, terms_version, privacy_version, accepted_at)` with PK on all three ids, version format check, RLS enabled. Purely additive: the previous image runs against it |
+
+Account deletion keeps the `player` row (finished games, results and commands reference it) and
+anonymizes it: `display_name = 'Deleted#<12 hex of id>'` (a `#` no human name can contain),
+`username = 'deleted_<12 hex>'` (prefix reserved), default emblem, history hidden. Social rows are
+deleted or cancelled (DATA_PRIVACY_INVENTORY.md §2).
+
 ### 3.1 Static world templates (Phase 3)
 
 **map_template**

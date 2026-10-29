@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { useMe } from '../api/queries'
 import { EmblemBadge } from './social/People'
 import { NotificationBell } from './social/NotificationBell'
+import { LegalLinks } from '../pages/LegalPage'
 
 /** Header and frame for signed-in pages. */
 export function AppShell({ children, onOpenSocial }: { children: ReactNode; onOpenSocial?: () => void }) {
@@ -34,6 +35,9 @@ export function AppShell({ children, onOpenSocial }: { children: ReactNode; onOp
               {me.data.displayName}
             </Link>
           )}
+          <Link to="/account" className="button button--ghost">
+            Account
+          </Link>
           <button type="button" className="button button--ghost" onClick={handleSignOut}>
             Log out
           </button>
@@ -56,6 +60,9 @@ export function AuthFrame({ title, subtitle, children }: { title: string; subtit
         <h1>{title}</h1>
         <p className="muted">{subtitle}</p>
         {children}
+        <footer className="auth-card__footer">
+          <LegalLinks />
+        </footer>
       </div>
     </div>
   )

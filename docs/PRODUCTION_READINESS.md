@@ -1,0 +1,224 @@
+# Production Readiness — Phase 15C
+
+Status date: 2026-10-22. **Nothing has been deployed.** This document separates what is
+**implemented** in the repository, what was **verified locally**, what is a **staging
+prerequisite**, what is **manual operator configuration**, and what is an **unresolved blocker**.
+Files referenced live in [`deploy/`](../deploy) and the backend/frontend sources.
+
+Legend: ✅ implemented · 🧪 verified locally (how) · 🟡 staging prerequisite · 🛠 manual configuration · ⛔ blocker
+
+## 1. Target topology (unchanged, ARCHITECTURE.md §8)
+
+Browser → Cloudflare Pages (static React build) and → Caddy (TLS) → Spring Boot API container on one
+VPS (Docker Compose) → Supabase PostgreSQL. Supabase Auth issues tokens; the API verifies them with
+the public JWKS. No Kubernetes, brokers or extra services.
+
+## 2. Status overview
+
+| Area | State | Notes |
+|---|---|---|
+| Staging/prod configuration | ✅ `application-prod.yml`, `deploy/.env.production.example` | §4 |
+| Health and readiness | ✅ liveness `/actuator/health/liveness`, readiness incl. DB `/actuator/health/readiness`, public `/api/v1/health` · 🧪 prod profile booted against scratch PostgreSQL 17: readiness `UP`, `/actuator/env` → 401 | §3 |
+| Structured logs + correlation | ✅ ECS JSON in prod; `requestId` (header `X-Request-Id`), `userId` (player id) and AI `gameId` in MDC · 🧪 JSON output observed | §9 |
+| Error-monitoring hooks | ✅ log-based: every unexpected error is one ERROR line with `requestId`; responses carry the same id · 🛠 alerting on ERROR lines in the log platform · ⛔-lite: no Sentry-type tracker (would be a new dependency; needs approval) | §9 |
+| DB pool and request limits | ✅ Hikari pool 10, 10 s acquire timeout; Tomcat 100 threads / 2000 connections; 64 KB bodies; per-account rate limits | §4, SECURITY_AUDIT §4 |
+| Safe Flyway practice | ✅ `clean-disabled`, `validate-on-migrate`, optional separate migration role; migrations never edited · 🧪 20 migrations applied from scratch; restored copy validated on boot | §7 |
+| Backup / restore | ✅ `deploy/backup/backup.sh`, `restore.sh` · 🧪 rehearsal on scratch containers (§8) · 🟡 **not verified against Supabase** | §8 |
+| AI worker shutdown / recovery | ✅ graceful shutdown (10 s grace, then interrupt), bounded queue, recovery sweep every 15 s resumes turns · 🧪 `AiTriggersTest`, existing recovery ITs | §10 |
+| Docker health and resources | ✅ image `HEALTHCHECK` on readiness, non-root user, `ExitOnOutOfMemoryError`; compose: memory/CPU/PID limits, read-only FS, log rotation · 🧪 `docker compose config` valid | §3 |
+| Reverse proxy / HTTPS / headers | ✅ `deploy/Caddyfile` (auto-TLS, HSTS, body limit, actuator blocked) · 🧪 `caddy validate` OK · 🟡 real certificate needs DNS | §6 |
+| Frontend headers / CSP | ✅ template `deploy/frontend/_headers.example` · 🛠 fill origins, copy at deploy | §6 |
+| Supabase production auth | 🛠 all of §5 | §5 |
+| SMTP | 🛠 custom SMTP provider required (§5.3) | §5 |
+| Secrets management | ✅ env-only, `.env.production` git-ignored · 🛠 §11 | §11 |
+| CI/CD and rollback | ✅ CI verify (backend + frontend) · 🛠 image build/push/deploy pipeline not created (deployment not authorized) | §12 |
+| Spending alerts, capacity | 🛠 §13 | §13 |
+| Legal texts | ⛔ drafts with `[OPERATOR: …]` placeholders; must be completed and reviewed before public launch | DATA_PRIVACY_INVENTORY §5 |
+| Supabase user removal after deletion | 🛠 manual operator step (§5.4) | |
+
+## 3. Health, readiness and the container
+
+- `GET /actuator/health/liveness` — process alive (does **not** depend on the DB, so a DB outage
+  does not restart-loop the API).
+- `GET /actuator/health/readiness` — started **and** DB reachable; used by the image `HEALTHCHECK`
+  and by Caddy's active health check.
+- `GET /api/v1/health` — public, for external uptime monitors (Caddy hides `/actuator/*`).
+- Image: non-root `app` user, JRE only, `-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError`.
+- `deploy/compose.prod.yaml`: API not published on the host (only Caddy reaches it), `mem_limit 1g`,
+  `cpus 1.5`, `pids_limit 512`, read-only root FS with tmpfs `/tmp`, `no-new-privileges`, JSON log
+  rotation (5 × 10 MB), `stop_grace_period 40s` (graceful HTTP shutdown 20 s + AI grace 10 s).
+
+## 4. Configuration and environment variables
+
+Profiles: `local` (default), `test`, `prod`. Prod reads everything from the environment; see
+`deploy/.env.production.example` for the full annotated list.
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | yes | — | Supabase Postgres, **direct or session-mode** (not the transaction pooler), `sslmode=require` |
+| `FLYWAY_USER`, `FLYWAY_PASSWORD` | no | DB user | Separate DDL role for migrations |
+| `DB_POOL_SIZE`, `DB_CONNECTION_TIMEOUT_MS` | no | 10, 10000 | Keep pool × instances below the Supabase connection limit |
+| `SUPABASE_URL` | yes | — | Issuer and JWKS location |
+| `SUPABASE_JWT_AUDIENCE`, `SUPABASE_JWT_ALGORITHMS` | no | `authenticated`, `ES256,RS256` | Token checks |
+| `CORS_ALLOWED_ORIGINS` | yes | — | Exact frontend origin(s) |
+| `SERVER_PORT`, `SERVER_FORWARD_HEADERS_STRATEGY`, `SERVER_MAX_THREADS`, `SERVER_MAX_CONNECTIONS` | no | 8080, `native`, 100, 2000 | Web server |
+| `RATE_LIMITS_ENABLED`, `GAME_MAX_UNFINISHED_PER_PLAYER` | no | `true`, 10 | Abuse protection |
+| `STRATEGY_AI_EXECUTION`, `STRATEGY_AI_WORKER_THREADS` | no | `async`, 2 | Computer opponents |
+| `LEGAL_TERMS_VERSION`, `LEGAL_PRIVACY_VERSION`, `LEGAL_REQUIRE_ACCEPTANCE` | no | `draft-1`, `draft-1`, `true` | Must match `SIGN_UP_VERSIONS` in `frontend/src/legal/documents.ts` |
+| Frontend: `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | yes (build time) | — | Public values only; **never** a service-role key |
+
+`server.forward-headers-strategy=native` makes Tomcat honour `X-Forwarded-*` **only** from
+private-network peers (Caddy on the Docker network); the API port must not be published. Rate limits
+never use client addresses (they are per account).
+
+**Staging**: use the same `prod` profile with a separate Supabase project, separate database, its own
+domain and origins (`CORS_ALLOWED_ORIGINS`, Supabase redirect URLs), and `LEGAL_*` versions equal to
+production. 🟡 No staging environment exists yet.
+
+## 5. Supabase production settings (🛠 manual)
+
+### 5.1 Authentication
+- **Confirm email: ON** (required — without it sign-up reveals registered addresses and unverified
+  addresses can play).
+- Password policy: minimum length ≥ 8 (the frontend checks 8), leaked-password protection if the
+  plan offers it.
+- JWT Signing Keys: asymmetric (ES256/RS256) — HS256 is rejected by the API. JWT expiry: keep the
+  default 3600 s or shorter.
+- Refresh tokens: rotation on, reuse interval ≤ 10 s; consider an inactivity timeout / time-box.
+- Rate limits (Authentication → Rate Limits): keep the defaults for sign-up, sign-in, token
+  refresh, OTP/verification and emails per hour, or lower them.
+- Anonymous sign-ins: **off** (the API rejects anonymous tokens anyway).
+- Secure password change: may be enabled; the account page re-authenticates before changing.
+
+### 5.2 URLs
+- **Site URL**: `https://<frontend-domain>`.
+- **Redirect URLs** (allow-list exactly these, no wildcards in production):
+  `https://<frontend-domain>/login` (email confirmation) and
+  `https://<frontend-domain>/reset-password` (password recovery). For local development:
+  `http://localhost:5173/login`, `http://localhost:5173/reset-password`.
+- Email templates use `{{ .ConfirmationURL }}` (default); the links land on the routes above, which
+  handle expired or reused links ("request a new one").
+
+### 5.3 SMTP
+Supabase's built-in email sender is for development only (very low hourly limit, no deliverability
+guarantees). Production needs a **custom SMTP provider** (Authentication → SMTP settings):
+host, port, username, password, sender address and name; SPF, DKIM and DMARC records on the sender
+domain; a verified sender. Raise the email rate limit only after SMTP is configured. Test both emails
+(confirmation, recovery) end to end in staging. 🛠 Provider choice and DNS are operator decisions.
+
+### 5.4 Deleted accounts
+The API anonymizes the game account at once and refuses its tokens; the **Supabase Auth user
+(email, password hash) must be deleted by the operator**:
+```sql
+SELECT supabase_user_id, deleted_at FROM game.player WHERE deleted_at IS NOT NULL ORDER BY deleted_at;
+```
+Delete each in Supabase → Authentication → Users (or with the Admin API from an operator machine —
+never from the app or the frontend). The deadline is an operator decision (Privacy Policy §5).
+
+### 5.5 Database roles
+Application role `strategy_app`: `USAGE` on schema `game`, DML on its tables and sequences, no DDL.
+Migration role: owner of schema `game`. Backup role: read-only (`SELECT` on schema `game`). The
+`game` schema must not be exposed through the Supabase Data API (RLS is enabled with no policies as
+defence in depth).
+
+## 6. Reverse proxy, HTTPS and headers
+
+`deploy/Caddyfile`: automatic TLS for `$API_DOMAIN`, HSTS, `nosniff`, `Referrer-Policy`, removes
+`Server`, 256 KB body cap at the edge, `/actuator/*` → 404, active health checks, access logs
+commented out until an IP-log retention period is decided. The API adds its own CSP
+(`default-src 'none'`), `X-Frame-Options: DENY`, `Cache-Control: no-store`.
+
+Frontend (Cloudflare Pages): copy `deploy/frontend/_headers.example` to `frontend/public/_headers`
+with the real API and Supabase origins. 🟡 Verify in staging that sign-in, the API, and the optional
+3D map work under the CSP (check the browser console for violations).
+
+## 7. Database migrations (Flyway)
+
+- Migrations run on application start (`spring.flyway`), `clean` disabled, validation on.
+- Rules: never edit an applied migration; every change is a new `V<n>__*.sql`; **expand/contract**
+  (add columns nullable or with defaults, backfill, switch code, drop later) so the previous image
+  still runs against the new schema — that is what makes image rollback safe.
+- V20 (Phase 15A) only adds nullable columns, a table and an index: the Phase 13 image runs against it.
+- Before a release: take a backup (§8), then deploy. A failed migration aborts start-up and leaves
+  the previous container running if you deploy start-first.
+
+## 8. Backup and restore
+
+- **First line**: Supabase's managed backups (daily on paid plans; point-in-time recovery as an
+  add-on). 🛠 Check what the chosen plan includes.
+- **Independent copy**: `deploy/backup/backup.sh` (pg_dump custom format of schema `game`,
+  integrity check with `pg_restore --list`, SHA-256, keeps the newest N). Run it from the VPS cron
+  with a read-only role, then copy the dumps off the VPS (🛠 storage and encryption are operator
+  decisions; dumps contain personal data — DATA_PRIVACY_INVENTORY §1).
+- **Restore**: `deploy/backup/restore.sh <dump> <expected-database-name>` (refuses a mismatching
+  target, drops and restores schema `game` in one transaction, prints row counts).
+
+🧪 **What was verified (2026-10-22, locally only):** the `prod`-profile jar migrated a scratch
+PostgreSQL 17 container (20 migrations), two players were inserted, `backup.sh` produced a dump,
+`restore.sh` refused a wrong target name, restored into a second scratch container with **identical
+row counts in all 59 tables**, and the jar then started against the restored copy with Flyway
+validation passing and readiness `UP`.
+
+🟡 **Not verified:** backup or restore against Supabase (network, SSL, roles, extensions, size, time),
+off-site storage, retention, encryption, and a timed restore drill. Do a full drill in staging before
+launch and record the measured restore time.
+
+## 9. Logging, correlation and error monitoring
+
+- Prod: ECS JSON on stdout (Docker rotates it). Each request gets `X-Request-Id` (client value
+  accepted if well-formed); MDC `requestId`, `userId` (player id), and `gameId` for computer turns.
+  Problem responses include the `requestId` so a player report maps to log lines.
+- Never logged: tokens, emails, passwords, request bodies.
+- Error monitoring: alert on `log.level = ERROR` (unexpected exceptions, computer-opponent failures,
+  a full AI queue is WARN) in whatever log platform the operator uses. 🛠 No error tracker is
+  integrated; adding one (e.g. Sentry) is a new dependency needing approval.
+- Metrics endpoint is not exposed (only health). Adding Prometheus is future work.
+
+## 10. Computer opponents in production
+
+Two worker threads, one run per game at a time, at most 500 queued games (extra triggers are dropped
+and picked up by the 15 s recovery sweep). On shutdown running turns get 10 s, then are interrupted;
+progress is stored per action and the sweep resumes after restart. Watch for repeated
+"Computer opponent failed" ERROR lines (a bug) and "queue is full" WARN lines (capacity).
+
+## 11. Secrets management
+
+- Secrets exist only in `.env.production` on the VPS (`chmod 600`, owned by the deploy user) and in
+  GitHub Actions secrets if a deploy pipeline is added; none in the repository, image or frontend.
+- The backend holds **no** Supabase secret or service-role key. The frontend holds only the
+  publishable key.
+- Rotate the DB password and SMTP credentials on staff changes; Supabase signing keys can be rotated
+  in the dashboard (the API refetches the JWKS on an unknown `kid`).
+
+## 12. CI/CD and rollback
+
+Implemented: GitHub Actions `backend-ci.yml` (`./mvnw verify` with Testcontainers, Docker required)
+and `frontend-ci.yml` (lint, tests, build). Not implemented (deployment was not authorized):
+
+1. On `main`: build the image, tag with the git SHA, push to GHCR.
+2. Take a backup; deploy with `API_IMAGE=<sha> docker compose -f compose.prod.yaml up -d`; wait for
+   the healthcheck; smoke-test `GET /api/v1/health` and a signed-in `GET /api/v1/me`.
+3. Frontend: Cloudflare Pages builds `main` with the production `VITE_*` values.
+
+**Rollback**: redeploy the previous SHA tag (schema stays — expand/contract); frontend: roll back
+the Pages deployment. If a migration itself is wrong, fix forward with a new migration; restore from
+backup only for data corruption.
+
+## 13. Spending and capacity (🛠)
+
+- Supabase: set the **spend cap** (or budget alerts) and watch database size, egress, auth MAUs and
+  connection count (pool 10 per instance).
+- VPS: provider billing alerts; monitor disk (logs, dumps), memory (container limit 1 GB) and CPU.
+- Cloudflare Pages: free tier limits on builds.
+- SMTP provider: monthly quota alerts.
+- App-side limits that cap cost: per-account rate limits, 10 unfinished games per account, AI
+  worker/queue bounds, 64 KB bodies.
+
+## 14. Unresolved before a public launch
+
+1. ⛔ Complete and legally review the Terms, Privacy Policy and Cookie Notice (all `[OPERATOR: …]`).
+2. ⛔ Configure custom SMTP and Supabase production auth settings (§5) and test the emails in staging.
+3. 🟡 Staging environment and a full backup/restore drill against Supabase.
+4. 🛠 Deploy pipeline, error alerting, spend alerts.
+5. 🛠 Decide the deadline and process for removing Supabase users of deleted accounts (§5.4) and the
+   forfeit rule that would allow deletion during unfinished games (OPEN_QUESTIONS Q-AC1).

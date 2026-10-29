@@ -221,12 +221,16 @@ sequenceDiagram
   (`SET LOCAL` still works but surprises accumulate). HikariCP pool sized small
   (e.g. 10).
 
-### 4.4 Other hardening (Phase 15, fundamentals in every phase)
+### 4.4 Other hardening (implemented in Phase 15)
 
-Rate limiting per user on command endpoints (Bucket4j in-process — no Redis
-needed for one instance), request size limits, strict JSON (fail on unknown
-properties for commands), security headers via Caddy, dependency scanning
-(Dependabot), container runs as non-root, secrets via environment only.
+Per-account token-bucket rate limits in `platform.ratelimit` (in-process, no new dependency —
+Bucket4j was not needed for one instance; `@RateLimited` policies, 429 with `Retry-After`), 64 KB
+request bodies (`RequestSizeLimitFilter`), strict JSON, API security headers (CSP `default-src
+'none'`, no-referrer, nosniff, frame deny) plus HSTS at Caddy, unfinished-game cap per account,
+bounded computer-opponent queue, container runs as non-root with a readiness healthcheck, secrets
+via environment only. Details and remaining risks: [SECURITY_AUDIT.md](SECURITY_AUDIT.md),
+[PRODUCTION_READINESS.md](PRODUCTION_READINESS.md). Dependency scanning in CI is still an operator
+decision.
 
 ## 5. Frontend architecture
 
@@ -264,8 +268,9 @@ river edges intentional; a validation test checks symmetry and connectivity.
 
 ## 7. Observability
 
-- Spring Boot structured logging (JSON in prod) with MDC: `requestId`, `userId`
-  (player id, not email), `gameId`, `commandType`, `round`.
+- Spring Boot structured logging (ECS JSON in prod) with MDC: `requestId`, `userId`
+  (player id, not email; Phase 15), `gameId` (computer turns). `commandType`/`round` are not in the
+  MDC yet.
 - Actuator: `health` (liveness/readiness), `info`, `metrics`/`prometheus` on an
   internal port only.
 - Metrics: command latency by type, command rejections by code, round processing
@@ -376,3 +381,19 @@ the image without rolling back the schema.
   every 20 s, lists only while mounted, the search heartbeat every 10 s only while searching; all
   intervals stop on unmount. Social components live in `components/social/`; the in-game Social
   window is a management window over the map, so map, camera and army selection stay as they were.
+
+## 13. Phase 15 additions — accounts, legal, security
+
+- **Identity** owns the account lifecycle: `AccountService` (terms acceptance, deletion) and
+  `LegalTerms` (configured document versions). Modules that hold per-player data implement
+  `identity.api.AccountDeletionParticipant` (game: blocks deletion during unfinished games; social:
+  removes the social graph) — identity calls them without depending on them.
+- `CurrentPlayerArgumentResolver` refuses deleted accounts (403 `ACCOUNT_DELETED`) and, outside
+  `/api/v1/me/**`, accounts without the current legal acceptance (403 `TERMS_NOT_ACCEPTED`); it also
+  puts the player id into the log MDC (`userId`).
+- **Platform** gained `ratelimit` (technical only — no game rules) and `RequestSizeLimitFilter`.
+- **Frontend**: Supabase recovery/confirmation helpers (`auth/redirects.ts`), `TermsGate` around the
+  game routes, public `/legal/*` pages rendered from Markdown drafts in `src/legal/`, `/account`,
+  `/forgot-password`, `/reset-password`, `/account-deleted`.
+- **Deployment templates** in `deploy/` (Compose, Caddyfile, env example, backup scripts, frontend
+  headers) — not deployed.

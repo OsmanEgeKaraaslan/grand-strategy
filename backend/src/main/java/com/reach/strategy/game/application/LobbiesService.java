@@ -108,7 +108,7 @@ class LobbiesService implements Lobbies {
 	@Override
 	@Transactional(readOnly = true)
 	public int unfinishedGames(UUID playerId) {
-		return (int) games.findAllForMember(playerId).stream().filter(g -> g.status() != GameStatus.FINISHED).count();
+		return (int) games.countUnfinishedForMember(playerId);
 	}
 
 }

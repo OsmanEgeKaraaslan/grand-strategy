@@ -31,7 +31,14 @@ generates its TypeScript types.
 | PATCH | `/me` | Any of `{displayName, username, emblem, matchHistoryPublic}` (at least one) — change your own account. 409 `DISPLAY_NAME_TAKEN` / `USERNAME_TAKEN`, 422 `INVALID_DISPLAY_NAME` / `INVALID_USERNAME` / `USERNAME_RESERVED` / `INVALID_EMBLEM` | Implemented (Phase 12A) |
 | GET | `/profiles/{username}` | Public profile with statistics (see §2.8) | Implemented (Phase 12A) |
 | GET / PUT | `/me/communication-preferences` | Email opt-ins | Phase 12 (unscheduled) |
-| DELETE | `/me` | Account deletion / anonymization | Phase 12 |
+| POST | `/me/terms-acceptance` | `{termsVersion, privacyVersion}` — accept the current legal documents (must equal the server's versions, else 409 `TERMS_VERSION_OUTDATED`); idempotent; history in `terms_acceptance` | Implemented (Phase 15A) |
+| POST | `/me/deletion` | `{confirmation: "DELETE"}` — delete (anonymize) the account. Needs a password sign-in within 10 min (`amr` claim, else 403 `REAUTHENTICATION_REQUIRED`); 409 `ACCOUNT_DELETION_BLOCKED` while seated in an unfinished game; returns `{deletedAt}`. Afterwards every request of the account gets 403 `ACCOUNT_DELETED` | Implemented (Phase 15A) |
+
+`GET /me` also returns `terms: {currentTermsVersion, currentPrivacyVersion, accepted, acceptedTermsVersion,
+acceptedPrivacyVersion, acceptedAt}`. With `strategy.legal.require-acceptance` (default on) every
+endpoint except `/me` and its sub-paths answers 403 `TERMS_NOT_ACCEPTED` until the current versions are
+accepted (Phase 15A). Passwords, email confirmation and recovery are Supabase Auth calls made by the
+frontend; the API has no credential endpoints.
 
 There is no endpoint that addresses a player by id: a player can only read or change their own
 profile. Every authenticated endpoint resolves the acting player from the verified token only.
@@ -393,9 +400,11 @@ search ≤ 32, lists ≤ 100 ids).
 `currentRound`, `yourTurn`, `paused`, `youAreEliminated`, `humanPlayers`, `computerPlayers` and
 `lastActivityAt` (Phase 13A).
 
-### 2.7 Operator (Phase 15–16)
+### 2.7 Operator (Phase 16+; none implemented)
 
-`/admin/**` — requires an operator role claim (or allowlisted player ids):
+No operator endpoints exist (Phase 15B audit). Operator tasks such as removing the Supabase user of
+a deleted account are manual (PRODUCTION_READINESS.md §5.4). A future `/admin/**` would require an
+operator role claim (or allowlisted player ids):
 mark game abandoned, view incidents, create/schedule announcement campaigns.
 Not exposed in the public UI.
 
@@ -420,11 +429,12 @@ RFC 9457 problem details with a stable machine `code`:
 |---|---|---|
 | 400 | Malformed request, DTO validation | `VALIDATION_FAILED` (with `errors[]` per field), `IDEMPOTENCY_KEY_MISSING` |
 | 401 | Missing/invalid/expired token | `UNAUTHENTICATED` |
-| 403 | Authenticated but not allowed | `NOT_HOST`, `NOT_OWNER` |
+| 403 | Authenticated but not allowed | `NOT_HOST`, `NOT_OWNER`, `TERMS_NOT_ACCEPTED`, `ACCOUNT_DELETED`, `REAUTHENTICATION_REQUIRED` |
 | 404 | Not found **or not visible to you** | `GAME_NOT_FOUND`, `INVITE_CODE_NOT_FOUND`, `MAP_NOT_FOUND`, `CITY_NOT_FOUND`, `RESOURCE_NOT_FOUND`, `PLAYER_NOT_FOUND`, `FRIEND_REQUEST_NOT_FOUND`, `INVITATION_NOT_FOUND` |
-| 409 | State conflict — retry after refresh may help | `NOT_ACTIVE_PLAYER`, `TURN_CHANGED`, `GAME_NOT_IN_PROGRESS`, `GAME_FINISHED`, `ALREADY_AT_WAR`, `TRUCE_IN_EFFECT`, `PEACE_TERMS_NO_LONGER_VALID`, `GAME_FULL`, `DISPLAY_NAME_TAKEN`, `NATION_TAKEN`, `GAME_NOT_READY`, `NATIONS_NOT_SELECTED`, `GAME_ALREADY_STARTED`, `PROVINCE_OCCUPIED`, `USERNAME_TAKEN`, `ALREADY_FRIENDS`, `PLAYER_UNAVAILABLE`, `REQUEST_NOT_PENDING`, `TOO_MANY_PENDING_REQUESTS`, `TOO_MANY_FRIENDS`, `NOT_FRIENDS`, `ALREADY_IN_GAME`, `LOBBY_NOT_JOINABLE`, `TOO_MANY_INVITATIONS`, `INVITATION_NOT_PENDING`, `INVITATION_INVALID`, `TOO_MANY_ACTIVE_GAMES` |
+| 409 | State conflict — retry after refresh may help | `NOT_ACTIVE_PLAYER`, `TURN_CHANGED`, `GAME_NOT_IN_PROGRESS`, `GAME_FINISHED`, `ALREADY_AT_WAR`, `TRUCE_IN_EFFECT`, `PEACE_TERMS_NO_LONGER_VALID`, `GAME_FULL`, `DISPLAY_NAME_TAKEN`, `NATION_TAKEN`, `GAME_NOT_READY`, `NATIONS_NOT_SELECTED`, `GAME_ALREADY_STARTED`, `PROVINCE_OCCUPIED`, `USERNAME_TAKEN`, `ALREADY_FRIENDS`, `PLAYER_UNAVAILABLE`, `REQUEST_NOT_PENDING`, `TOO_MANY_PENDING_REQUESTS`, `TOO_MANY_FRIENDS`, `NOT_FRIENDS`, `ALREADY_IN_GAME`, `LOBBY_NOT_JOINABLE`, `TOO_MANY_INVITATIONS`, `INVITATION_NOT_PENDING`, `INVITATION_INVALID`, `TOO_MANY_ACTIVE_GAMES`, `TOO_MANY_UNFINISHED_GAMES`, `TERMS_VERSION_OUTDATED`, `ACCOUNT_DELETION_BLOCKED` |
+| 413 | Body larger than 64 KB | `PAYLOAD_TOO_LARGE` |
 | 422 | Well-formed but illegal game action | `INVALID_DISPLAY_NAME`, `INVALID_USERNAME`, `USERNAME_RESERVED`, `INVALID_EMBLEM`, `CANNOT_FRIEND_SELF`, `CANNOT_BLOCK_SELF`, `NATION_NOT_FOUND`, `TIER_LOCKED`, `WORKSHOP_LIMIT_REACHED`, `INSUFFICIENT_GOLD`, `INSUFFICIENT_POPULATION`, `NOT_ADJACENT`, `BATTALION_ALREADY_MOVED`, `BATTALION_NOT_READY` (recruited this turn), `BATTALIONS_NOT_COLOCATED`, `CITY_BESIEGED`, `NOT_FRIENDLY_TERRITORY`, `IN_ARREARS`, `TECH_REQUIRED`, `IDEMPOTENCY_KEY_REUSED` |
-| 429 | Rate limited | `RATE_LIMITED` |
+| 429 | Per-account budget exhausted (Phase 15B; policies in SECURITY_AUDIT.md §4), with `Retry-After` seconds | `RATE_LIMITED` |
 | 500 | Bug; transaction rolled back | `INTERNAL_ERROR`, `ROUND_PROCESSING_FAILED` |
 | 503 | Lock timeout / maintenance | `GAME_BUSY` (with `Retry-After`) |
 

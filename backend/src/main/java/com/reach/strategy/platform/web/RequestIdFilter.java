@@ -28,6 +28,8 @@ public class RequestIdFilter extends OncePerRequestFilter {
 
 	public static final String HEADER = "X-Request-Id";
 	public static final String MDC_KEY = "requestId";
+	/** Set by the identity module once the caller's account is known; cleared here with the request. */
+	public static final String USER_MDC_KEY = "userId";
 	public static final String ATTRIBUTE = RequestIdFilter.class.getName() + ".requestId";
 
 	// Client-supplied ids end up in logs, so only short, harmless values are accepted.
@@ -45,6 +47,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
 		}
 		finally {
 			MDC.remove(MDC_KEY);
+			MDC.remove(USER_MDC_KEY);
 		}
 	}
 

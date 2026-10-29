@@ -1,6 +1,7 @@
 package com.reach.strategy.platform.security;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -71,16 +72,18 @@ class SecurityConfigTest {
 	void validTokenIsAcceptedAndIdentityComesFromItsSubject() throws Exception {
 		UUID supabaseUser = UUID.randomUUID();
 		UUID playerId = UUID.randomUUID();
-		when(playerService.resolve(any())).thenReturn(new CurrentPlayer(playerId, "Aldric"));
+		when(playerService.resolve(any(), anyBoolean())).thenReturn(new CurrentPlayer(playerId, "Aldric"));
 		when(playerService.profile(playerId))
-			.thenReturn(new PlayerProfile(playerId, "aldric", "Aldric", "crown", true, true, Instant.EPOCH, Instant.EPOCH));
+			.thenReturn(new PlayerProfile(playerId, "aldric", "Aldric", "crown", true, true, Instant.EPOCH, Instant.EPOCH,
+					null));
 
 		mockMvc.perform(get("/api/v1/me").header(HttpHeaders.AUTHORIZATION,
 				bearer(ISSUER.tokenFor(supabaseUser).displayName("Aldric").sign())))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.displayName").value("Aldric"));
 
-		verify(playerService).resolve(new AuthenticatedUser(supabaseUser, "Aldric"));
+		// The account's own endpoint is exempt from the legal-acceptance requirement.
+		verify(playerService).resolve(new AuthenticatedUser(supabaseUser, "Aldric"), true);
 	}
 
 	@ParameterizedTest(name = "{0}")

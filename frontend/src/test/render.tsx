@@ -23,10 +23,16 @@ export function fakeAuth(overrides: Partial<Auth> = {}): Auth {
   return {
     session: fakeSession(),
     loading: false,
+    passwordRecovery: false,
+    redirectError: null,
     signIn: vi.fn().mockResolvedValue(undefined),
     signUp: vi.fn().mockResolvedValue({ status: 'signed-in' }),
     signOut: vi.fn().mockResolvedValue(undefined),
     accessToken: vi.fn().mockResolvedValue('test-access-token'),
+    requestPasswordReset: vi.fn().mockResolvedValue(undefined),
+    resendConfirmation: vi.fn().mockResolvedValue(undefined),
+    updatePassword: vi.fn().mockResolvedValue(undefined),
+    reauthenticate: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }
 }
@@ -36,6 +42,8 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     getMe: notStubbed('getMe'),
     updateMe: notStubbed('updateMe'),
+    acceptTerms: notStubbed('acceptTerms'),
+    deleteAccount: notStubbed('deleteAccount'),
     listGames: notStubbed('listGames'),
     getGame: notStubbed('getGame'),
     createGame: notStubbed('createGame'),

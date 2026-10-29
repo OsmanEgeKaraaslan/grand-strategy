@@ -21,6 +21,8 @@ import com.reach.strategy.military.api.MilitaryViews;
 import com.reach.strategy.military.rules.UnitType;
 import com.reach.strategy.platform.web.ApiException;
 
+import com.reach.strategy.platform.ratelimit.RateLimited;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
  * request bodies carry intents (unit type, battalion ids, destination) — never strengths, costs or
  * results, which the server decides.
  */
+@RateLimited("game-commands")
 @RestController
 @RequestMapping("/api/v1/games/{gameId}")
 class MilitaryController {

@@ -11,6 +11,8 @@ import jakarta.validation.constraints.Size;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.social.application.InvitationService;
 
+import com.reach.strategy.platform.ratelimit.RateLimited;
+
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Lobby invitations of the authenticated player: the inviter is always the caller. */
+@RateLimited("social-actions")
 @RestController
 @RequestMapping("/api/v1")
 class InvitationController {
@@ -40,6 +43,7 @@ class InvitationController {
 		return invitations.sent(me, gameId);
 	}
 
+	@RateLimited("invitations")
 	@PostMapping("/invitations")
 	InvitationService.InvitationView invite(CurrentPlayer me, @Valid @RequestBody InviteRequest request) {
 		return invitations.invite(me, request.gameId(), request.username());

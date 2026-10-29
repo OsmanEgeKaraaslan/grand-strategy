@@ -20,6 +20,8 @@ import com.reach.strategy.diplomacy.rules.Diplomacy;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.platform.web.ApiException;
 
+import com.reach.strategy.platform.ratelimit.RateLimited;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
  * terms to offer); war score, treasuries, ownership, populations, settlement and tribute state are
  * always computed by the server. Every command needs an {@code Idempotency-Key}.
  */
+@RateLimited("game-commands")
 @RestController
 @RequestMapping("/api/v1/games/{gameId}/diplomacy")
 class DiplomacyController {

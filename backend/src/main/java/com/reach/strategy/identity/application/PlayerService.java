@@ -32,10 +32,12 @@ public class PlayerService implements PlayerDirectory, PublicProfiles {
 	private static final int GENERATED_NAME_ATTEMPTS = 3;
 
 	private final PlayerRepository players;
+	private final LegalTerms legal;
 	private final Clock clock;
 
-	PlayerService(PlayerRepository players, Clock clock) {
+	PlayerService(PlayerRepository players, LegalTerms legal, Clock clock) {
 		this.players = players;
+		this.legal = legal;
 		this.clock = clock;
 	}
 
@@ -46,13 +48,31 @@ public class PlayerService implements PlayerDirectory, PublicProfiles {
 	 */
 	@Transactional
 	public CurrentPlayer resolve(AuthenticatedUser user) {
+		return resolve(user, true);
+	}
+
+	/**
+	 * Like {@link #resolve(AuthenticatedUser)}, and refuses a deleted account (its Supabase user may
+	 * still hold a valid token until the operator removes it) and — when acceptance is required and the
+	 * request is not one of the account's own endpoints — an account that has not accepted the current
+	 * legal documents.
+	 */
+	@Transactional
+	public CurrentPlayer resolve(AuthenticatedUser user, boolean termsExempt) {
 		Player player = players.findBySupabaseUserId(user.supabaseUserId()).orElseGet(() -> provision(user));
+		if (player.deleted()) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_DELETED", "This account has been deleted.");
+		}
+		if (!termsExempt && legal.requireAcceptance() && !legal.isCurrent(player.termsVersion(), player.privacyVersion())) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "TERMS_NOT_ACCEPTED",
+					"Please accept the current Terms of Service and Privacy Policy to continue.");
+		}
 		return new CurrentPlayer(player.id(), player.displayName());
 	}
 
 	@Transactional(readOnly = true)
 	public PlayerProfile profile(UUID playerId) {
-		return PlayerProfile.of(load(playerId));
+		return PlayerProfile.of(load(playerId), legal);
 	}
 
 	@Transactional
@@ -114,7 +134,7 @@ public class PlayerService implements PlayerDirectory, PublicProfiles {
 			// Whichever unique index fired, the message must name the field that was contested.
 			throw changes.username() != null ? usernameTaken() : displayNameTaken();
 		}
-		return PlayerProfile.of(player);
+		return PlayerProfile.of(player, legal);
 	}
 
 	@Override
@@ -129,7 +149,7 @@ public class PlayerService implements PlayerDirectory, PublicProfiles {
 		if (username == null || username.isBlank()) {
 			return Optional.empty();
 		}
-		return players.findByUsername(Username.normalize(username)).map(PlayerService::publicView);
+		return players.findByUsername(Username.normalize(username)).filter(p -> !p.deleted()).map(PlayerService::publicView);
 	}
 
 	@Override
@@ -144,7 +164,7 @@ public class PlayerService implements PlayerDirectory, PublicProfiles {
 		if (normalized.length() >= Username.MIN_LENGTH) {
 			players.findByUsernamePrefix(normalized.replace("_", "\\_"), Limit.of(limit + 1))
 				.stream()
-				.filter(p -> !p.username().equals(normalized))
+				.filter(p -> !p.username().equals(normalized) && !p.deleted())
 				.map(PlayerService::publicView)
 				.forEach(found::add);
 		}
@@ -156,7 +176,7 @@ public class PlayerService implements PlayerDirectory, PublicProfiles {
 	public Map<UUID, PublicPlayer> byIds(Collection<UUID> playerIds) {
 		return players.findByIdIn(playerIds)
 			.stream()
-			.filter(p -> p.username() != null)
+			.filter(p -> p.username() != null && !p.deleted())
 			.collect(Collectors.toMap(Player::id, PlayerService::publicView));
 	}
 
@@ -176,8 +196,24 @@ public class PlayerService implements PlayerDirectory, PublicProfiles {
 			}
 		}
 		// Either our insert succeeded or a concurrent first request of the same user committed first.
-		return players.findBySupabaseUserId(user.supabaseUserId())
+		Player player = players.findBySupabaseUserId(user.supabaseUserId())
 			.orElseThrow(() -> new IllegalStateException("Could not provision player account"));
+		recordSignUpConsent(player, user.signUpConsent(), now);
+		return player;
+	}
+
+	/**
+	 * The sign-up form asks for consent before the account exists here, so it travels in the user's
+	 * Supabase metadata and is recorded on first login — only for the versions that are current now.
+	 */
+	private void recordSignUpConsent(Player player, AuthenticatedUser.SignUpConsent consent, Instant now) {
+		if (consent == null || player.termsVersion() != null
+				|| !legal.isCurrent(consent.termsVersion(), consent.privacyVersion())) {
+			return;
+		}
+		player.acceptTerms(consent.termsVersion(), consent.privacyVersion(), now);
+		players.saveAndFlush(player);
+		players.recordAcceptance(player.id(), consent.termsVersion(), consent.privacyVersion(), now);
 	}
 
 	/** Tries the handle suggested by the name first, then generated handles, until one is free. */

@@ -10,6 +10,8 @@ import jakarta.validation.constraints.Size;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.social.application.Notifications;
 
+import com.reach.strategy.platform.ratelimit.RateLimited;
+
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** The caller's own notifications; there is no way to address anyone else's. */
+@RateLimited("social-actions")
 @RestController
 @RequestMapping("/api/v1/notifications")
 class NotificationController {

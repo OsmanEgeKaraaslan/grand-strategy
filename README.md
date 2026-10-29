@@ -18,7 +18,7 @@ The project has two equal goals:
 | Phase | Status |
 |---|---|
 | 0 — Specification and architecture | Done. Final P0 decisions recorded 2026-10-17 ([decision log](docs/OPEN_QUESTIONS.md#decision-log)) |
-| 1 — Backend foundation | Done. Spring Boot 4.1.1, PostgreSQL + Flyway, default-deny security, health endpoint, problem-details errors, Docker Compose, Dockerfile, CI |
+| 1 — Backend foundation | Done. Spring Boot 4.1 (now 4.1.2), PostgreSQL + Flyway, default-deny security, health endpoint, problem-details errors, Docker Compose, Dockerfile, CI |
 | 2 — Auth, players, lobby, frontend | Done. Supabase sign-up/sign-in, JWT verification, player profiles, private two-player lobbies with invitation codes, React frontend |
 | 3 — Nations, map, game start, sequential turns | Done. Fictional map, nation choice, transactional start, sequential turns with exactly-once round completion, SVG map game screen |
 | 4 — Population, economy, workshops | Implemented: exact milligold economy (farming, Tier 1/2 workshops by priority), treasuries, Tier 1 workshop construction with Q-E8 timing, round-end income exactly once, occupied cities pay nobody, economy panels in the game screen. All backend (unit + PostgreSQL) and frontend tests pass locally |
@@ -30,7 +30,8 @@ The project has two equal goals:
 | **10 — World expansion, N-faction multiplayer, coalitions** | **Implemented**: Grand Campaign map (72 provinces, 10 factions), 2–4 human players with passive game-controlled nations, starting values per tier, gold gifts, defensive calls to arms, coalition battles, attached battalions, peace conferences with revisions and approvals that pause the game, separate peace, elimination and domination (ruleset v6). All backend (unit + PostgreSQL) and frontend tests pass locally |
 | **11 — Autonomous nation AI** | **Implemented**: every nation nobody chooses is played by the computer (ruleset v7) — it builds, recruits, researches, moves, fights, besieges, allies, answers calls, negotiates and concludes peace through the same rules and command pipeline as players ([docs/AI.md](docs/AI.md)). All backend (unit + PostgreSQL) and frontend tests pass locally |
 | **12–13 — Profiles, friends, invitations, Quick Match** | **Implemented**: unique usernames, emblems and public profiles with statistics from stored results; friend requests, friendships, blocks and in-app notifications; host invitations of friends into private lobbies; *My active games* with resume; unranked Quick Match (two humans, eight computer nations) on a race-safe PostgreSQL queue; social panel on the dashboard and inside a running game. All backend (unit + PostgreSQL) and frontend tests pass locally |
-| Next | Manual multiplayer/social/gameplay testing (see “Manual social test” below), then gameplay fixes and balance, password reset and legal flows, the security audit (Phase 15) and staging/beta (Phase 16) |
+| **15 — Closed beta readiness: accounts, legal, security** | **Implemented**: password recovery and change, resend confirmation, account deletion (anonymization), versioned Terms/Privacy acceptance, draft legal pages with operator placeholders ([privacy inventory](docs/DATA_PRIVACY_INVENTORY.md)); authorization matrix over every endpoint, per-account rate limits, resource bounds, security headers, dependency patch upgrade ([security audit](docs/SECURITY_AUDIT.md)); production configuration, Docker/Caddy templates and backup scripts ([production readiness](docs/PRODUCTION_READINESS.md)). Nothing deployed; legal texts are drafts. All backend (unit + PostgreSQL) and frontend tests pass locally |
+| Next | Operator decisions (legal texts, SMTP, Supabase production settings), staging and a restore drill, then Phase 16 (deployment and closed beta). Gameplay balancing is not started |
 
 Playable so far: create a lobby, invite a rival, choose nations, start, take turns on the map, earn gold and build workshops, recruit, reinforce and disband battalions, move them, fight battles, occupy open provinces, besiege fortresses and repair the damage, build research institutions, unlock technology and doctrines, upgrade workshops to Tier 2 and watch cities grow. Declare war, form alliances, negotiate peace with territory, gold, tribute and people, and play a complete game to its round-30 result. Pick a username, add friends, invite them into a private game, resume any of your games from the dashboard, or find an opponent with Quick Match. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -38,7 +39,7 @@ Playable so far: create a lobby, invite a rival, choose nations, start, take tur
 
 | Area | Choice |
 |---|---|
-| Backend | Java 21, Spring Boot 4.1.1, Spring Web MVC, Spring Security (OAuth2 resource server), Spring Data JPA / Hibernate, Bean Validation, Actuator, Maven (wrapper included) |
+| Backend | Java 21, Spring Boot 4.1.2, Spring Web MVC, Spring Security (OAuth2 resource server), Spring Data JPA / Hibernate, Bean Validation, Actuator, Maven (wrapper included) |
 | Database | PostgreSQL 17 (Docker locally, Supabase PostgreSQL in production), Flyway |
 | Auth | Supabase Auth (email + password); access tokens verified by Spring Security against the project's JWKS |
 | Frontend | React 19, TypeScript (strict), Vite, React Router, TanStack Query, `@supabase/supabase-js` (auth only) |
@@ -95,7 +96,9 @@ used anywhere in this project — never put one in a `VITE_` variable.
 2. *Authentication → Sign In / Providers*: keep **Email** enabled. Choose whether
    **Confirm email** is on (the register page handles both cases).
 3. *Authentication → URL Configuration*: set **Site URL** to `http://localhost:5173` and add
-   `http://localhost:5173/login` to the redirect URLs (the confirmation link returns there).
+   `http://localhost:5173/login` (email confirmation) and `http://localhost:5173/reset-password`
+   (password recovery) to the redirect URLs. Production settings (Confirm email, SMTP, rate limits,
+   exact redirect URLs): [docs/PRODUCTION_READINESS.md §5](docs/PRODUCTION_READINESS.md).
 4. *Project Settings → JWT Keys*: make sure the project uses **JWT Signing Keys**
    (asymmetric, ES256 or RS256). Projects still on the legacy shared JWT secret must migrate:
    the backend deliberately rejects HS256 tokens.
@@ -137,6 +140,30 @@ guest, then round 2 begins. Changes appear on the other screen within ~3 seconds
 Economy check: click one of your provinces to see its farmers, workshop workers and income, order
 a Tier 1 workshop (40 gold) on your turn, and end the round — your treasury grows by the projected
 income and the workshop becomes active, producing from the following round.
+
+### Manual account and security test (Phase 15)
+
+Needs a Supabase project with the redirect URLs above (and, to see the emails, Confirm email on —
+the built-in sender is enough locally).
+
+1. **Sign-up consent**: on *Register* the button refuses until the Terms checkbox is ticked; the
+   legal links open `/legal/terms`, `/legal/privacy`, `/legal/cookies` (drafts, placeholders
+   highlighted). After confirming the email and signing in, no acceptance screen appears.
+2. **Existing account**: sign in with an account created before Phase 15 — the *Before you play*
+   screen appears; accept it and the dashboard opens.
+3. **Resend confirmation**: register a second address, use *Resend confirmation email* (then wait a
+   minute); on *Sign in* with the unconfirmed address the resend button also appears.
+4. **Forgot password**: *Forgot your password?* → any address shows the same "If an account
+   exists…" message. Open the email link → *Choose a new password* → saved, signed in. Open the same
+   link again → "This link is invalid or has expired".
+5. **Change password**: header *Account* → wrong current password is refused; right one changes it.
+6. **Delete account**: while in a lobby → refused with the number of unfinished games. In an account
+   without unfinished games: password + `DELETE` → signed out, *Account deleted* page; the old handle's
+   profile is gone, a former friend no longer lists it, finished matches show `Deleted#…`. Sign in
+   again with the same email → signed out at once (account deleted). Remove the user in Supabase
+   (PRODUCTION_READINESS.md §5.4).
+7. **Rate limit**: type quickly in player search more than 30 times a minute → "You are doing that
+   too often".
 
 ### Manual social test (Phases 12–13)
 
@@ -293,7 +320,14 @@ set the variables in your shell or IDE run configuration (Docker Compose does re
 | `SUPABASE_JWT_AUDIENCE` | `authenticated` | `authenticated` | Required `aud` claim |
 | `SUPABASE_JWT_ALGORITHMS` | `ES256,RS256` | `ES256,RS256` | Accepted (asymmetric) signing algorithms |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | **set to the frontend origin** | Browser origins allowed to call the API |
+| `RATE_LIMITS_ENABLED` | `true` | `true` | Per-account request budgets (policies in `application.yml`) |
+| `GAME_MAX_UNFINISHED_PER_PLAYER` | `10` | `10` | Lobbies and running games per account |
+| `LEGAL_TERMS_VERSION` / `LEGAL_PRIVACY_VERSION` | `draft-1` | must match `frontend/src/legal/documents.ts` | Versions players accept |
+| `LEGAL_REQUIRE_ACCEPTANCE` | `true` | `true` | Refuse game requests until accepted |
 | `POSTGRES_*` | `strategy` …, port `5432` | — | Compose database only |
+
+Production-only variables (migration role, proxy headers, thread limits) are listed in
+[deploy/.env.production.example](deploy/.env.production.example).
 
 Frontend — see [frontend/.env.example](frontend/.env.example) (copy to `.env.local`, git-ignored):
 
@@ -346,4 +380,7 @@ The image runs the `prod` profile as a non-root user and logs structured JSON (E
 | [docs/BACKGROUND_JOBS.md](docs/BACKGROUND_JOBS.md) | Analytics, weekly digest, announcements, email outbox |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phases, deliverables, acceptance criteria, non-goals |
 | [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) | Open mechanics and the decision log |
+| [docs/DATA_PRIVACY_INVENTORY.md](docs/DATA_PRIVACY_INVENTORY.md) | Personal data, browser storage, account lifecycle, operator decisions |
+| [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) | Phase 15B findings, fixes, rate limits, remaining risks |
+| [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) | Deployment prerequisites, Supabase/SMTP settings, backups, rollback |
 | [AGENTS.md](AGENTS.md) | Standing instructions for AI coding agents and contributors |

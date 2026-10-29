@@ -113,4 +113,10 @@ public class TicketStore {
 				Timestamp.from(now), ticketId);
 	}
 
+	/** Account deletion: a Quick Match search still waiting ends. */
+	public void cancelWaitingOf(UUID playerId, Instant now) {
+		jdbc.update("UPDATE game.matchmaking_ticket SET status = 'CANCELLED', ended_at = ? WHERE player_id = ? AND status = 'WAITING'",
+				Timestamp.from(now), playerId);
+	}
+
 }

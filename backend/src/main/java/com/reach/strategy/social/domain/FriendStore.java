@@ -149,4 +149,11 @@ public class FriendStore {
 				UUID.class, blocker);
 	}
 
+	/** Account deletion: the player's requests, friendships and blocks, in both directions. */
+	public void purge(UUID playerId) {
+		jdbc.update("DELETE FROM game.friend_request WHERE sender_id = ? OR recipient_id = ?", playerId, playerId);
+		jdbc.update("DELETE FROM game.friendship WHERE player_low_id = ? OR player_high_id = ?", playerId, playerId);
+		jdbc.update("DELETE FROM game.player_block WHERE blocker_id = ? OR blocked_id = ?", playerId, playerId);
+	}
+
 }

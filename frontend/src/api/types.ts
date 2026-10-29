@@ -13,6 +13,23 @@ export interface PlayerProfile {
   matchHistoryPublic?: boolean
   createdAt: string
   updatedAt: string
+  /** Legal acceptance (Phase 15A); older test fixtures may omit it. */
+  terms?: TermsStatus
+}
+
+/** Which Terms of Service / Privacy Policy versions are current and which the player accepted. */
+export interface TermsStatus {
+  currentTermsVersion: string
+  currentPrivacyVersion: string
+  /** True only when exactly the current versions were accepted. */
+  accepted: boolean
+  acceptedTermsVersion: string | null
+  acceptedPrivacyVersion: string | null
+  acceptedAt: string | null
+}
+
+export interface DeletedAccount {
+  deletedAt: string
 }
 
 /** The predefined profile emblems (no uploaded images). */

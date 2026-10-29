@@ -52,6 +52,26 @@ describe('createApiClient', () => {
     expect(onUnauthorized).toHaveBeenCalledOnce()
   })
 
+  it('ends the session of a deleted account like a rejected token', async () => {
+    const onUnauthorized = vi.fn()
+    const fetch = vi.fn().mockResolvedValue(jsonResponse(403, { status: 403, code: 'ACCOUNT_DELETED' }))
+    const api = createApiClient({ baseUrl: 'http://api.test', accessToken: async () => 'still-valid', onUnauthorized, fetch })
+
+    await expect(api.getMe()).rejects.toMatchObject({ code: 'ACCOUNT_DELETED' })
+    expect(onUnauthorized).toHaveBeenCalledOnce()
+  })
+
+  it('explains rate limiting and other Phase 15 refusals in player-facing words', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse(429, { status: 429, code: 'RATE_LIMITED', detail: 'Too many requests.' }))
+    const api = createApiClient({ baseUrl: 'http://api.test', accessToken: async () => 't', fetch })
+
+    const error = await api.searchPlayers('abc').catch((e: unknown) => e)
+    expect(describeError(error)).toBe('You are doing that too often. Please wait a moment and try again.')
+    expect(describeError(new ApiError({ status: 403, code: 'TERMS_NOT_ACCEPTED' }))).toMatch(/accept the current Terms/)
+    expect(describeError(new ApiError({ status: 409, code: 'ACCOUNT_DELETION_BLOCKED', detail: 'Seated in 1 unfinished game.' })))
+      .toBe('Seated in 1 unfinished game.')
+  })
+
   it('omits the Authorization header when signed out', async () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse(401, { status: 401, code: 'UNAUTHENTICATED' }))
     const api = createApiClient({ baseUrl: 'http://api.test', accessToken: async () => null, fetch })

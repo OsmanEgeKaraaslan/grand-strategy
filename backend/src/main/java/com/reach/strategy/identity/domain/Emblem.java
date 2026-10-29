@@ -12,6 +12,9 @@ public enum Emblem {
 
 	CROWN, SHIELD, SWORDS, TOWER, FLAG, SCHOLAR, MOUNTAIN, WHEAT;
 
+	/** The emblem of new accounts (the column default of V16) and of deleted ones. */
+	public static final Emblem DEFAULT = CROWN;
+
 	public String key() {
 		return name().toLowerCase(Locale.ROOT);
 	}

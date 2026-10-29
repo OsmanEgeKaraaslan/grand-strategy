@@ -15,6 +15,8 @@ import com.reach.strategy.platform.web.ApiException;
 import com.reach.strategy.siege.application.SiegeService;
 import com.reach.strategy.siege.api.SiegeViews;
 
+import com.reach.strategy.platform.ratelimit.RateLimited;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Fortifications and sieges of a started game. Members only; command bodies carry intents (the
  * level to build), never prices, durations, progress or artillery strength.
  */
+@RateLimited("game-commands")
 @RestController
 @Validated
 @RequestMapping("/api/v1/games/{gameId}")

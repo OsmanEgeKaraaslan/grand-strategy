@@ -56,7 +56,9 @@ describe('AuthProvider', () => {
     expect(client.auth.signUp).toHaveBeenCalledWith(
       expect.objectContaining({
         email: 'queen@reach.test',
-        options: expect.objectContaining({ data: { display_name: 'Queen of Varn' } }),
+        options: expect.objectContaining({
+          data: { display_name: 'Queen of Varn', accepted_terms_version: 'draft-1', accepted_privacy_version: 'draft-1' },
+        }),
       }),
     )
   })

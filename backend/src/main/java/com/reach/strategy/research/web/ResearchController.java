@@ -18,6 +18,8 @@ import com.reach.strategy.research.api.ResearchViews;
 import com.reach.strategy.research.rules.InstitutionType;
 import com.reach.strategy.research.rules.ResearchRules;
 
+import com.reach.strategy.platform.ratelimit.RateLimited;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Research of a started game. The overview is private to the caller's nation; command bodies carry
  * intents (what to build or unlock), never points, costs, levels or modifiers.
  */
+@RateLimited("game-commands")
 @RestController
 @RequestMapping("/api/v1/games/{gameId}")
 class ResearchController {

@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Session, SupabaseClient } from '@supabase/supabase-js'
+import { SIGN_UP_VERSIONS } from '../legal/documents'
+import { authRedirects, type AuthRedirectError } from './redirects'
 
 /** Result of a sign-up: either signed in immediately, or waiting for email confirmation. */
 export type SignUpResult = { status: 'signed-in' } | { status: 'confirmation-required'; email: string }
@@ -12,11 +14,26 @@ export interface Auth {
   session: Session | null
   /** True until the stored session (if any) has been restored. */
   loading: boolean
+  /** The session came from a password-recovery link: the player should choose a new password. */
+  passwordRecovery: boolean
+  /** An email link (confirmation, recovery) that Supabase rejected, e.g. because it expired. */
+  redirectError: AuthRedirectError | null
   signIn(email: string, password: string): Promise<void>
   signUp(email: string, password: string, displayName: string): Promise<SignUpResult>
   signOut(): Promise<void>
   /** A current (auto-refreshed) access token, or null when signed out. */
   accessToken(): Promise<string | null>
+  /**
+   * Asks Supabase to email a recovery link. Never reveals whether the address has an account: only
+   * rate-limit and connection problems are reported.
+   */
+  requestPasswordReset(email: string): Promise<void>
+  /** Sends the sign-up confirmation email again; as enumeration-safe as requestPasswordReset. */
+  resendConfirmation(email: string): Promise<void>
+  /** Sets a new password for the signed-in (or recovering) user. */
+  updatePassword(newPassword: string): Promise<void>
+  /** Confirms the current password by signing in again, which also refreshes the session's sign-in time. */
+  reauthenticate(password: string): Promise<void>
 }
 
 const AuthContext = createContext<Auth | null>(null)
@@ -31,9 +48,21 @@ export function useAuth(): Auth {
 
 export { AuthContext }
 
-export function AuthProvider({ client, children }: { client: SupabaseClient; children: ReactNode }) {
+export function AuthProvider({
+  client,
+  initialRedirectError = null,
+  initialPasswordRecovery = false,
+  children,
+}: {
+  client: SupabaseClient
+  initialRedirectError?: AuthRedirectError | null
+  /** The page was opened from a recovery link (see isRecoveryRedirect). */
+  initialPasswordRecovery?: boolean
+  children: ReactNode
+}) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [passwordRecovery, setPasswordRecovery] = useState(initialPasswordRecovery)
 
   useEffect(() => {
     let active = true
@@ -44,7 +73,9 @@ export function AuthProvider({ client, children }: { client: SupabaseClient; chi
         setLoading(false)
       }
     })
-    const { data: subscription } = client.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: subscription } = client.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
+      if (event === 'SIGNED_OUT') setPasswordRecovery(false)
       setSession(nextSession)
       setLoading(false)
     })
@@ -58,6 +89,8 @@ export function AuthProvider({ client, children }: { client: SupabaseClient; chi
     () => ({
       session,
       loading,
+      passwordRecovery,
+      redirectError: initialRedirectError,
       async signIn(email, password) {
         const { error } = await client.auth.signInWithPassword({ email, password })
         if (error) throw new Error(describeAuthError(error.message))
@@ -68,8 +101,13 @@ export function AuthProvider({ client, children }: { client: SupabaseClient; chi
           password,
           options: {
             // Read once by the backend when it creates the player profile (validated there).
-            data: { display_name: displayName },
-            emailRedirectTo: `${window.location.origin}/login`,
+            // The form requires consent to these versions; the backend records it on first login.
+            data: {
+              display_name: displayName,
+              accepted_terms_version: SIGN_UP_VERSIONS.terms,
+              accepted_privacy_version: SIGN_UP_VERSIONS.privacy,
+            },
+            emailRedirectTo: authRedirects.confirmation(),
           },
         })
         if (error) throw new Error(describeAuthError(error.message))
@@ -82,16 +120,61 @@ export function AuthProvider({ client, children }: { client: SupabaseClient; chi
         const { data } = await client.auth.getSession()
         return data.session?.access_token ?? null
       },
+      async requestPasswordReset(email) {
+        const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: authRedirects.recovery() })
+        throwIfReportable(error)
+      },
+      async resendConfirmation(email) {
+        const { error } = await client.auth.resend({
+          type: 'signup',
+          email,
+          options: { emailRedirectTo: authRedirects.confirmation() },
+        })
+        throwIfReportable(error)
+      },
+      async updatePassword(newPassword) {
+        const { error } = await client.auth.updateUser({ password: newPassword })
+        if (error) throw new Error(describeAuthError(error.message))
+        setPasswordRecovery(false)
+      },
+      async reauthenticate(password) {
+        const email = session?.user?.email
+        if (!email) throw new Error('Your session has ended. Please sign in again.')
+        const { error } = await client.auth.signInWithPassword({ email, password })
+        if (error) {
+          throw new Error(
+            error.message.toLowerCase().includes('invalid login credentials')
+              ? 'Your current password is not correct.'
+              : describeAuthError(error.message),
+          )
+        }
+      },
     }),
-    [client, session, loading],
+    [client, session, loading, passwordRecovery, initialRedirectError],
   )
 
   return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>
 }
 
+/**
+ * For the emails that must not reveal whether an address is registered: only throttling and
+ * connection failures reach the player; everything else looks like success.
+ */
+function throwIfReportable(error: { message: string } | null) {
+  if (!error) return
+  const normalized = error.message.toLowerCase()
+  const reportable = ['rate limit', 'for security purposes', 'failed to fetch', 'networkerror', 'load failed']
+  if (reportable.some((fragment) => normalized.includes(fragment))) throw new Error(describeAuthError(error.message))
+}
+
 /** Turns Supabase's messages into player-facing text. */
 export function describeAuthError(message: string): string {
   const normalized = message.toLowerCase()
+  if (normalized.includes('for security purposes')) return 'Please wait a minute before requesting another email.'
+  if (normalized.includes('should be different from the old')) return 'Choose a password different from your current one.'
+  if (normalized.includes('auth session missing') || normalized.includes('session_not_found')) {
+    return 'Your sign-in link has expired. Please request a new one.'
+  }
   if (normalized.includes('invalid login credentials')) return 'Wrong email or password.'
   if (normalized.includes('email not confirmed')) return 'Please confirm your email address first — check your inbox.'
   if (normalized.includes('already registered')) return 'An account with this email already exists. Try signing in.'

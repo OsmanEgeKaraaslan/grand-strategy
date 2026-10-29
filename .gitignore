@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
 # Private keys and keystores (none belong in this repository; tests generate keys in memory)
 *.pem
 *.key

@@ -6,7 +6,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import jakarta.persistence.LockModeType;
+
 import org.springframework.data.domain.Limit;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -15,6 +18,20 @@ import org.springframework.data.repository.query.Param;
 public interface PlayerRepository extends JpaRepository<Player, UUID> {
 
 	Optional<Player> findBySupabaseUserId(UUID supabaseUserId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select p from Player p where p.id = :id")
+	Optional<Player> findByIdForUpdate(@Param("id") UUID id);
+
+	/** History of acceptances (Phase 15A); accepting the same versions again changes nothing. */
+	@Modifying(flushAutomatically = true)
+	@Query(value = """
+			INSERT INTO game.terms_acceptance (player_id, terms_version, privacy_version, accepted_at)
+			VALUES (:playerId, :termsVersion, :privacyVersion, :now)
+			ON CONFLICT DO NOTHING
+			""", nativeQuery = true)
+	int recordAcceptance(@Param("playerId") UUID playerId, @Param("termsVersion") String termsVersion,
+			@Param("privacyVersion") String privacyVersion, @Param("now") Instant now);
 
 	List<Player> findByIdIn(Collection<UUID> ids);
 

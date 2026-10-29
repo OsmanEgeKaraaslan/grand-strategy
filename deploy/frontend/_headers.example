@@ -1,0 +1,12 @@
+# Security headers for the static frontend on Cloudflare Pages (docs/PRODUCTION_READINESS.md §6).
+# Copy to frontend/public/_headers at deploy time and replace the two origins:
+#   https://api.example.org            -> the API origin (VITE_API_BASE_URL)
+#   https://<project-ref>.supabase.co  -> the Supabase project URL (VITE_SUPABASE_URL)
+# The app loads no third-party scripts, fonts or images; WebGL (optional 3D map) needs no extra source.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://api.example.org https://<project-ref>.supabase.co; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()

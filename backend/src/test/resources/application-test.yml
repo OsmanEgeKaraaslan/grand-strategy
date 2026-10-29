@@ -10,3 +10,9 @@ strategy:
   ai:
     execution: inline
     recovery-enabled: false
+  # The Phase 1–13 suites predate legal acceptance; AccountIT turns the requirement on.
+  legal:
+    require-acceptance: false
+  # Suites replay whole games far faster than people play; RateLimitIT turns the limits on.
+  rate-limits:
+    enabled: false

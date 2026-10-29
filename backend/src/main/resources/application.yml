@@ -8,6 +8,11 @@ spring:
   datasource:
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:10}
+      # Fail a request quickly instead of queueing it for half a minute when the pool is exhausted.
+      connection-timeout: ${DB_CONNECTION_TIMEOUT_MS:10000}
+  lifecycle:
+    # Graceful shutdown: in-flight requests get this long to finish (server.shutdown: graceful).
+    timeout-per-shutdown-phase: 20s
   jpa:
     open-in-view: false
     hibernate:
@@ -20,6 +25,9 @@ spring:
     default-schema: game
     create-schemas: true
     locations: classpath:db/migration
+    # Never wipe a database by accident, and refuse to start on edited or missing applied migrations.
+    clean-disabled: true
+    validate-on-migrate: true
 
 server:
   port: ${SERVER_PORT:8080}
@@ -38,10 +46,15 @@ management:
       show-details: never
       probes:
         enabled: true
+      # Readiness also needs the database, so a proxy or orchestrator only routes to a working instance;
+      # liveness stays independent of it (a database outage must not restart the API in a loop).
+      group:
+        readiness:
+          include: readinessState,db
 
 logging:
   pattern:
-    level: "%5p [requestId=%X{requestId:-}]"
+    level: "%5p [requestId=%X{requestId:-} userId=%X{userId:-}]"
 
 # Request bodies are strict: unknown JSON fields are rejected (docs/API_DESIGN.md §1).
 spring.jackson.deserialization.fail-on-unknown-properties: true
@@ -63,9 +76,13 @@ strategy:
   # Computer opponents (Phase 11): async plays on worker threads; inline in the committing thread.
   ai:
     execution: ${STRATEGY_AI_EXECUTION:async}
-    worker-threads: 2
+    worker-threads: ${STRATEGY_AI_WORKER_THREADS:2}
     recovery-enabled: true
     recovery-interval-ms: 15000
+    # Games waiting for a worker (one entry per game); beyond it the recovery sweep catches up later.
+    max-queued-games: 500
+    # On shutdown running computer turns get this long before they are interrupted (they resume after restart).
+    shutdown-grace-ms: 10000
   # Social features (Phases 12–13): modest baseline bounds, not a substitute for Phase 15 rate limits.
   social:
     search-limit: 10
@@ -82,3 +99,38 @@ strategy:
       search-timeout: PT90S
       # No new search while the player has this many unfinished games (bounds game creation).
       max-unfinished-games: 5
+  # Legal documents players accept (Phase 15A). Raise a version when its text changes: everyone is asked
+  # again. The texts are drafts until the operator has had them reviewed (docs/DATA_PRIVACY_INVENTORY.md).
+  legal:
+    terms-version: ${LEGAL_TERMS_VERSION:draft-1}
+    privacy-version: ${LEGAL_PRIVACY_VERSION:draft-1}
+    require-acceptance: ${LEGAL_REQUIRE_ACCEPTANCE:true}
+  web:
+    # Every API body is a small JSON document (Phase 15B); larger requests get 413.
+    max-request-body: 64KB
+  game:
+    # Lobbies and running games one account may be seated in at once (Phase 15B).
+    max-unfinished-games: ${GAME_MAX_UNFINISHED_PER_PLAYER:10}
+  # Account deletion requires a sign-in this recent (Supabase `amr` claim); PT0S turns the check off.
+  account:
+    deletion-reauthentication-window: PT10M
+  # Per-account request budgets (Phase 15B, docs/SECURITY_AUDIT.md §4). capacity requests refill evenly
+  # over window. In memory: each API instance counts on its own. Sized well above normal play (a game
+  # screen polls about 30 times a minute).
+  rate-limits:
+    enabled: ${RATE_LIMITS_ENABLED:true}
+    max-tracked-keys: 100000
+    policies:
+      api: { capacity: 600, window: PT1M }
+      game-commands: { capacity: 120, window: PT1M }
+      game-creation: { capacity: 10, window: PT1H }
+      # Invitation codes are guessable only by brute force; this keeps guessing impractical.
+      game-join: { capacity: 30, window: PT10M }
+      player-search: { capacity: 30, window: PT1M }
+      profile-reads: { capacity: 60, window: PT1M }
+      friend-requests: { capacity: 30, window: PT1H }
+      invitations: { capacity: 30, window: PT1H }
+      social-actions: { capacity: 60, window: PT1M }
+      matchmaking: { capacity: 20, window: PT10M }
+      matchmaking-heartbeat: { capacity: 30, window: PT1M }
+      account: { capacity: 20, window: PT10M }

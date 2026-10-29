@@ -71,4 +71,9 @@ public class NotificationStore {
 		jdbc.update("DELETE FROM game.notification WHERE actor_player_id = ? AND player_id = ?", actorId, recipientId);
 	}
 
+	/** Account deletion: the player's notifications and every notification naming them as the actor. */
+	public void purge(UUID playerId) {
+		jdbc.update("DELETE FROM game.notification WHERE player_id = ? OR actor_player_id = ?", playerId, playerId);
+	}
+
 }

@@ -10,6 +10,8 @@ import jakarta.validation.constraints.Size;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.social.application.FriendService;
 
+import com.reach.strategy.platform.ratelimit.RateLimited;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Player search, friend requests, friendships and blocks of the authenticated player. */
+@RateLimited("social-actions")
 @RestController
 @Validated
 @RequestMapping("/api/v1")
@@ -33,6 +36,7 @@ class FriendController {
 		this.friends = friends;
 	}
 
+	@RateLimited("player-search")
 	@GetMapping("/players/search")
 	List<FriendService.PlayerCard> search(CurrentPlayer me, @RequestParam("q") @Size(max = 32) String query) {
 		return friends.search(me, query);
@@ -43,6 +47,7 @@ class FriendController {
 		return friends.overview(me);
 	}
 
+	@RateLimited("friend-requests")
 	@PostMapping("/friends/requests")
 	FriendService.RequestView request(CurrentPlayer me, @Valid @RequestBody UsernameRequest request) {
 		return friends.request(me, request.username());

@@ -16,6 +16,8 @@ import com.reach.strategy.game.application.LobbyService;
 import com.reach.strategy.game.application.LobbyView;
 import com.reach.strategy.identity.api.CurrentPlayer;
 
+import com.reach.strategy.platform.ratelimit.RateLimited;
+
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** Lobby: create, list, view, join, choose a nation, start. */
+@RateLimited("game-commands")
 @RestController
 @RequestMapping("/api/v1/games")
 class GameController {
@@ -36,6 +39,7 @@ class GameController {
 		this.lobbyService = lobbyService;
 	}
 
+	@RateLimited("game-creation")
 	@PostMapping
 	ResponseEntity<LobbyView> create(CurrentPlayer me, @Valid @RequestBody CreateGameRequest request) {
 		LobbyView lobby = lobbyService.create(me, request.name(), request.maxPlayers(), request.mapKey());
@@ -52,6 +56,7 @@ class GameController {
 		return lobbyService.lobby(me, gameId);
 	}
 
+	@RateLimited("game-join")
 	@PostMapping("/join")
 	LobbyView join(CurrentPlayer me, @Valid @RequestBody JoinGameRequest request) {
 		return lobbyService.join(me, request.inviteCode());

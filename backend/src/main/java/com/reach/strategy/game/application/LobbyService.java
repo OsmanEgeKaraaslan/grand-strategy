@@ -58,13 +58,16 @@ public class LobbyService implements MatchCreation {
 	private final ObjectProvider<ComputerOpponents> computerOpponents;
 	private final ComputerPlayers computerPlayers;
 	private final ApplicationEventPublisher events;
+	private final int maxUnfinishedGames;
 
 	LobbyService(GameRepository games, GamePlayerRepository memberships, PlayerDirectory playerDirectory, WorldApi world,
 			List<GameStartInitializer> startInitializers,
 			@Value("${strategy.ruleset.current-version}") String currentRulesetVersion, Clock clock,
 			ObjectProvider<ComputerOpponents> computerOpponents, ComputerPlayers computerPlayers,
-			ApplicationEventPublisher events) {
+			ApplicationEventPublisher events,
+			@Value("${strategy.game.max-unfinished-games:10}") int maxUnfinishedGames) {
 		this.events = events;
+		this.maxUnfinishedGames = maxUnfinishedGames;
 		this.computerOpponents = computerOpponents;
 		this.computerPlayers = computerPlayers;
 		this.games = games;
@@ -98,6 +101,7 @@ public class LobbyService implements MatchCreation {
 			throw new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "INVALID_PLAYER_COUNT",
 					"This map supports 2 to " + map.maxPlayers() + " human players.");
 		}
+		requireRoomForAnotherGame(me);
 		Game.Created created = Game.create(name.strip(), me.id(), players, mapId, currentRulesetVersion,
 				freshInviteCode(), now);
 		games.save(created.game());
@@ -128,6 +132,17 @@ public class LobbyService implements MatchCreation {
 		}).toList();
 	}
 
+	/**
+	 * Bounds the lobbies and running games one account can hold (Phase 15B): each costs storage and,
+	 * with computer seats, worker time. Finished games do not count.
+	 */
+	private void requireRoomForAnotherGame(CurrentPlayer me) {
+		if (games.countUnfinishedForMember(me.id()) >= maxUnfinishedGames) {
+			throw new ApiException(HttpStatus.CONFLICT, "TOO_MANY_UNFINISHED_GAMES",
+					"You already have " + maxUnfinishedGames + " unfinished games. Finish one before starting or joining another.");
+		}
+	}
+
 	@Transactional(readOnly = true)
 	public LobbyView lobby(CurrentPlayer me, UUID gameId) {
 		Game game = games.findById(gameId).orElseThrow(GameErrors::gameNotFound);
@@ -145,6 +160,7 @@ public class LobbyService implements MatchCreation {
 		InviteCode code = InviteCode.parse(rawInviteCode).orElseThrow(GameErrors::inviteCodeNotFound);
 		Game game = games.findByInviteCodeForUpdate(code.value()).orElseThrow(GameErrors::inviteCodeNotFound);
 		if (!memberships.existsByGameIdAndPlayerId(game.id(), me.id())) {
+			requireRoomForAnotherGame(me);
 			try {
 				memberships.save(game.admit(me.id(), clock.instant()));
 			}

@@ -46,6 +46,7 @@ import type {
   MilitaryOverview,
   MoveResult,
   PlayerProfile,
+  DeletedAccount,
   PlayerCard,
   ProfileChanges,
   PublicProfile,
@@ -120,7 +121,12 @@ export function createApiClient({ baseUrl, accessToken, onUnauthorized, fetch: f
     }
 
     if (response.status === 401) onUnauthorized?.()
-    if (!response.ok) throw new ApiError(await readProblem(response))
+    if (!response.ok) {
+      const problem = new ApiError(await readProblem(response))
+      // A deleted account's token may still be valid at Supabase; treat it like a revoked session.
+      if (problem.code === 'ACCOUNT_DELETED') onUnauthorized?.()
+      throw problem
+    }
     if (response.status === 204) return undefined as T
     return (await response.json()) as T
   }
@@ -128,6 +134,9 @@ export function createApiClient({ baseUrl, accessToken, onUnauthorized, fetch: f
   return {
     getMe: () => request<PlayerProfile>('GET', '/me'),
     updateMe: (changes: ProfileChanges) => request<PlayerProfile>('PATCH', '/me', changes),
+    acceptTerms: (termsVersion: string, privacyVersion: string) =>
+      request<PlayerProfile>('POST', '/me/terms-acceptance', { termsVersion, privacyVersion }),
+    deleteAccount: () => request<DeletedAccount>('POST', '/me/deletion', { confirmation: 'DELETE' }),
     getProfile: (username: string) => request<PublicProfile>('GET', `/profiles/${encodeURIComponent(username)}`),
     searchPlayers: (query: string) => request<PlayerCard[]>('GET', `/players/search?q=${encodeURIComponent(query)}`),
     getFriends: () => request<FriendsOverview>('GET', '/friends'),
@@ -402,6 +411,21 @@ async function readProblem(response: Response): Promise<Problem> {
 export function describeError(error: unknown): string {
   if (error instanceof ApiError) {
     switch (error.code) {
+      case 'RATE_LIMITED':
+        return 'You are doing that too often. Please wait a moment and try again.'
+      case 'TERMS_NOT_ACCEPTED':
+        return 'Please accept the current Terms of Service and Privacy Policy to continue.'
+      case 'TERMS_VERSION_OUTDATED':
+        return 'The legal documents have just changed. Please review the current versions.'
+      case 'ACCOUNT_DELETED':
+        return 'This account has been deleted.'
+      case 'REAUTHENTICATION_REQUIRED':
+        return 'Please confirm your password again.'
+      case 'ACCOUNT_DELETION_BLOCKED':
+      case 'TOO_MANY_UNFINISHED_GAMES':
+        return error.message
+      case 'PAYLOAD_TOO_LARGE':
+        return 'That request is too large.'
       case 'GAME_FULL':
         return 'This game is already full.'
       case 'INVITE_CODE_NOT_FOUND':

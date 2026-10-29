@@ -35,4 +35,12 @@ public interface GameRepository extends JpaRepository<Game, UUID> {
 			""")
 	List<Game> findAllForMember(@Param("playerId") UUID playerId);
 
+	/** Lobbies and running games the player is seated in (bounded per player, Phase 15B). */
+	@Query("""
+			select count(g) from Game g
+			where g.status <> com.reach.strategy.game.domain.GameStatus.FINISHED
+			  and exists (select 1 from GamePlayer m where m.gameId = g.id and m.playerId = :playerId)
+			""")
+	long countUnfinishedForMember(@Param("playerId") UUID playerId);
+
 }

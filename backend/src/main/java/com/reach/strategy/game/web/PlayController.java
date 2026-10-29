@@ -11,6 +11,8 @@ import com.reach.strategy.game.application.TurnService;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.platform.web.ApiException;
 
+import com.reach.strategy.platform.ratelimit.RateLimited;
+
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.context.request.WebRequest;
 
 /** A started game: its state, the sequential-turn commands and, once finished, its result. */
+@RateLimited("game-commands")
 @RestController
 @RequestMapping("/api/v1/games/{gameId}")
 class PlayController {

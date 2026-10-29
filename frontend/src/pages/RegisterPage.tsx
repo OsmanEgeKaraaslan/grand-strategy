@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
+import { checkNewPassword } from '../auth/passwords'
+import { ResendConfirmation } from '../auth/ResendConfirmation'
 import { AuthFrame } from '../components/AppShell'
 import { Alert } from '../components/Alert'
 
-export const MIN_PASSWORD_LENGTH = 8
 const DISPLAY_NAME_PATTERN = /^[\p{L}\p{N}_-]+( [\p{L}\p{N}_-]+)*$/u
 
 export function RegisterPage() {
@@ -17,6 +18,7 @@ export function RegisterPage() {
   const [error, setError] = useState<string | null>(null)
   const [confirmationSentTo, setConfirmationSentTo] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [consent, setConsent] = useState(false)
 
   if (session) {
     return <Navigate to="/" replace />
@@ -29,6 +31,8 @@ export function RegisterPage() {
           We sent a confirmation link to <strong>{confirmationSentTo}</strong>. Open it to activate your account,
           then sign in.
         </Alert>
+        <p className="muted">Nothing arrived after a few minutes? Check your spam folder, or:</p>
+        <ResendConfirmation email={confirmationSentTo} />
         <Link to="/login" className="button button--primary">
           Go to sign in
         </Link>
@@ -42,8 +46,9 @@ export function RegisterPage() {
       return 'Display names have 3–24 letters, digits, spaces, "_" or "-".'
     }
     if (!email.includes('@')) return 'Enter a valid email address.'
-    if (password.length < MIN_PASSWORD_LENGTH) return `Passwords need at least ${MIN_PASSWORD_LENGTH} characters.`
-    if (password !== confirmPassword) return 'The passwords do not match.'
+    const passwordProblem = checkNewPassword(password, confirmPassword)
+    if (passwordProblem) return passwordProblem
+    if (!consent) return 'Please accept the Terms of Service and the Privacy Policy.'
     return null
   }
 
@@ -107,6 +112,20 @@ export function RegisterPage() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
           />
+        </label>
+        <label className="checkbox-field">
+          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+          <span>
+            I accept the{' '}
+            <Link to="/legal/terms" target="_blank">
+              Terms of Service
+            </Link>{' '}
+            and have read the{' '}
+            <Link to="/legal/privacy" target="_blank">
+              Privacy Policy
+            </Link>
+            .
+          </span>
         </label>
         <button type="submit" className="button button--primary" disabled={submitting}>
           {submitting ? 'Creating account…' : 'Register'}
