@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { describeError } from '../api/client'
 import { useAttach, useRegroup, useRelease } from '../api/queries'
-import type { Battalion, MapProvince, MilitaryOverview, ProvinceState, UnitType } from '../api/types'
+import type { Battalion, MapProvince, MilitaryOverview, UnitType } from '../api/types'
 import { ELIGIBILITY_TEXT } from '../lib/blockers'
 import type { Relations } from '../lib/diplomacy'
 import { UNIT_LABELS } from '../lib/units'
@@ -19,8 +19,6 @@ type Tool = 'reinforce' | 'disband' | 'group' | 'lend' | null
 interface ArmyInspectorProps {
   gameId: string
   province: MapProvince
-  provinces: Map<string, ProvinceState>
-  provinceNames: Map<string, string>
   military: MilitaryOverview
   nations: Map<string, NationStyle>
   yourTurn: boolean
@@ -30,23 +28,19 @@ interface ArmyInspectorProps {
   /** Where the selection may go (the map's highlights) and why nothing can be ordered, if so. */
   targets: Map<string, TargetKind>
   reason: string | null
-  /** Orders the selection into a neighbour: the same path as a right-click on the map. */
-  onOrder: (provinceKey: string) => void
   stateVersion: number
   onClose: () => void
 }
 
 /**
  * The floating army window: who stands in a province, the composition of the player's stack, icon
- * commands (reinforce, disband, group, lend, recall) and a scrollable battalion list whose
- * checkboxes are the selection the map's right-click orders. Allied battalions are commanded only
+ * commands (reinforce, disband, name a group, lend, recall) and a scrollable battalion list whose
+ * checkboxes are the selection the map's right-click (or M on a focused province) orders. Allied battalions are commanded only
  * when attached to the player; the server re-validates every command.
  */
 export function ArmyInspector({
   gameId,
   province,
-  provinces,
-  provinceNames,
   military,
   nations,
   yourTurn,
@@ -55,7 +49,6 @@ export function ArmyInspector({
   onSelectedChange,
   targets,
   reason,
-  onOrder,
   stateVersion,
   onClose,
 }: ArmyInspectorProps) {
@@ -142,10 +135,16 @@ export function ArmyInspector({
             />
             <ToolButton
               icon="group"
-              label="Group as army"
+              label="Name as army group"
               pressed={tool === 'group'}
               disabled={!yourTurn || selectedMine.length === 0}
-              hint={!yourTurn ? 'Orders can be given on your turn.' : selectedMine.length === 0 ? 'Select the battalions to group.' : undefined}
+              hint={
+                !yourTurn
+                  ? 'Orders can be given on your turn.'
+                  : selectedMine.length === 0
+                    ? 'Select the battalions to name as a group.'
+                    : 'A named label for these battalions, so you can find and re-select them; it does not change movement or combat.'
+              }
               onClick={() => pickTool('group')}
             />
             {relations.partners.length > 0 && (
@@ -230,6 +229,7 @@ export function ArmyInspector({
             onToggle={toggle}
             you={you}
             nationName={nationName}
+            onSelectGroup={(armyId) => onSelectedChange(mine.filter((b) => b.armyId === armyId && b.eligibility === 'READY').map((b) => b.id))}
           />
         )}
         {lent.length > 0 && <LentBattalions gameId={gameId} battalions={lent} yourTurn={yourTurn} nationName={nationName} />}
@@ -259,18 +259,16 @@ export function ArmyInspector({
       </div>
 
       {mine.length > 0 && (
-        <Orders
-          province={province}
-          provinces={provinces}
-          provinceNames={provinceNames}
-          military={military}
-          relations={relations}
-          selectedCount={selectedMine.length}
-          yourTurn={yourTurn}
-          targets={targets}
-          reason={reason}
-          onOrder={onOrder}
-        />
+        <p className="orders__hint muted" aria-live="polite">
+          {!yourTurn
+            ? 'You can move on your turn.'
+            : selectedMine.length === 0
+              ? 'Select battalions to move them.'
+              : (reason ??
+                (targets.size > 0
+                  ? 'Right-click a highlighted province on the map to move there (red: attack). With the keyboard, focus the province and press M. Moving only some battalions splits the stack.'
+                  : 'No neighbouring province can be entered.'))}
+        </p>
       )}
     </FloatingWindow>
   )
@@ -319,6 +317,7 @@ function BattalionGroup({
   onToggle,
   you,
   nationName,
+  onSelectGroup,
 }: {
   title: string
   battalions: Battalion[]
@@ -329,6 +328,8 @@ function BattalionGroup({
   onToggle: (id: string) => void
   you?: string
   nationName?: (id: string) => string
+  /** Selects the ready battalions of a named group (your own battalions only). */
+  onSelectGroup?: (armyId: string) => void
 }) {
   return (
     <div className="battalions">
@@ -365,7 +366,19 @@ function BattalionGroup({
                 <meter min={0} max={b.maxManpower} value={b.manpower} low={b.maxManpower * 0.5} aria-label={label} title={`${percent}%`} />
               </span>
               <span className="battalion-row__tags">
-                {b.armyId && armyNames.has(b.armyId) && <span className="tag">{armyNames.get(b.armyId)}</span>}
+                {b.armyId && armyNames.has(b.armyId) &&
+                  (onSelectGroup && selectable ? (
+                    <button
+                      type="button"
+                      className="tag tag--button"
+                      title={`Select the ready battalions of ${armyNames.get(b.armyId)}`}
+                      onClick={() => onSelectGroup(b.armyId!)}
+                    >
+                      {armyNames.get(b.armyId)}
+                    </button>
+                  ) : (
+                    <span className="tag">{armyNames.get(b.armyId)}</span>
+                  ))}
                 {you && b.nationId !== you && nationName && <span className="tag">Lent by {nationName(b.nationId)} — you command it</span>}
                 {b.eligibility && <span className={`tag ${b.eligibility === 'READY' ? 'tag--active' : ''}`} title={ELIGIBILITY_TEXT[b.eligibility]}>{ELIGIBILITY_TEXT[b.eligibility]}</span>}
               </span>
@@ -374,76 +387,6 @@ function BattalionGroup({
         })}
       </ul>
     </div>
-  )
-}
-
-/** Neighbours as compact order buttons: the keyboard path to what a right-click does on the map. */
-function Orders({
-  province,
-  provinces,
-  provinceNames,
-  military,
-  relations,
-  selectedCount,
-  yourTurn,
-  targets,
-  reason,
-  onOrder,
-}: {
-  province: MapProvince
-  provinces: Map<string, ProvinceState>
-  provinceNames: Map<string, string>
-  military: MilitaryOverview
-  relations: Relations
-  selectedCount: number
-  yourTurn: boolean
-  targets: Map<string, TargetKind>
-  reason: string | null
-  onOrder: (provinceKey: string) => void
-}) {
-  const explanation = !yourTurn
-    ? 'You can move on your turn.'
-    : selectedCount === 0
-      ? 'Select battalions to move them.'
-      : (reason ?? 'Right-click a highlighted province on the map, or choose here. Moving only some battalions splits the stack.')
-  return (
-    <section className="orders" aria-label="Orders">
-      <p className="orders__hint muted">{explanation}</p>
-      <ul className="destinations">
-        {province.neighbours.map((n) => {
-          const target = provinces.get(n.provinceKey)
-          const hostile = military.battalions.filter((b) => b.provinceKey === n.provinceKey && relations.atWar(b.nationId)).length
-          const enemyTerritory = target !== undefined && relations.atWar(target.controllerNationId)
-          const closed = target !== undefined && !relations.mayEnter(target.controllerNationId) && !enemyTerritory
-          const name = provinceNames.get(n.provinceKey) ?? n.provinceKey
-          const status = hostile > 0
-            ? `${hostile} enemy ${hostile === 1 ? 'battalion' : 'battalions'}`
-            : closed
-              ? 'Closed — not at war, no military access'
-              : enemyTerritory
-                ? 'Enemy territory — occupied at round end if undefended'
-                : 'Friendly'
-          return (
-            <li key={n.provinceKey} className={`destination ${hostile > 0 ? 'destination--hostile' : closed ? 'destination--closed' : ''}`}>
-              <button
-                type="button"
-                className={`button button--small ${hostile > 0 ? 'button--danger' : ''}`}
-                disabled={!targets.has(n.provinceKey)}
-                title={status}
-                onClick={() => onOrder(n.provinceKey)}
-              >
-                <Icon name={hostile > 0 ? 'military' : 'move'} size={14} />
-                {hostile > 0 ? `Attack ${name}` : `Move to ${name}`}
-              </button>
-              <span className="destination__info">
-                <span className={`tag ${hostile > 0 ? 'tag--warning' : ''}`}>{status}</span>
-                {n.crossing === 'RIVER' && <span className="tag">River: attack −20%</span>}
-              </span>
-            </li>
-          )
-        })}
-      </ul>
-    </section>
   )
 }
 
@@ -462,12 +405,16 @@ function GroupForm({ gameId, battalionIds, onDone }: { gameId: string; battalion
       }}
     >
       <label>
-        Army name
+        Group name
         <input value={name} maxLength={40} onChange={(event) => setName(event.target.value)} placeholder="e.g. First Army" autoFocus />
       </label>
       <button type="submit" className="button button--small" disabled={name.trim() === '' || regroup.isPending}>
-        Group {battalionIds.length} as army
+        Name {battalionIds.length} as a group
       </button>
+      <p className="muted">
+        Only a label: battalions in a province always fight together, and each moves on its own. Moving the whole group
+        keeps it together; moving part of it leaves those battalions ungrouped. Click the group's tag to select it again.
+      </p>
       {regroup.error && <Alert>{describeError(regroup.error)}</Alert>}
     </form>
   )

@@ -33,6 +33,8 @@ import { DiplomacyPanel } from '../components/DiplomacyPanel'
 import { ForcesCard } from '../components/ForcesCard'
 import { GameResultView } from '../components/GameResultView'
 import { GameToolbar, type PanelKey } from '../components/GameToolbar'
+import { HistoryPanel } from '../components/HistoryPanel'
+import { NationDiplomacy } from '../components/NationDiplomacy'
 import { Icon } from '../components/icons'
 import { ConferenceCard } from '../components/PeaceConference'
 import { ProvinceInspector } from '../components/ProvinceInspector'
@@ -45,6 +47,7 @@ import { Spinner } from '../components/Spinner'
 import { TreasuryPanel } from '../components/TreasuryPanel'
 import { perspectiveOf, relationsOf, type Names, type Relations } from '../lib/diplomacy'
 import { formatGold } from '../lib/gold'
+import { projectedPopulationChange } from '../lib/population'
 
 /**
  * The campaign screen: a full-viewport map with the interface floating over it — top bar
@@ -80,6 +83,8 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
   const [shownBattle, setShownBattle] = useState<BattleReport | null>(null)
   const [requestedBattleId, setRequestedBattleId] = useState<string | null>(null)
   const [panel, setPanel] = useState<PanelKey | null>(null)
+  // A nation opened from the map (a province's owner); the diplomacy window then shows that nation.
+  const [diplomacyNation, setDiplomacyNation] = useState<string | null>(null)
   const [pendingAttack, setPendingAttack] = useState<string | null>(null)
   const [orderMessage, setOrderMessage] = useState<string | null>(null)
   // The conference window opens by itself whenever a conference pauses the game; it can be minimised.
@@ -156,6 +161,10 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
         ? undefined
         : state.provinces.filter((p) => p.ownerNationId === yourNationId).reduce((sum, p) => sum + p.city.population, 0),
     [state.provinces, yourNationId],
+  )
+  const populationChange = useMemo(
+    () => projectedPopulationChange(state, yourNationId, economy.data, sieges.data),
+    [state, yourNationId, economy.data, sieges.data],
   )
   const waiting = diplomacyBusiness(diplomacy.data)
   const notices = (economy.data?.nation.inArrears ? 1 : 0) + (state.pausedConferenceId ? 1 : 0)
@@ -266,7 +275,14 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
   }
 
   function openPanel(next: PanelKey | null) {
+    setDiplomacyNation(null)
     setPanel(next)
+  }
+
+  /** The legal owner's diplomacy, beside the province window: selection and camera stay as they are. */
+  function openNation(nationId: string) {
+    setDiplomacyNation(nationId)
+    setPanel('diplomacy')
   }
 
   const errors = [requestedBattle.error, economy.error, military.error, diplomacy.error, sieges.error].filter((e) => e != null)
@@ -280,7 +296,7 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
         onShowResult={finished && resultHidden ? () => setResultHidden(false) : undefined}
         onOpenConference={() => {
           setMinimisedConference(null)
-          if (panel === 'diplomacy') setPanel(null)
+          if (panel === 'diplomacy') openPanel(null)
         }}
         notifications={badges.notifications}
         onOpenNotifications={() => setPanel(panel === 'notifications' ? null : 'notifications')}
@@ -291,6 +307,7 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
           economy={economy.data}
           military={military.data}
           population={population}
+          populationChange={populationChange}
         />
       </TopBar>
 
@@ -318,7 +335,7 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
       <GameToolbar active={panel} onSelect={openPanel} badges={badges} />
 
       {panel && (
-        <aside className={`panel-host ${panel === 'diplomacy' || panel === 'technology' ? 'panel-host--wide' : ''}`} aria-label="Management window">
+        <aside className={`panel-host ${(panel === 'diplomacy' && !diplomacyNation) || panel === 'technology' || panel === 'history' ? 'panel-host--wide' : ''}`} aria-label="Management window">
           <button type="button" className="icon-button panel-host__close" aria-label="Close window" title="Close (Esc)" onClick={() => setPanel(null)}>
             <Icon name="close" />
           </button>
@@ -350,7 +367,26 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
               </>
             )}
             {panel === 'technology' && <ResearchPanel gameId={state.id} stateVersion={state.stateVersion} military={military.data} />}
-            {panel === 'diplomacy' && diplomacy.data && (
+            {panel === 'diplomacy' && diplomacy.data && diplomacyNation && (
+              <NationDiplomacy
+                gameId={state.id}
+                nationId={diplomacyNation}
+                overview={diplomacy.data}
+                state={state}
+                names={names}
+                onShowAll={() => setDiplomacyNation(null)}
+              />
+            )}
+            {panel === 'history' && (
+              <HistoryPanel
+                gameId={state.id}
+                stateVersion={state.stateVersion}
+                overview={diplomacy.data}
+                names={names}
+                onShowBattle={setRequestedBattleId}
+              />
+            )}
+            {panel === 'diplomacy' && diplomacy.data && !diplomacyNation && (
               <DiplomacyPanel
                 gameId={state.id}
                 overview={diplomacy.data}
@@ -398,6 +434,7 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
           onClose={closeInspector}
           onSelect={selectProvince}
           onOpenForces={openForces}
+          onOpenNation={diplomacy.data?.available ? openNation : undefined}
         />
       )}
       {selected && inspector === 'army' && military.data && (
@@ -405,8 +442,6 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
           key={selected.key}
           gameId={state.id}
           province={selected}
-          provinces={provinces}
-          provinceNames={provinceNames}
           military={military.data}
           nations={nations}
           yourTurn={state.yourTurn}
@@ -415,7 +450,6 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
           onSelectedChange={setSelectedBattalions}
           targets={orders.targets}
           reason={orders.reason}
-          onOrder={command}
           stateVersion={state.stateVersion}
           onClose={closeInspector}
         />

@@ -1018,6 +1018,10 @@ export interface DiplomacyFeatures {
   separatePeace: boolean
   capitalsCedable: boolean
   elimination: boolean
+  /** v8: a declarer may invite its normal allies to the attack. */
+  offensiveCallsToArms?: boolean
+  /** v8: a truce forbids declaring war, not answering a call to arms. */
+  truceAllowsCallsToArms?: boolean
 }
 
 export interface NationRelation {
@@ -1194,6 +1198,8 @@ export interface CallToArms {
   createdRound: number
   answeredRound: number | null
   canAnswer: boolean
+  /** The side the ally would join: DEFENDER (a call to defend) or ATTACKER (a v8 invitation to attack). */
+  side?: 'ATTACKER' | 'DEFENDER'
 }
 
 export type ConferenceKind = 'GENERAL' | 'SEPARATE'
@@ -1262,6 +1268,8 @@ export interface Withdrawal {
 export interface WarResult {
   war: WarView
   joinedDefenders: string[]
+  /** v8: the normal allies invited to join the attack (each answers on its turn). */
+  invitedAllies?: string[]
 }
 
 export interface AllianceResult {

@@ -5,6 +5,7 @@ import { checkNewPassword } from '../auth/passwords'
 import { ResendConfirmation } from '../auth/ResendConfirmation'
 import { AuthFrame } from '../components/AppShell'
 import { Alert } from '../components/Alert'
+import { PasswordField } from '../components/PasswordInput'
 
 const DISPLAY_NAME_PATTERN = /^[\p{L}\p{N}_-]+( [\p{L}\p{N}_-]+)*$/u
 
@@ -95,24 +96,13 @@ export function RegisterPage() {
           <span>Email</span>
           <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
-        <label className="field">
-          <span>Password</span>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
-        <label className="field">
-          <span>Confirm password</span>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-          />
-        </label>
+        <PasswordField label="Password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <PasswordField
+          label="Confirm password"
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+        />
         <label className="checkbox-field">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
           <span>

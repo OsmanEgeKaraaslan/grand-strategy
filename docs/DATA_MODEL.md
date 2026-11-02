@@ -106,6 +106,12 @@ migrations V1–V11 are unchanged.
 | `V18__game_invitations.sql` | `game_invitation` (§3.8) |
 | `V19__matchmaking.sql` | `matchmaking_ticket` (§3.8) |
 
+### 3.0e Playtest feedback migration (V21)
+
+| Migration | Changes |
+|---|---|
+| `V21__offensive_calls_to_arms.sql` | `call_to_arms.side` (`DEFENDER` default for every existing call, `ATTACKER` for v8 invitations to join an attack; check constraint). Purely additive |
+
 ### 3.0d Phase 15A migration (V20)
 
 | Migration | Changes |

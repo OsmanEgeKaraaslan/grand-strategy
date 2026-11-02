@@ -202,8 +202,15 @@ public record AiState(UUID gameId, int round, int turnNumber, int maxRounds, UUI
 
 	}
 
+	/** @param offensiveCallsToArms, truceAllowsCallsToArms the v8 call-to-arms rules (docs/DIPLOMACY.md §12a) */
 	public record Features(boolean attachments, boolean callsToArms, boolean peaceConferences, boolean separatePeace,
-			boolean capitalsCedable, boolean elimination) {
+			boolean capitalsCedable, boolean elimination, boolean offensiveCallsToArms, boolean truceAllowsCallsToArms) {
+
+		public Features(boolean attachments, boolean callsToArms, boolean peaceConferences, boolean separatePeace,
+				boolean capitalsCedable, boolean elimination) {
+			this(attachments, callsToArms, peaceConferences, separatePeace, capitalsCedable, elimination, false, false);
+		}
+
 	}
 
 	/** @param participants nations still fighting, with their side */
@@ -259,7 +266,13 @@ public record AiState(UUID gameId, int round, int turnNumber, int maxRounds, UUI
 
 	}
 
-	public record Call(UUID id, UUID warId, UUID caller, UUID ally, String status, boolean canAnswer) {
+	/** @param side the side the called ally would join (DEFENDER, or ATTACKER for an invitation to attack) */
+	public record Call(UUID id, UUID warId, UUID caller, UUID ally, String status, boolean canAnswer, String side) {
+
+		public Call(UUID id, UUID warId, UUID caller, UUID ally, String status, boolean canAnswer) {
+			this(id, warId, caller, ally, status, canAnswer, "DEFENDER");
+		}
+
 	}
 
 	public record Gift(UUID sender, UUID recipient, long amountMg, int round) {

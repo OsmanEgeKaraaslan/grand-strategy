@@ -339,7 +339,7 @@ public class DiplomacyQueries {
 
 	DiplomacyViews.CallView callView(CallToArmsRepository.CallRow c, UUID viewer) {
 		return new DiplomacyViews.CallView(c.id(), c.warId(), c.caller(), c.ally(), c.status(), c.createdRound(),
-				c.answeredRound(), c.pending() && c.ally().equals(viewer));
+				c.answeredRound(), c.pending() && c.ally().equals(viewer), c.side());
 	}
 
 	DiplomacyViews.ConferenceView conferenceView(Ctx ctx, ConferenceRepository.ConferenceRow c) {
@@ -483,7 +483,7 @@ public class DiplomacyQueries {
 
 	static DiplomacyViews.Features features(DiplomacyRules.Features f) {
 		return new DiplomacyViews.Features(f.coalitionWarfare(), f.attachments(), f.callsToArms(), f.peaceConferences(),
-				f.separatePeace(), f.capitalsCedable(), f.elimination());
+				f.separatePeace(), f.capitalsCedable(), f.elimination(), f.offensiveCallsToArms(), f.truceAllowsCallsToArms());
 	}
 
 	// --- terms <-> JSON -------------------------------------------------------------------------

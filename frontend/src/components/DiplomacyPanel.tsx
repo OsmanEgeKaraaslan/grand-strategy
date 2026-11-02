@@ -22,11 +22,12 @@ import type {
   SideScore,
   WarView,
 } from '../api/types'
-import { BLOCKER_TEXT, describeEvent, describeTerm, isMajorSettlement, settlementSummary, type Names } from '../lib/diplomacy'
+import { BLOCKER_TEXT, describeTerm, isMajorSettlement, settlementSummary, type Names } from '../lib/diplomacy'
 import { formatGold } from '../lib/gold'
 import { Alert } from './Alert'
 import { ConferenceCard } from './PeaceConference'
 import { PeaceNegotiation, SettlementSummary } from './PeaceNegotiation'
+import { Icon } from './icons'
 import { SendGold } from './SendGold'
 
 const STATUS_LABELS: Record<string, string> = { WAR: 'At war', ALLIED: 'Allied', PEACE: 'At peace' }
@@ -53,8 +54,10 @@ interface DiplomacyPanelProps {
 }
 
 /**
- * Relations with every nation, wars and their score, alliances, peace proposals, treaties, tribute
- * and the public history. Buttons only express intents; the server decides what is allowed (the
+ * Live diplomacy: wars and their score, calls to arms, open conferences and proposals, alliances,
+ * running tribute, gifts, and every nation's relation (also reachable from the map: a province's
+ * owner name opens NationDiplomacy). Ended wars, past conferences, treaties and the event log are in
+ * HistoryPanel. Buttons only express intents; the server decides what is allowed (the
  * blockers shown come from it) and computes every number.
  */
 export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys, treasuryMg }: DiplomacyPanelProps) {
@@ -72,38 +75,43 @@ export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys, tr
   const you = overview.yourNationId
   const finished = state.status === 'FINISHED'
   const activeWars = overview.wars.filter((w) => w.status === 'ACTIVE')
-  const endedWars = overview.wars.filter((w) => w.status === 'ENDED')
   const features = rules.features
   const conferencesMode = Boolean(features?.peaceConferences)
   const conferences = overview.conferences ?? []
   const openConferences = conferences.filter((c) => c.status === 'REQUESTED' || c.status === 'ACTIVE')
-  const pastConferences = conferences.filter((c) => c.status !== 'REQUESTED' && c.status !== 'ACTIVE')
   const calls = overview.calls ?? []
   const paused = Boolean(state.pausedConferenceId)
   const allies = overview.nations.filter((n) => n.status === 'ALLIED').map((n) => n.nationId)
   const pending = overview.proposals.filter((p) => p.status === 'PENDING')
-  const past = overview.proposals.filter((p) => p.status !== 'PENDING').slice(0, 5)
+  const activeTributes = overview.tributes.filter((t) => t.status === 'ACTIVE')
 
   return (
     <section className="card diplomacy" aria-labelledby="diplomacy-title">
       <h2 id="diplomacy-title">Diplomacy</h2>
       {message && <p className="muted" role="status">{message}</p>}
 
-      <h3>Nations</h3>
-      <ul className="diplomacy__nations">
-        {overview.nations
-          .filter((n) => !n.you)
-          .map((n) => (
-            <NationRow
-              key={n.nationId}
-              gameId={gameId}
-              relation={n}
-              yourTurn={overview.yourTurn && !finished}
-              round={overview.round}
-              onMessage={setMessage}
-            />
-          ))}
-      </ul>
+      <p className="muted diplomacy__tip">
+        Tip: click a province, then its owner&apos;s name, to deal with that nation from the map. Ended wars, past
+        conferences and treaties are in the History window.
+      </p>
+      <details className="diplomacy__all-nations">
+        <summary>All nations ({overview.nations.filter((n) => !n.you).length})</summary>
+        <ul className="diplomacy__nations">
+          {overview.nations
+            .filter((n) => !n.you)
+            .map((n) => (
+              <NationRow
+                key={n.nationId}
+                gameId={gameId}
+                relation={n}
+                overview={overview}
+                names={names}
+                yourTurn={overview.yourTurn && !finished}
+                onMessage={setMessage}
+              />
+            ))}
+        </ul>
+      </details>
 
       <SendGold gameId={gameId} overview={overview} names={names} treasuryMg={treasuryMg} yourTurn={overview.yourTurn && !finished} />
 
@@ -137,7 +145,7 @@ export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys, tr
         </WarCard>
       ))}
 
-      {calls.length > 0 && (
+      {calls.some((c) => c.status === 'PENDING') && (
         <CallsToArms gameId={gameId} calls={calls} names={names} you={you} yourTurn={overview.yourTurn && !finished} onMessage={setMessage} />
       )}
 
@@ -164,20 +172,6 @@ export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys, tr
               onMessage={setMessage}
             />
           ))}
-          {pastConferences.length > 0 && (
-            <details>
-              <summary>Earlier conferences ({pastConferences.length})</summary>
-              <ul className="battle-list">
-                {pastConferences.map((c) => (
-                  <li key={c.id}>
-                    {c.kind === 'GENERAL' ? 'General peace' : 'Separate peace'}: {names.nation(c.requesterNationId)} and{' '}
-                    {names.nation(c.counterpartNationId)} · <strong>{c.status.toLowerCase()}</strong>
-                    {c.currentRevision > 0 ? ` after ${c.currentRevision} revision(s)` : ''}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
         </>
       )}
       {negotiating && (
@@ -216,46 +210,14 @@ export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys, tr
           onMessage={setMessage}
         />
       ))}
-      {past.length > 0 && (
-        <details>
-          <summary>Earlier proposals</summary>
-          <ul className="battle-list">
-            {past.map((p) => (
-              <li key={p.id}>
-                Round {p.createdRound}: {p.incoming ? `from ${names.nation(p.proposerNationId)}` : `to ${names.nation(p.recipientNationId)}`}{' '}
-                · {p.terms.length} term(s) · <strong>{p.status.toLowerCase()}</strong>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
 
       <Alliances gameId={gameId} alliances={overview.alliances} names={names} yourTurn={overview.yourTurn && !finished} onMessage={setMessage} />
 
-      {overview.treaties.length > 0 && (
-        <>
-          <h3>Treaties</h3>
-          <ul className="battle-list">
-            {overview.treaties.map((t) => (
-              <li key={t.id}>
-                Signed in round {t.signedRound} · truce until round {t.truceUntilRound}
-                {t.terms.length === 0 ? ' · white peace' : ''}
-                <ul>
-                  {t.terms.map((term, i) => (
-                    <li key={i}>{describeTerm(term, names)}</li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-
-      {overview.tributes.length > 0 && (
+      {activeTributes.length > 0 && (
         <>
           <h3>Tribute</h3>
           <ul className="battle-list">
-            {overview.tributes.map((t) => (
+            {activeTributes.map((t) => (
               <li key={t.id}>
                 {names.nation(t.payerNationId)} → {names.nation(t.receiverNationId)}: {t.rateBps / 100}% of gross income ·{' '}
                 {t.roundsCharged}/{t.roundsTotal} rounds · {formatGold(t.totalPaidMg)} gold paid ·{' '}
@@ -267,27 +229,6 @@ export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys, tr
         </>
       )}
 
-      {endedWars.length > 0 && (
-        <details>
-          <summary>Ended wars ({endedWars.length})</summary>
-          {endedWars.map((w) => (
-            <WarCard key={w.id} war={w} names={names} canNegotiate={false} onNegotiate={() => undefined} />
-          ))}
-        </details>
-      )}
-
-      <h3>History</h3>
-      {overview.events.length === 0 ? (
-        <p className="muted">Nothing has happened yet.</p>
-      ) : (
-        <ul className="battle-list diplomacy__events">
-          {overview.events.slice(0, 12).map((e) => (
-            <li key={e.id}>
-              <span className="muted">Round {e.round}:</span> {describeEvent(e, names)}
-            </li>
-          ))}
-        </ul>
-      )}
     </section>
   )
 }
@@ -295,107 +236,222 @@ export function DiplomacyPanel({ gameId, overview, state, names, capitalKeys, tr
 function NationRow({
   gameId,
   relation: n,
+  overview,
+  names,
   yourTurn,
-  round,
   onMessage,
 }: {
   gameId: string
   relation: NationRelation
+  overview: DiplomacyOverview
+  names: Names
   yourTurn: boolean
-  round: number
   onMessage: (text: string) => void
 }) {
-  const [confirmWar, setConfirmWar] = useState(false)
-  const [kind, setKind] = useState<AllianceKind>('NORMAL')
-  const declare = useDeclareWar(gameId)
-  const propose = useProposeAlliance(gameId)
-
   return (
     <li className="diplomacy__nation">
       <span className="nation-name">
         <span className="swatch" style={{ background: n.color }} aria-hidden="true" />
         {n.name}
       </span>{' '}
-      <span className={`tag ${n.status === 'WAR' ? 'tag--warning' : ''}`}>{STATUS_LABELS[n.status] ?? n.status}</span>
-      {n.allianceKind && <span className="tag">{n.allianceKind === 'NORMAL' ? 'Normal alliance' : 'Defensive pact'}</span>}
-      {n.truceUntilRound !== null && <span className="tag">Truce until round {n.truceUntilRound}</span>}
+      <RelationTags relation={n} />
       <span className="muted">
         {' '}
         · your battalions {n.weMayEnter ? 'may' : 'may not'} enter its territory
       </span>
-      {yourTurn && n.status !== 'WAR' && (
-        <div className="diplomacy__actions">
-          {n.warBlockers.length === 0 ? (
-            confirmWar ? (
-              <>
-                <span>Declare war on {n.name}? Its allies may join the defence.</span>
-                <button
-                  type="button"
-                  className="button button--danger"
-                  disabled={declare.isPending}
-                  onClick={() =>
-                    declare.mutate(
-                      { targetNationId: n.nationId, idempotencyKey: crypto.randomUUID() },
-                      {
-                        onSuccess: (r) => {
-                          setConfirmWar(false)
-                          onMessage(
-                            `War declared on ${n.name} in round ${round}.` +
-                              (r.joinedDefenders.length > 0 ? ` ${r.joinedDefenders.length} ally(ies) joined the defence.` : ''),
-                          )
-                        },
-                      },
-                    )
-                  }
-                >
-                  Confirm declaration
-                </button>
-                <button type="button" className="button" onClick={() => setConfirmWar(false)}>
-                  Keep the peace
-                </button>
-              </>
-            ) : (
-              <button type="button" className="button button--danger" onClick={() => setConfirmWar(true)}>
-                Declare war
-              </button>
-            )
-          ) : (
-            <span className="muted">War: {n.warBlockers.map((b) => BLOCKER_TEXT[b] ?? b).join(' ')}</span>
-          )}
-          {n.allianceBlockers.length === 0 ? (
-            <span className="diplomacy__alliance">
-              <select aria-label={`Alliance type with ${n.name}`} value={kind} onChange={(e) => setKind(e.target.value as AllianceKind)}>
-                <option value="NORMAL">Normal alliance (military access)</option>
-                <option value="DEFENSIVE">Defensive pact</option>
-              </select>
-              <button
-                type="button"
-                className="button"
-                disabled={propose.isPending}
-                onClick={() =>
-                  propose.mutate(
-                    { nationId: n.nationId, kind, idempotencyKey: crypto.randomUUID() },
-                    { onSuccess: () => onMessage(`Alliance proposed to ${n.name}. It answers on its turn.`) },
-                  )
-                }
-              >
-                Propose alliance
-              </button>
-            </span>
-          ) : (
-            n.status !== 'ALLIED' && (
-              <span className="muted">Alliance: {n.allianceBlockers.map((b) => BLOCKER_TEXT[b] ?? b).join(' ')}</span>
-            )
-          )}
-        </div>
-      )}
-      {declare.error && <Alert>{describeError(declare.error)}</Alert>}
-      {propose.error && <Alert>{describeError(propose.error)}</Alert>}
+      <NationActions gameId={gameId} relation={n} overview={overview} names={names} yourTurn={yourTurn} onMessage={onMessage} />
     </li>
   )
 }
 
-function WarCard({
+/** Status, alliance and truce of the viewer's relation with one nation. */
+export function RelationTags({ relation: n }: { relation: NationRelation }) {
+  return (
+    <>
+      <span className={`tag ${n.status === 'WAR' ? 'tag--warning' : ''}`}>{STATUS_LABELS[n.status] ?? n.status}</span>
+      {n.allianceKind && <span className="tag">{n.allianceKind === 'NORMAL' ? 'Normal alliance' : 'Defensive pact'}</span>}
+      {n.truceUntilRound !== null && <span className="tag">Truce until round {n.truceUntilRound}</span>}
+    </>
+  )
+}
+
+const ALLIANCE_KINDS: { kind: AllianceKind; label: string; hint: string }[] = [
+  { kind: 'NORMAL', label: 'Normal alliance', hint: 'Normal alliance: mutual military access; allies may be called to arms and invited to offensive wars' },
+  { kind: 'DEFENSIVE', label: 'Defensive pact', hint: 'Defensive pact: the partner may be called to defend you; no military access' },
+]
+
+/**
+ * What the viewer can do with one nation on their turn: declare war (optionally inviting full
+ * allies) and propose an alliance. Every blocker shown is the server's.
+ */
+export function NationActions({
+  gameId,
+  relation: n,
+  overview,
+  names,
+  yourTurn,
+  onMessage,
+}: {
+  gameId: string
+  relation: NationRelation
+  overview: DiplomacyOverview
+  names: Names
+  yourTurn: boolean
+  onMessage: (text: string) => void
+}) {
+  const [confirmWar, setConfirmWar] = useState(false)
+  const [kind, setKind] = useState<AllianceKind>('NORMAL')
+  const propose = useProposeAlliance(gameId)
+  if (!yourTurn || n.status === 'WAR') return null
+
+  return (
+    <div className="diplomacy__actions">
+      {n.warBlockers.length === 0 ? (
+        confirmWar ? (
+          <DeclareWar
+            gameId={gameId}
+            target={n}
+            overview={overview}
+            names={names}
+            onCancel={() => setConfirmWar(false)}
+            onDeclared={(text) => {
+              setConfirmWar(false)
+              onMessage(text)
+            }}
+          />
+        ) : (
+          <button type="button" className="button button--danger" onClick={() => setConfirmWar(true)}>
+            Declare war
+          </button>
+        )
+      ) : (
+        <span className="muted">War: {n.warBlockers.map((b) => BLOCKER_TEXT[b] ?? b).join(' ')}</span>
+      )}
+      {n.allianceBlockers.length === 0 ? (
+        <span className="diplomacy__alliance">
+          <span className="segmented" role="radiogroup" aria-label={`Alliance type with ${n.name}`}>
+            {ALLIANCE_KINDS.map((k) => (
+              <button
+                key={k.kind}
+                type="button"
+                role="radio"
+                aria-checked={kind === k.kind}
+                className={`segmented__option ${kind === k.kind ? 'segmented__option--active' : ''}`}
+                title={k.hint}
+                onClick={() => setKind(k.kind)}
+              >
+                <Icon name={k.kind === 'NORMAL' ? 'diplomacy' : 'fortress'} size={14} /> {k.label}
+              </button>
+            ))}
+          </span>
+          <button
+            type="button"
+            className="button"
+            disabled={propose.isPending}
+            onClick={() =>
+              propose.mutate(
+                { nationId: n.nationId, kind, idempotencyKey: crypto.randomUUID() },
+                { onSuccess: () => onMessage(`Alliance proposed to ${n.name}. It answers on its turn.`) },
+              )
+            }
+          >
+            Propose alliance
+          </button>
+        </span>
+      ) : (
+        n.status !== 'ALLIED' && <span className="muted">Alliance: {n.allianceBlockers.map((b) => BLOCKER_TEXT[b] ?? b).join(' ')}</span>
+      )}
+      {propose.error && <Alert>{describeError(propose.error)}</Alert>}
+    </div>
+  )
+}
+
+/**
+ * The declaration with its confirmation. From ruleset v8 the declarer may invite any of its normal
+ * (full) allies to join the attack — never defensive-pact partners — or nobody; each invited ally
+ * answers on its own turn.
+ */
+function DeclareWar({
+  gameId,
+  target,
+  overview,
+  names,
+  onCancel,
+  onDeclared,
+}: {
+  gameId: string
+  target: NationRelation
+  overview: DiplomacyOverview
+  names: Names
+  onCancel: () => void
+  onDeclared: (text: string) => void
+}) {
+  const declare = useDeclareWar(gameId)
+  const [invited, setInvited] = useState<string[]>([])
+  const offensive = Boolean(overview.rules?.features?.offensiveCallsToArms)
+  const eligible = offensive
+    ? overview.nations.filter((n) => !n.you && n.nationId !== target.nationId && n.status === 'ALLIED' && n.allianceKind === 'NORMAL')
+    : []
+  // Names from the diplomacy view itself (covers every nation of the map).
+  const nationName = (id: string) => overview.nations.find((n) => n.nationId === id)?.name ?? names.nation(id)
+  const toggle = (id: string) => setInvited((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]))
+  return (
+    <div className="declare-war" role="group" aria-label={`Declare war on ${target.name}`}>
+      <span>Declare war on {target.name}? Its allies may join the defence.</span>
+      {offensive && (
+        <fieldset className="declare-war__allies">
+          <legend>Invite allies to join the attack</legend>
+          {eligible.length === 0 ? (
+            <p className="muted">You have no normal alliance to call on (defensive pacts only cover defence).</p>
+          ) : (
+            <>
+              {eligible.map((n) => (
+                <label key={n.nationId} className="checkbox-field">
+                  <input type="checkbox" checked={invited.includes(n.nationId)} onChange={() => toggle(n.nationId)} />
+                  <span className="swatch" style={{ background: n.color }} aria-hidden="true" />
+                  {n.name}
+                </label>
+              ))}
+              <p className="muted" aria-live="polite">
+                {invited.length === 0
+                  ? 'Nobody invited: you attack alone (allies of the target may still defend it).'
+                  : `Invited: ${invited.map(nationName).join(', ')}. Each decides on its own turn; declining does not end your alliance.`}
+              </p>
+            </>
+          )}
+        </fieldset>
+      )}
+      <button
+        type="button"
+        className="button button--danger"
+        disabled={declare.isPending}
+        onClick={() =>
+          declare.mutate(
+            { targetNationId: target.nationId, idempotencyKey: crypto.randomUUID(), invite: invited },
+            {
+              onSuccess: (r) =>
+                onDeclared(
+                  `War declared on ${target.name}.` +
+                    (r.joinedDefenders.length > 0 ? ` ${r.joinedDefenders.length} ally(ies) joined the defence.` : '') +
+                    ((r.invitedAllies ?? []).length > 0
+                      ? ` Invited to join you: ${(r.invitedAllies ?? []).map(nationName).join(', ')}.`
+                      : ''),
+                ),
+            },
+          )
+        }
+      >
+        Confirm declaration
+      </button>
+      <button type="button" className="button" onClick={onCancel}>
+        Keep the peace
+      </button>
+      {declare.error && <Alert>{describeError(declare.error)}</Alert>}
+    </div>
+  )
+}
+
+export function WarCard({
   war,
   names,
   canNegotiate,
@@ -689,8 +745,6 @@ function WarActions({
   const callable = allies.filter(
     (a) => !fighting.has(a) && !calls.some((c) => c.status === 'PENDING' && c.warId === war.id && c.allyNationId === a),
   )
-  const [ally, setAlly] = useState('')
-  const chosen = callable.includes(ally) ? ally : (callable[0] ?? '')
   const youFight = fighting.has(you)
   const kind: ConferenceKind | null = !youFight ? null : war.youLead ? 'GENERAL' : separatePeace ? 'SEPARATE' : null
   const counterpart = war.yourSide === 'ATTACKER' ? war.defenderLeaderId : war.attackerLeaderId
@@ -720,27 +774,24 @@ function WarActions({
         </button>
       )}
       {callsToArms && war.defenderLeaderId === you && yourTurn && !paused && callable.length > 0 && (
-        <span className="diplomacy__alliance">
-          <select aria-label="Ally to call to arms" value={chosen} onChange={(e) => setAlly(e.target.value)}>
-            {callable.map((a) => (
-              <option key={a} value={a}>
-                {names.nation(a)}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="button"
-            disabled={call.isPending || !chosen}
-            onClick={() =>
-              call.mutate(
-                { warId: war.id, allyNationId: chosen, idempotencyKey: crypto.randomUUID() },
-                { onSuccess: () => onMessage(`${names.nation(chosen)} has been called to arms. It answers on its turn.`) },
-              )
-            }
-          >
-            Call to arms
-          </button>
+        <span className="diplomacy__alliance" role="group" aria-label="Call allies to arms">
+          {callable.map((a) => (
+            <button
+              key={a}
+              type="button"
+              className="button button--small"
+              title={`Ask ${names.nation(a)} to join the defence; it answers on its turn`}
+              disabled={call.isPending}
+              onClick={() =>
+                call.mutate(
+                  { warId: war.id, allyNationId: a, idempotencyKey: crypto.randomUUID() },
+                  { onSuccess: () => onMessage(`${names.nation(a)} has been called to arms. It answers on its turn.`) },
+                )
+              }
+            >
+              Call {names.nation(a)} to arms
+            </button>
+          ))}
         </span>
       )}
       {request.error && <Alert>{describeError(request.error)}</Alert>}
@@ -768,21 +819,24 @@ function CallsToArms({
   const answer = useAnswerCall(gameId)
   const [declining, setDeclining] = useState<string | null>(null)
   const pending = calls.filter((c) => c.status === 'PENDING')
-  const answered = calls.filter((c) => c.status !== 'PENDING')
   return (
     <>
       <h3>Calls to arms</h3>
-      {pending.length === 0 && <p className="muted">No call to arms is waiting for an answer.</p>}
       <ul className="battle-list">
         {pending.map((c) => (
           <li key={c.id}>
-            {names.nation(c.callerNationId)} calls {c.allyNationId === you ? 'you' : names.nation(c.allyNationId)} to arms
-            (round {c.createdRound}).
+            {names.nation(c.callerNationId)} {c.side === 'ATTACKER' ? 'invites' : 'calls'}{' '}
+            {c.allyNationId === you ? 'you' : names.nation(c.allyNationId)}{' '}
+            {c.side === 'ATTACKER' ? 'to join its attack' : 'to arms'} (round {c.createdRound}).
             {c.canAnswer && yourTurn && (
               <span className="diplomacy__actions">
                 {declining === c.id ? (
                   <>
-                    <span>Declining ends your alliance with {names.nation(c.callerNationId)}.</span>
+                    <span>
+                      {c.side === 'ATTACKER'
+                        ? `Declining keeps your alliance with ${names.nation(c.callerNationId)}.`
+                        : `Declining ends your alliance with ${names.nation(c.callerNationId)}.`}
+                    </span>
                     <button
                       type="button"
                       className="button button--danger"
@@ -793,7 +847,11 @@ function CallsToArms({
                           {
                             onSuccess: () => {
                               setDeclining(null)
-                              onMessage(`You declined. Your alliance with ${names.nation(c.callerNationId)} has ended.`)
+                              onMessage(
+                                c.side === 'ATTACKER'
+                                  ? `You declined the invitation of ${names.nation(c.callerNationId)}. Your alliance stands.`
+                                  : `You declined. Your alliance with ${names.nation(c.callerNationId)} has ended.`,
+                              )
                             },
                           },
                         )
@@ -827,12 +885,6 @@ function CallsToArms({
                 )}
               </span>
             )}
-          </li>
-        ))}
-        {answered.slice(0, 5).map((c) => (
-          <li key={c.id} className="muted">
-            Round {c.createdRound}: {names.nation(c.callerNationId)} called {names.nation(c.allyNationId)} ·{' '}
-            {c.status.toLowerCase()}
           </li>
         ))}
       </ul>

@@ -242,7 +242,7 @@ class AiObserver {
 		DiplomacyViews.Features f = d.rules().features();
 		AiState.Features features = f == null ? new AiState.Features(false, false, false, false, false, false)
 				: new AiState.Features(f.attachments(), f.callsToArms(), f.peaceConferences(), f.separatePeace(),
-						f.capitalsCedable(), f.elimination());
+						f.capitalsCedable(), f.elimination(), f.offensiveCallsToArms(), f.truceAllowsCallsToArms());
 		List<AiState.War> wars = d.wars()
 			.stream()
 			.filter(w -> "ACTIVE".equals(w.status()))
@@ -261,7 +261,8 @@ class AiObserver {
 			.toList();
 		List<AiState.Call> calls = (d.calls() == null ? List.<DiplomacyViews.CallView>of() : d.calls()).stream()
 			.filter(c -> "PENDING".equals(c.status()))
-			.map(c -> new AiState.Call(c.id(), c.warId(), c.callerNationId(), c.allyNationId(), c.status(), c.canAnswer()))
+			.map(c -> new AiState.Call(c.id(), c.warId(), c.callerNationId(), c.allyNationId(), c.status(), c.canAnswer(),
+					c.side() == null ? "DEFENDER" : c.side()))
 			.toList();
 		List<AiState.Conference> conferences = (d.conferences() == null ? List.<DiplomacyViews.ConferenceView>of()
 				: d.conferences())

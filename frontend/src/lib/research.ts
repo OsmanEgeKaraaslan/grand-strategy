@@ -1,4 +1,19 @@
 import type { InstitutionType, ResearchPool } from '../api/types'
+import type { IconName } from '../components/icons'
+
+/** One recognisable icon per research pool, technology track and doctrine (names stay the labels). */
+export const POOL_ICONS: Record<ResearchPool, IconName> = { MILITARY: 'military', CIVILIAN: 'science', DOCTRINE: 'doctrine' }
+
+const DOCTRINE_ICONS: Record<string, IconName> = {
+  MOUNTAIN_WARFARE: 'mountain',
+  RIVER_ENGINEERING: 'river',
+  SIEGE_ENGINEERING: 'siege',
+  MILITARY_LOGISTICS: 'logistics',
+}
+
+export function doctrineIcon(key: string): IconName {
+  return DOCTRINE_ICONS[key] ?? 'doctrine'
+}
 
 /** Names only — every number shown next to them comes from the server. */
 export const POOL_LABELS: Record<ResearchPool, string> = {

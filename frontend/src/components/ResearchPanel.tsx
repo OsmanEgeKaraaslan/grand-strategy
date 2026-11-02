@@ -2,9 +2,23 @@ import { describeError } from '../api/client'
 import { useResearch, useUnlockDoctrine, useUnlockTechnology } from '../api/queries'
 import type { Doctrine, MilitaryOverview, ResearchTrackView } from '../api/types'
 import { formatGold } from '../lib/gold'
-import { INSTITUTION_LABELS, POOL_LABELS, doctrineLabel, formatBps, formatPenalty } from '../lib/research'
+import { useState } from 'react'
+import { INSTITUTION_LABELS, POOL_ICONS, POOL_LABELS, doctrineIcon, doctrineLabel, formatBps, formatPenalty } from '../lib/research'
 import { UNIT_LABELS } from '../lib/units'
 import { Alert } from './Alert'
+import { Icon, type IconName } from './icons'
+
+type Category = 'military' | 'civilian' | 'doctrines' | 'institutions' | 'effects'
+
+const CATEGORIES: { key: Category; label: string; icon: IconName; hint: string }[] = [
+  { key: 'military', label: 'Military technology', icon: 'military', hint: 'Military technology: combat damage per level' },
+  { key: 'civilian', label: 'Civilian technology', icon: 'science', hint: 'Civilian technology: Tier 2 workshops and population growth' },
+  { key: 'doctrines', label: 'Doctrines', icon: 'doctrine', hint: 'Doctrine: one specialisation for your army' },
+  { key: 'institutions', label: 'Institutions', icon: 'academy', hint: 'Institutions: the buildings that produce research points' },
+  { key: 'effects', label: 'Active effects', icon: 'check', hint: 'What your research changes in play right now' },
+]
+
+const INSTITUTION_ICONS: Record<string, IconName> = { MILITARY_ACADEMY: 'academy', UNIVERSITY: 'university', BARRACKS: 'barracks' }
 
 const BLOCKER_TEXT: Record<string, string> = {
   NOT_YOUR_TURN: 'You can research on your turn.',
@@ -29,6 +43,7 @@ export function ResearchPanel({
   military: MilitaryOverview | undefined
 }) {
   const research = useResearch(gameId, stateVersion)
+  const [category, setCategory] = useState<Category>('military')
   if (research.error) return <Alert>{describeError(research.error)}</Alert>
   const data = research.data
   if (!data || !data.available) return null
@@ -38,18 +53,43 @@ export function ResearchPanel({
       <h2 id="research-title">Research</h2>
       <dl className="facts research__pools">
         {data.pools.map((p) => (
-          <div key={p.pool} className="research__pool">
-            <dt>{POOL_LABELS[p.pool]}</dt>
+          <div key={p.pool} className="research__pool" title={`${POOL_LABELS[p.pool]} research points`}>
+            <dt>
+              <Icon name={POOL_ICONS[p.pool]} size={14} /> {POOL_LABELS[p.pool]}
+            </dt>
             <dd>
               {p.points} points <span className="muted">(+{p.perRound} per round)</span>
             </dd>
           </div>
         ))}
       </dl>
-      {data.military && <Track gameId={gameId} track={data.military} title="Military technology" />}
-      {data.civilian && <Track gameId={gameId} track={data.civilian} title="Civilian technology" />}
-      <Doctrines gameId={gameId} doctrines={data.doctrines} points={data.pools.find((p) => p.pool === 'DOCTRINE')!.points} />
-      {military && <ActiveEffects military={military} growthBonusBps={data.effects?.growthBonusBps ?? 0} />}
+      <div className="icon-tabs" role="tablist" aria-label="Research category">
+        {CATEGORIES.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            role="tab"
+            id={`research-tab-${c.key}`}
+            aria-selected={category === c.key}
+            aria-controls="research-body"
+            aria-label={c.label}
+            title={c.hint}
+            className={`icon-tabs__tab ${category === c.key ? 'icon-tabs__tab--active' : ''}`}
+            onClick={() => setCategory(c.key)}
+          >
+            <Icon name={c.icon} size={18} />
+          </button>
+        ))}
+      </div>
+      <div id="research-body" role="tabpanel" aria-labelledby={`research-tab-${category}`}>
+      {category === 'military' && data.military && <Track gameId={gameId} track={data.military} title="Military technology" icon="military" />}
+      {category === 'civilian' && data.civilian && <Track gameId={gameId} track={data.civilian} title="Civilian technology" icon="science" />}
+      {category === 'doctrines' && (
+        <Doctrines gameId={gameId} doctrines={data.doctrines} points={data.pools.find((p) => p.pool === 'DOCTRINE')!.points} />
+      )}
+      {category === 'effects' && military && <ActiveEffects military={military} growthBonusBps={data.effects?.growthBonusBps ?? 0} />}
+      {category === 'institutions' && (
+      <>
       <h3>Institutions</h3>
       {data.institutions.length === 0 ? (
         <p className="muted">No institutions yet. Build a Military Academy, University or Barracks in one of your cities.</p>
@@ -57,7 +97,7 @@ export function ResearchPanel({
         <ul className="battle-list">
           {data.institutions.map((i) => (
             <li key={i.id}>
-              {INSTITUTION_LABELS[i.type]} in {i.cityName}{' '}
+              <Icon name={INSTITUTION_ICONS[i.type] ?? 'academy'} size={14} /> {INSTITUTION_LABELS[i.type]} in {i.cityName}{' '}
               <span className="muted">
                 {i.status === 'ACTIVE'
                   ? i.producing
@@ -69,16 +109,19 @@ export function ResearchPanel({
           ))}
         </ul>
       )}
+      </>
+      )}
+      </div>
     </section>
   )
 }
 
-function Track({ gameId, track, title }: { gameId: string; track: ResearchTrackView; title: string }) {
+function Track({ gameId, track, title, icon }: { gameId: string; track: ResearchTrackView; title: string; icon: IconName }) {
   const unlock = useUnlockTechnology(gameId)
   return (
     <div className="research__track" role="group" aria-label={title}>
       <h3>
-        {title} · level {track.level}/{track.maxLevel}
+        <Icon name={icon} size={16} /> {title} · level {track.level}/{track.maxLevel}
       </h3>
       <ul className="research__levels">
         {track.levels.map((l) => (
@@ -140,6 +183,9 @@ function Doctrines({ gameId, doctrines, points }: { gameId: string; doctrines: D
       <ul className="research__doctrine-list">
         {doctrines.map((d) => (
           <li key={d.key} className={d.chosen ? 'research__doctrine--chosen' : undefined}>
+            <span title={doctrineLabel(d.key)}>
+              <Icon name={doctrineIcon(d.key)} size={16} />
+            </span>{' '}
             <strong>{doctrineLabel(d.key)}</strong> <span className="muted">· {doctrineEffect(d)}</span>
             {d.chosen ? (
               <span className="tag tag--active">Chosen</span>

@@ -151,11 +151,28 @@ public record DiplomacyRules(String version, int truceRounds, int proposalExpiry
 	 * @param separatePeace non-leaders may leave a war through their own conference
 	 * @param capitalsCedable starting capitals may be ceded
 	 * @param elimination a nation owning no province is eliminated
+	 * @param offensiveCallsToArms (v8) a declaring nation may invite its normal allies to join the attack
+	 * @param truceAllowsCallsToArms (v8) a truce forbids declaring war, not joining a war through a call to
+	 * arms; before v8 a truce with any nation of the opposing side also blocks answering a call
 	 */
 	public record Features(boolean coalitionWarfare, boolean attachments, boolean callsToArms, boolean peaceConferences,
-			boolean separatePeace, boolean capitalsCedable, boolean elimination) {
+			boolean separatePeace, boolean capitalsCedable, boolean elimination, Boolean offensiveCallsToArms,
+			Boolean truceAllowsCallsToArms) {
+
+		/** Rulesets before v8 have no value for the v8 switches: they are off. */
+		public Features {
+			offensiveCallsToArms = Boolean.TRUE.equals(offensiveCallsToArms);
+			truceAllowsCallsToArms = Boolean.TRUE.equals(truceAllowsCallsToArms);
+		}
 
 		public static final Features NONE = new Features(false, false, false, false, false, false, false);
+
+		/** The Phase 10 switches only (rulesets v6–v7). */
+		public Features(boolean coalitionWarfare, boolean attachments, boolean callsToArms, boolean peaceConferences,
+				boolean separatePeace, boolean capitalsCedable, boolean elimination) {
+			this(coalitionWarfare, attachments, callsToArms, peaceConferences, separatePeace, capitalsCedable, elimination,
+					false, false);
+		}
 
 	}
 

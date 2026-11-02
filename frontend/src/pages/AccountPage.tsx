@@ -9,6 +9,7 @@ import { NewPasswordFields } from '../auth/NewPasswordFields'
 import { checkNewPassword } from '../auth/passwords'
 import { Alert } from '../components/Alert'
 import { AppShell } from '../components/AppShell'
+import { PasswordField } from '../components/PasswordInput'
 import { LegalLinks } from './LegalPage'
 
 /**
@@ -90,15 +91,7 @@ function ChangePassword() {
       <form className="form" onSubmit={handleSubmit} noValidate>
         {error && <Alert>{error}</Alert>}
         {changed && <Alert kind="success">Your password has been changed.</Alert>}
-        <label className="field">
-          <span>Current password</span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={current}
-            onChange={(e) => setCurrent(e.target.value)}
-          />
-        </label>
+        <PasswordField label="Current password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
         <NewPasswordFields
           password={password}
           confirmation={confirmation}
@@ -164,15 +157,7 @@ function DeleteAccount() {
       </p>
       <form className="form" onSubmit={handleSubmit} noValidate>
         {error && <Alert>{error}</Alert>}
-        <label className="field">
-          <span>Password</span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
+        <PasswordField label="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         <label className="field">
           <span>Type DELETE to confirm</span>
           <input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} autoComplete="off" />

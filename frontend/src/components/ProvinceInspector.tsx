@@ -71,6 +71,8 @@ interface ProvinceInspectorProps {
   onClose: () => void
   onSelect: (provinceKey: string) => void
   onOpenForces: (provinceKey: string) => void
+  /** Opens the diplomacy window of a nation (absent when the game has no diplomacy). */
+  onOpenNation?: (nationId: string) => void
 }
 
 /**
@@ -95,6 +97,7 @@ export function ProvinceInspector({
   onClose,
   onSelect,
   onOpenForces,
+  onOpenNation,
 }: ProvinceInspectorProps) {
   const city = economy?.cities.find((c) => c.provinceKey === province.key)
   const owner = state ? nations.get(state.ownerNationId) : undefined
@@ -116,7 +119,24 @@ export function ProvinceInspector({
         <>
           {capital && <span title="Capital">★ </span>}
           {state?.city.name ?? province.cityName}
-          {owner && <span className="muted"> · {owner.name}</span>}
+          {owner && state && (
+            <>
+              {' · '}
+              {onOpenNation ? (
+                <button
+                  type="button"
+                  className="link-button nation-link"
+                  title={`Diplomacy with ${owner.name}: relations, alliances, wars and actions`}
+                  aria-label={`Diplomacy with ${owner.name}`}
+                  onClick={() => onOpenNation(state.ownerNationId)}
+                >
+                  {owner.name}
+                </button>
+              ) : (
+                <span className="muted">{owner.name}</span>
+              )}
+            </>
+          )}
           {occupied && <span className="tag tag--warning">Occupied</span>}
           {besieged && <span className="tag tag--danger">Under siege</span>}
         </>

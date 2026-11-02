@@ -134,11 +134,14 @@ describe('Full-viewport campaign screen', () => {
     expect(screen.getByRole('region', { name: 'Army in Elmsford' })).toBeInTheDocument()
   })
 
-  it('shows the 2D/3D toggle with the map controls', async () => {
+  it('offers only the 2D map to players (the 3D view is not ready)', async () => {
     renderGame()
     await map()
-    // jsdom has no WebGL, so the optional 3D view is offered but unavailable.
-    expect(screen.getByRole('button', { name: '3D' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '3D' })).not.toBeInTheDocument()
+    // Map modes are icon tabs with names and tooltips.
+    const political = screen.getByRole('button', { name: 'Political' })
+    expect(political).toHaveAttribute('aria-pressed', 'true')
+    expect(political).toHaveAttribute('title', expect.stringContaining('owner'))
   })
 
   it('flags diplomatic business waiting for the player on the toolbar', async () => {

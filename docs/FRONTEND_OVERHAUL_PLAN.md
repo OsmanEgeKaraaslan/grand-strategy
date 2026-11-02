@@ -470,3 +470,32 @@ the real backend.
 
 **Next:** unchanged from session 4 (shell polish, then UI-C). Do not commit without the user's
 permission.
+
+### Session 6 — 2026-10-29 (playtest feedback: targeted UX cleanup)
+
+Targeted fixes, no redesign; the full-viewport map, inspectors and design language stay.
+
+- **Dashboard**: form grids and fields use `minmax(0, 1fr)` and `min-width: 0`, so a long map name in
+  the "Create a private game" dropdown can no longer widen its card into "Join a game"; dropdowns are
+  styled like inputs. Checked at 1920×1080, 1366×768, 1050 and 820 px wide: no overlap, no horizontal
+  scroll.
+- **Diplomacy from the map**: the province window's owner name (the legal owner, not the occupier)
+  opens that nation's diplomacy (relations, alliances, wars, actions) in the left window; the
+  province stays selected and the camera does not move. The full list stays reachable ("All nations").
+- **Orders**: the army window's "Move to …" / "Attack …" list is gone; right-click (or M on a focused
+  province for keyboard users) is the order path, and the window explains it.
+- **3D**: hidden from players (`VITE_ENABLE_3D_MAP=true` in a development build shows it); Map3D and
+  three.js stay and are only downloaded when the view is opened.
+- **History** window (toolbar): icon bar for past wars, finished conferences, treaties (incl. earlier
+  proposals, finished tribute, answered calls), the diplomatic event log (latest 200) and battles,
+  one category at a time with expandable entries. Live matters stay in Diplomacy.
+- **Top bar**: population with its projected change per round (growth − siege attrition from the
+  server's per-city figures; immediate changes such as recruitment are not projected); army shows
+  battalions and men only (upkeep stays in the economy window and the gold tooltip).
+- **Password fields** have a show/hide eye button (login, registration, account, recovery).
+- **Icons**: research pools, tracks, doctrines and institutions have distinct icons; research
+  categories, history categories and map modes are icon tabs with names and tooltips; the alliance
+  type is a two-option segmented choice; calls to arms are one button per ally. Nation, map, player
+  count and peace-term dropdowns stay (long or numeric lists).
+- **Army groups** are explained (a label only; no effect on movement or combat) and re-selectable
+  from their tag.

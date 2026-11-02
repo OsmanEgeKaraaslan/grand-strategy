@@ -110,7 +110,7 @@ class DiplomacyController {
 			@RequestHeader(name = "Idempotency-Key", required = false) UUID idempotencyKey,
 			@Valid @RequestBody DeclareWarRequest request) {
 		DiplomacyViews.WarResult result = diplomacy.declareWar(me, gameId, request.targetNationId(),
-				required(idempotencyKey));
+				request.inviteAllyNationIds(), required(idempotencyKey));
 		return ResponseEntity.created(URI.create("/api/v1/games/" + gameId + "/diplomacy/wars/" + result.war().id()))
 			.body(result);
 	}
@@ -297,7 +297,8 @@ class DiplomacyController {
 	record GiftRequest(@NotNull UUID recipientNationId, @NotNull Long amountMg) {
 	}
 
-	record DeclareWarRequest(@NotNull UUID targetNationId) {
+	/** @param inviteAllyNationIds normal allies to invite to the attack (ruleset v8); optional */
+	record DeclareWarRequest(@NotNull UUID targetNationId, @Size(max = 20) List<@NotNull UUID> inviteAllyNationIds) {
 	}
 
 	record AllianceRequest(@NotNull UUID nationId, @NotNull @Pattern(regexp = "NORMAL|DEFENSIVE") String kind) {

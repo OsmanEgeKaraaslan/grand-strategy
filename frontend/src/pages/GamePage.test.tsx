@@ -62,7 +62,7 @@ describe('GamePage', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Elmsford/ }))
     const panel = screen.getByRole('region', { name: 'Elmsford' })
     expect(within(panel).getByText('Plains')).toBeInTheDocument()
-    expect(within(panel).getByText(/· Kingdom of Varn/)).toBeInTheDocument()
+    expect(within(panel).getByText('Kingdom of Varn')).toBeInTheDocument()
     expect(within(panel).getAllByText('8,000')).toHaveLength(2) // population and farmers
     expect(within(panel).getByText('across river')).toBeInTheDocument()
     expect(await within(panel).findByRole('button', { name: 'Forces in Elmsford' })).toBeInTheDocument()

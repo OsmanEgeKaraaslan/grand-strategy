@@ -282,8 +282,13 @@ export function createApiClient({ baseUrl, accessToken, onUnauthorized, fetch: f
     getTributes: (gameId: string) => request<TributeView[]>('GET', diplomacyPath(gameId, '/tributes')),
     getDiplomacyEvents: (gameId: string) => request<DiplomacyEvent[]>('GET', diplomacyPath(gameId, '/events')),
     /** Declares war; the server checks truces, alliances and duplicates and calls in the defender's allies. */
-    declareWar: (gameId: string, targetNationId: string, idempotencyKey: string) =>
-      request<WarResult>('POST', diplomacyPath(gameId, '/wars'), { targetNationId }, { 'Idempotency-Key': idempotencyKey }),
+    declareWar: (gameId: string, targetNationId: string, idempotencyKey: string, inviteAllyNationIds?: string[]) =>
+      request<WarResult>(
+        'POST',
+        diplomacyPath(gameId, '/wars'),
+        inviteAllyNationIds && inviteAllyNationIds.length > 0 ? { targetNationId, inviteAllyNationIds } : { targetNationId },
+        { 'Idempotency-Key': idempotencyKey },
+      ),
     proposeAlliance: (gameId: string, nationId: string, kind: AllianceKind, idempotencyKey: string) =>
       request<AllianceResult>('POST', diplomacyPath(gameId, '/alliances'), { nationId, kind }, {
         'Idempotency-Key': idempotencyKey,

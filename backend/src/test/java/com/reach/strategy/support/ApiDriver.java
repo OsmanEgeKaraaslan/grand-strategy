@@ -304,6 +304,13 @@ public final class ApiDriver {
 				"{\"targetNationId\":\"" + targetNationId + "\"}", idempotencyKey);
 	}
 
+	/** Ruleset v8: declares war and invites normal allies to join the attack. */
+	public MvcResult declareWar(String token, String gameId, String targetNationId, List<String> inviteAllyNationIds,
+			UUID idempotencyKey) throws Exception {
+		return command(post("/api/v1/games/" + gameId + "/diplomacy/wars"), token, "{\"targetNationId\":\"" + targetNationId
+				+ "\",\"inviteAllyNationIds\":" + jsonList(inviteAllyNationIds) + "}", idempotencyKey);
+	}
+
 	public MvcResult proposeAlliance(String token, String gameId, String nationId, String kind, UUID idempotencyKey)
 			throws Exception {
 		return command(post("/api/v1/games/" + gameId + "/diplomacy/alliances"), token,

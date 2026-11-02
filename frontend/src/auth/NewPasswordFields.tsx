@@ -1,4 +1,6 @@
-/** "New password" and "Confirm new password" inputs. */
+import { PasswordField } from '../components/PasswordInput'
+
+/** "New password" and "Confirm new password" inputs, each with a show/hide control. */
 export function NewPasswordFields({
   password,
   confirmation,
@@ -14,19 +16,13 @@ export function NewPasswordFields({
 }) {
   return (
     <>
-      <label className="field">
-        <span>{label}</span>
-        <input type="password" autoComplete="new-password" value={password} onChange={(e) => onPassword(e.target.value)} />
-      </label>
-      <label className="field">
-        <span>Confirm {label.toLowerCase()}</span>
-        <input
-          type="password"
-          autoComplete="new-password"
-          value={confirmation}
-          onChange={(e) => onConfirmation(e.target.value)}
-        />
-      </label>
+      <PasswordField label={label} autoComplete="new-password" value={password} onChange={(e) => onPassword(e.target.value)} />
+      <PasswordField
+        label={`Confirm ${label.toLowerCase()}`}
+        autoComplete="new-password"
+        value={confirmation}
+        onChange={(e) => onConfirmation(e.target.value)}
+      />
     </>
   )
 }

@@ -55,6 +55,14 @@ export type IconName =
   | 'play'
   | 'ban'
   | 'user'
+  | 'eye'
+  | 'eyeOff'
+  | 'history'
+  | 'river'
+  | 'logistics'
+  | 'scroll'
+  | 'science'
+  | 'doctrine'
 
 const PATHS: Record<IconName, ReactNode> = {
   nation: (
@@ -298,6 +306,51 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z" />
       <path d="M9 3v15M15 6v15" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  eyeOff: (
+    <>
+      <path d="M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.6 3.5M6.6 6.6A17.4 17.4 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M2 2l20 20" />
+    </>
+  ),
+  history: (
+    <>
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5M12 7v5l3 2" />
+    </>
+  ),
+  river: <path d="M2 7c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2M2 13c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2M2 19c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2" />,
+  logistics: (
+    <>
+      <path d="M3 6h11v10H3zM14 10h4l3 3v3h-7" />
+      <circle cx="7" cy="18" r="2" />
+      <circle cx="17" cy="18" r="2" />
+    </>
+  ),
+  scroll: (
+    <>
+      <path d="M8 3h11a2 2 0 0 1 2 2v1H10" />
+      <path d="M19 6v13a2 2 0 0 1-2 2H6a3 3 0 0 1-3-3v-1h11v1a3 3 0 0 0 3 3" />
+      <path d="M8 3a2 2 0 0 0-2 2v12M10 10h6M10 14h4" />
+    </>
+  ),
+  science: (
+    <>
+      <path d="M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3" />
+      <path d="M7 15h10" />
+    </>
+  ),
+  doctrine: (
+    <>
+      <path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4z" />
+      <path d="M8 9h8M8 13h5" />
     </>
   ),
 }

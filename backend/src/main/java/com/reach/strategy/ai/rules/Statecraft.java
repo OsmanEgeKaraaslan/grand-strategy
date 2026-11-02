@@ -90,8 +90,22 @@ public final class Statecraft {
 		if (staged * 10_000 < a.myPower() * 4000L) {
 			return List.of();
 		}
-		AiAction action = new AiAction.DeclareWar(enemy, "declare war on " + state.nations().get(enemy).name()
-				+ ": strength " + target.get().ratioBps() / 100 + "% of theirs, " + target.get().prize() + " border prize");
+		// v8: invite every normal ally that is not tied to the target (each decides for itself).
+		List<UUID> invite = !state.diplomacy().features().offensiveCallsToArms() ? List.of()
+				: state.diplomacy()
+					.alliances()
+					.stream()
+					.filter(x -> "ACTIVE".equals(x.status()) && "NORMAL".equals(x.kind()) && x.involves(state.me()))
+					.map(x -> x.other(state.me()))
+					.filter(ally -> !ally.equals(enemy) && state.diplomacy()
+						.alliances()
+						.stream()
+						.noneMatch(x -> "ACTIVE".equals(x.status()) && x.involves(ally) && x.involves(enemy)))
+					.sorted()
+					.toList();
+		AiAction action = new AiAction.DeclareWar(enemy, invite, "declare war on " + state.nations().get(enemy).name()
+				+ ": strength " + target.get().ratioBps() / 100 + "% of theirs, " + target.get().prize() + " border prize"
+				+ (invite.isEmpty() ? "" : ", inviting " + invite.size() + " ally(ies)"));
 		return failed.contains(action.signature()) ? List.of() : List.of(action);
 	}
 
@@ -207,18 +221,21 @@ public final class Statecraft {
 			if (war.isEmpty()) {
 				continue;
 			}
-			List<UUID> attackers = war.get().sideMembers("ATTACKER");
+			// The side we would join and the side we would fight (an invitation to attack joins the attackers).
+			String ourSide = call.side() == null ? "DEFENDER" : call.side();
+			List<UUID> attackers = war.get().sideMembers(AiState.War.opposite(ourSide));
+			boolean truceBlocks = !state.diplomacy().features().truceAllowsCallsToArms();
 			boolean blocked = attackers.stream().map(state.nations()::get).filter(Objects::nonNull)
-				.anyMatch(n -> n.allied() || n.truceUntilRound() != null || n.atWar());
+				.anyMatch(n -> n.allied() || truceBlocks && n.truceUntilRound() != null || n.atWar());
 			long attack = attackers.stream().mapToLong(n -> Strength.ofNation(state, n, rules)).sum();
 			long defence = a.myPower()
-					+ war.get().sideMembers("DEFENDER").stream().mapToLong(n -> Strength.ofNation(state, n, rules)).sum();
+					+ war.get().sideMembers(ourSide).stream().mapToLong(n -> Strength.ofNation(state, n, rules)).sum();
 			int needed = rules.diplomacy().honourRatioBps() - p.diplomacyBps() / 4 - p.aggressionBps() / 6;
 			boolean honour = !blocked && !Strategy.DEFEND.equals(a.goal()) && !Strategy.RECOVER.equals(a.goal())
 					&& defence * 10_000 >= attack * needed;
 			AiAction action = new AiAction.AnswerCall(call.id(), honour,
-					(honour ? "honour" : "decline") + " the call to arms of " + state.nations().get(call.caller()).name()
-							+ " (coalition " + defence + " vs attackers " + attack + ")");
+					(honour ? "honour" : "decline") + ("ATTACKER".equals(ourSide) ? " the invitation to attack of " : " the call to arms of ")
+							+ state.nations().get(call.caller()).name() + " (our side " + defence + " vs theirs " + attack + ")");
 			if (!failed.contains(action.signature())) {
 				actions.add(action);
 			}
@@ -345,8 +362,21 @@ public final class Statecraft {
 			Standing s = standing(state, rules, war);
 			int patience = d.peaceAfterRounds() - p.diplomacyBps() / 1000 + p.aggressionBps() / 1000;
 			boolean endgame = state.roundsLeft() <= d.endgameRounds() + 1 && s.weTook() > 0;
-			boolean wants = s.losing() || endgame || s.duration() >= patience
-					|| s.winning() && s.weTook() >= 2 && s.duration() >= patience / 2;
+			boolean wants;
+			if (rules.peace() == null) {
+				wants = s.losing() || endgame || s.duration() >= patience
+						|| s.winning() && s.weTook() >= 2 && s.duration() >= patience / 2;
+			}
+			else {
+				// v8: a holder of enemy land asks to turn it into a treaty; a nation that can still take
+				// land does not ask for an empty peace until the war is a stalemate.
+				Outlook o = outlook(state, rules, war, s);
+				boolean pressing = s.favoured() && (o.canTakeMore() || o.siegeNearlyDone())
+						&& s.duration() < rules.peace().stalemateRounds();
+				wants = s.losing() || endgame
+						|| o.heldValueMg() > 0 && (s.duration() >= patience / 2 || o.gainsAtRisk())
+						|| o.heldValueMg() == 0 && s.duration() >= patience && !pressing;
+			}
 			if (!wants) {
 				continue;
 			}
@@ -449,13 +479,21 @@ public final class Statecraft {
 		if (mySide.isEmpty()) {
 			return List.of();
 		}
-		Standing s = standing(state, rules, war);
+		return desiredTerms(state, rules, c, war, standing(state, rules, war));
+	}
+
+	private static List<AiState.Term> desiredTerms(AiState state, AiRules rules, AiState.Conference c, AiState.War war,
+			Standing s) {
+		Optional<String> mySide = war.sideOf(state.me());
 		Map<UUID, String> parties = parties(c, war);
 		String side = mySide.get();
 		List<AiState.Term> terms = new ArrayList<>();
 		AiRules.Diplomacy d = rules.diplomacy();
-		if (s.winning() || s.score() > 0 && s.weTook() > 0) {
-			int limit = Math.min(d.maxDemandedProvinces(), 1 + Math.max(0, s.score()) / 15);
+		boolean holder = rules.peace() != null && !s.losing() && s.weTook() > 0;
+		if (s.winning() || s.score() > 0 && s.weTook() > 0 || holder) {
+			// v8: everything it holds may be asked for (the evaluation values exactly that).
+			int limit = rules.peace() != null ? d.maxDemandedProvinces()
+					: Math.min(d.maxDemandedProvinces(), 1 + Math.max(0, s.score()) / 15);
 			List<AiState.Province> prizes = state.provinces()
 				.values()
 				.stream()
@@ -582,6 +620,9 @@ public final class Statecraft {
 			return new Decision(approve, value, (approve ? "an acceptable price" : "too high a price") + " while losing (cost "
 					+ -value / 1000 + " gold-equivalent)");
 		}
+		if (rules.peace() != null) {
+			return evaluateV8(state, rules, c, war, s, value, occupiedValue);
+		}
 		if (s.winning() || s.favoured()) {
 			boolean tired = s.duration() >= d.peaceAfterRounds() || state.roundsLeft() <= d.endgameRounds() + 1;
 			boolean approve = value > 0 || value >= 0 && tired;
@@ -589,6 +630,85 @@ public final class Statecraft {
 		}
 		boolean approve = value >= -d.provinceValueMg() / 2 || -value <= occupiedValue;
 		return new Decision(approve, value, approve ? "a fair settlement" : "not a fair settlement");
+	}
+
+	/**
+	 * v8: what ending the war now means beyond the score.
+	 *
+	 * @param heldValueMg value of the enemy provinces the deciding nation itself holds and would ask
+	 * for (exactly what {@link #desiredTerms} demands for it)
+	 * @param gainsAtRisk it holds land but the enemy side is stronger by {@code gainsAtRiskRatioBps}
+	 * @param canTakeMore favoured, and an enemy province borders land it controls
+	 * @param siegeNearlyDone one of its sieges of an enemy city is about to succeed
+	 */
+	public record Outlook(long heldValueMg, boolean gainsAtRisk, boolean canTakeMore, boolean siegeNearlyDone) {
+	}
+
+	public static Outlook outlook(AiState state, AiRules rules, AiState.War war, Standing s) {
+		AiRules.Peace peace = rules.peace();
+		String side = war.sideOf(state.me()).orElseThrow();
+		Set<UUID> them = new HashSet<>(war.sideMembers(AiState.War.opposite(side)));
+		AiState.Conference general = new AiState.Conference(null, war.id(), "GENERAL", null, null, "ACTIVE", 0, List.of(),
+				Map.of(), List.of(), false, true, false, true, 0, null, 0);
+		long held = desiredTerms(state, rules, general, war, s)
+			.stream()
+			.filter(t -> "PROVINCE".equals(t.type()) && t.to().equals(state.me()))
+			.mapToLong(t -> termValue(state, rules, t))
+			.sum();
+		boolean atRisk = held > 0 && s.theirPower() * 10_000 > s.ourPower() * (long) peace.gainsAtRiskRatioBps();
+		boolean canTakeMore = s.favoured() && state.controlledBy(state.me())
+			.stream()
+			.flatMap(own -> own.neighbours().stream())
+			.map(state.provinces()::get)
+			.anyMatch(q -> q != null && them.contains(q.owner()) && them.contains(q.controller()));
+		boolean siegeSoon = state.sieges()
+			.stream()
+			.anyMatch(x -> x.besieger().equals(state.me()) && them.contains(x.defender()) && x.roundsLeft() != null
+					&& x.roundsLeft() <= peace.siegeNearlyDoneRounds());
+		return new Outlook(held, atRisk, canTakeMore, siegeSoon);
+	}
+
+	/** The share of its held land a holder still insists on (v8); 0 once the war has dragged on long enough. */
+	static int requiredShareBps(AiState state, AiRules rules, Standing s, Outlook o) {
+		AiRules.Peace peace = rules.peace();
+		AiRules.Diplomacy d = rules.diplomacy();
+		int share = peace.keepGainsShareBps() - Math.max(0, s.duration() - d.peaceAfterRounds()) * peace.concessionPerRoundBps();
+		if (o.gainsAtRisk()) {
+			share /= 2;
+		}
+		if (state.roundsLeft() <= d.endgameRounds() + 1) {
+			share /= 2;
+		}
+		return Math.max(0, share);
+	}
+
+	/** v8 evaluation of a side that is not losing (see {@link AiRules.Peace}). */
+	private static Decision evaluateV8(AiState state, AiRules rules, AiState.Conference c, AiState.War war, Standing s,
+			long value, long occupiedValue) {
+		AiRules.Diplomacy d = rules.diplomacy();
+		if (state.me().equals(c.lastAuthor()) && c.currentRevision() > 1) {
+			return new Decision(true, value, "our own draft");
+		}
+		Outlook o = outlook(state, rules, war, s);
+		boolean endgame = state.roundsLeft() <= d.endgameRounds() + 1;
+		if (o.heldValueMg() > 0) {
+			int share = requiredShareBps(state, rules, s, o);
+			long needed = o.heldValueMg() * share / 10_000;
+			boolean approve = share == 0 ? value >= 0 || -value <= occupiedValue : value > 0 && value >= needed;
+			return new Decision(approve, value, approve
+					? "we keep " + value / 1000 + " of the " + o.heldValueMg() / 1000 + " gold-equivalent we hold"
+					: "we hold " + o.heldValueMg() / 1000 + " gold-equivalent of their land and want at least " + needed / 1000
+							+ (o.gainsAtRisk() ? " (our gains are at risk)" : ""));
+		}
+		boolean pressing = s.favoured() && (o.canTakeMore() || o.siegeNearlyDone()) && s.duration() < rules.peace().stalemateRounds()
+				&& !endgame;
+		if (pressing) {
+			boolean approve = value > 0;
+			return new Decision(approve, value, approve ? "we gain " + value / 1000 + " gold-equivalent"
+					: o.siegeNearlyDone() ? "our siege is about to succeed" : "we can still take their land");
+		}
+		boolean approve = value >= -d.provinceValueMg() / 2 || -value <= occupiedValue;
+		return new Decision(approve, value, approve ? "a fair settlement of a stalemate" : "not a fair settlement");
 	}
 
 	static long termValue(AiState state, AiRules rules, AiState.Term t) {

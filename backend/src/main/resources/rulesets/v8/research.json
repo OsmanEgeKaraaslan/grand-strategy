@@ -1,0 +1,25 @@
+{
+  "version": "v8",
+  "institutions": {
+    "MILITARY_ACADEMY": { "buildCostMg": 60000, "buildDurationRounds": 2, "pointsPerRound": 10, "upkeepMg": 1000 },
+    "UNIVERSITY":       { "buildCostMg": 60000, "buildDurationRounds": 2, "pointsPerRound": 10, "upkeepMg": 1000 },
+    "BARRACKS":         { "buildCostMg": 60000, "buildDurationRounds": 2, "pointsPerRound": 10, "upkeepMg": 1000 }
+  },
+  "militaryLevels": [
+    { "level": 1, "costPoints": 0,  "damageBonusBps": {} },
+    { "level": 2, "costPoints": 40, "damageBonusBps": { "INFANTRY": 1000, "CAVALRY": 1000, "ARTILLERY": 1000 } },
+    { "level": 3, "costPoints": 80, "damageBonusBps": { "INFANTRY": 2000, "CAVALRY": 2000, "ARTILLERY": 2000 } }
+  ],
+  "civilianLevels": [
+    { "level": 1, "costPoints": 0,  "unlocksWorkshopTier": null, "growthBonusBps": 0 },
+    { "level": 2, "costPoints": 40, "unlocksWorkshopTier": 2,    "growthBonusBps": 0 },
+    { "level": 3, "costPoints": 80, "unlocksWorkshopTier": null, "growthBonusBps": 25 }
+  ],
+  "doctrines": {
+    "MOUNTAIN_WARFARE":   { "tier": 1, "costPoints": 30, "riverPenaltyReductionBps": 0,    "mountainPenaltyReductionBps": 5000, "siegeArtilleryBonusBps": 0,    "militaryUpkeepReductionBps": 0 },
+    "RIVER_ENGINEERING":  { "tier": 1, "costPoints": 30, "riverPenaltyReductionBps": 5000, "mountainPenaltyReductionBps": 0,    "siegeArtilleryBonusBps": 0,    "militaryUpkeepReductionBps": 0 },
+    "SIEGE_ENGINEERING":  { "tier": 1, "costPoints": 30, "riverPenaltyReductionBps": 0,    "mountainPenaltyReductionBps": 0,    "siegeArtilleryBonusBps": 5000, "militaryUpkeepReductionBps": 0 },
+    "MILITARY_LOGISTICS": { "tier": 1, "costPoints": 30, "riverPenaltyReductionBps": 0,    "mountainPenaltyReductionBps": 0,    "siegeArtilleryBonusBps": 0,    "militaryUpkeepReductionBps": 2000 }
+  },
+  "doctrinesPerTier": 1
+}

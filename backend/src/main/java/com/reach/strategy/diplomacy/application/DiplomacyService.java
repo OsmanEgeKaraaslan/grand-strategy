@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.reach.strategy.diplomacy.domain.DiplomacyEventLog;
+import com.reach.strategy.diplomacy.domain.CallToArmsRepository;
 import com.reach.strategy.diplomacy.domain.RelationsRepository;
 import com.reach.strategy.diplomacy.domain.TreatyRepository;
 import com.reach.strategy.diplomacy.rules.Diplomacy;
@@ -39,10 +40,12 @@ public class DiplomacyService {
 	private final WorldApi world;
 	private final ForceWithdrawal withdrawal;
 	private final JsonMapper jsonMapper;
+	private final CallToArmsRepository calls;
 
 	DiplomacyService(GameCommands gameCommands, DiplomacyState state, RelationsRepository relations,
 			TreatyRepository treaties, DiplomacyEventLog events, DiplomacyQueries queries, WorldApi world,
-			ForceWithdrawal withdrawal, JsonMapper jsonMapper) {
+			ForceWithdrawal withdrawal, JsonMapper jsonMapper, CallToArmsRepository calls) {
+		this.calls = calls;
 		this.gameCommands = gameCommands;
 		this.state = state;
 		this.relations = relations;
@@ -62,6 +65,18 @@ public class DiplomacyService {
 	 * movement is untouched: declaring war spends nothing and resets nothing.
 	 */
 	public DiplomacyViews.WarResult declareWar(CurrentPlayer me, UUID gameId, UUID targetNationId, UUID idempotencyKey) {
+		return declareWar(me, gameId, targetNationId, List.of(), idempotencyKey);
+	}
+
+	/**
+	 * Declares war and, from ruleset v8, invites chosen normal allies to join the attack: each gets an
+	 * offensive call to arms in the same transaction and answers it on its own turn (nobody is forced
+	 * in; declining has no consequence for the alliance). Every invitee is validated first, so a bad
+	 * invitation refuses the whole declaration.
+	 */
+	public DiplomacyViews.WarResult declareWar(CurrentPlayer me, UUID gameId, UUID targetNationId, List<UUID> invites,
+			UUID idempotencyKey) {
+		List<UUID> invited = invites == null ? List.of() : invites.stream().distinct().sorted().toList();
 		return gameCommands.execute(me, gameId, idempotencyKey, "DECLARE_WAR", new GameCommands.Handler<>() {
 
 			@Override
@@ -78,6 +93,14 @@ public class DiplomacyService {
 				}
 				if (eliminated(snapshot, targetNationId)) {
 					throw DiplomacyErrors.conflict("NATION_ELIMINATED", "That nation has been eliminated.");
+				}
+				if (!invited.isEmpty() && !picture.rules().features().offensiveCallsToArms()) {
+					throw DiplomacyErrors.conflict("OFFENSIVE_CALLS_NOT_AVAILABLE",
+							"In this game's ruleset allies cannot be invited to an offensive war.");
+				}
+				Map<UUID, UUID> invitationAlliances = new java.util.LinkedHashMap<>();
+				for (UUID ally : invited) {
+					invitationAlliances.put(ally, invitableAlliance(picture, snapshot, attacker, targetNationId, ally));
 				}
 				UUID warId = UUID.randomUUID();
 				relations.insertWar(gameId, new RelationsRepository.WarRow(warId, attacker, targetNationId, "ACTIVE",
@@ -102,7 +125,13 @@ public class DiplomacyService {
 				for (UUID defender : defenders) {
 					endPeacefulTies(gameId, context, attacker, defender, warId);
 				}
-				return new GameCommands.Outcome<>(result(gameId, attacker, context, warId, joiners), warId);
+				invitationAlliances.forEach((ally, allianceId) -> {
+					UUID callId = UUID.randomUUID();
+					calls.insert(gameId, new CallToArmsRepository.CallRow(callId, warId, attacker, ally, allianceId, "PENDING",
+							context.round(), null, context.now(), "ATTACKER"));
+					event(gameId, context, "CALL_TO_ARMS", attacker, ally, warId, Map.of("callId", callId, "offensive", true));
+				});
+				return new GameCommands.Outcome<>(result(gameId, attacker, context, warId, joiners, invited), warId);
 			}
 
 			@Override
@@ -115,7 +144,13 @@ public class DiplomacyService {
 					.filter(p -> "DEFENSIVE_RESPONSE".equals(p.joinReason()))
 					.map(RelationsRepository.ParticipantRow::nationId)
 					.toList();
-				return result(gameId, attacker, context, resultRef, joiners);
+				List<UUID> invitedAllies = calls.all(gameId)
+					.stream()
+					.filter(c -> c.warId().equals(resultRef) && c.offensive())
+					.map(CallToArmsRepository.CallRow::ally)
+					.sorted()
+					.toList();
+				return result(gameId, attacker, context, resultRef, joiners, invitedAllies);
 			}
 
 		});
@@ -142,10 +177,30 @@ public class DiplomacyService {
 	}
 
 	private DiplomacyViews.WarResult result(UUID gameId, UUID viewer, GameCommands.CommandContext context, UUID warId,
-			List<UUID> joiners) {
+			List<UUID> joiners, List<UUID> invited) {
 		DiplomacyState.Picture picture = state.load(gameId).orElseThrow(DiplomacyErrors::notAvailable);
 		DiplomacyQueries.Ctx ctx = queries.context(gameId, picture, world.snapshot(gameId), viewer, context.round());
-		return new DiplomacyViews.WarResult(queries.warView(ctx, picture.war(warId).orElseThrow()), joiners);
+		return new DiplomacyViews.WarResult(queries.warView(ctx, picture.war(warId).orElseThrow()), joiners, invited);
+	}
+
+	/**
+	 * An ally the declarer may invite: a different, not eliminated nation with an ACTIVE normal (full)
+	 * alliance with the declarer — never a defensive-pact-only partner — that is not the target. Whether
+	 * it can actually join (it might be allied with the target, say) is judged when it answers.
+	 */
+	private UUID invitableAlliance(DiplomacyState.Picture picture, WorldApi.WorldSnapshot snapshot, UUID attacker,
+			UUID target, UUID ally) {
+		if (ally.equals(attacker) || ally.equals(target) || eliminated(snapshot, ally)
+				|| snapshot.nations().stream().noneMatch(n -> n.id().equals(ally))) {
+			throw DiplomacyErrors.unprocessable("INVITEE_NOT_ELIGIBLE", "Only your normal allies can be invited.");
+		}
+		return picture.alliances()
+			.stream()
+			.filter(a -> "ACTIVE".equals(a.status()) && "NORMAL".equals(a.kind()) && a.involves(attacker) && a.involves(ally))
+			.map(RelationsRepository.AllianceRow::id)
+			.findFirst()
+			.orElseThrow(() -> DiplomacyErrors.unprocessable("INVITEE_NOT_ELIGIBLE",
+					"Only nations in a normal alliance with you can be invited (a defensive pact is not enough)."));
 	}
 
 	// --- alliances ------------------------------------------------------------------------------

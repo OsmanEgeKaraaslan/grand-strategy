@@ -263,7 +263,7 @@ river edges intentional; a validation test checks symmetry and connectivity.
   `rulesets/<version>/military.json`) containing every balance number (unit stats, costs,
   upkeep, combat coefficients, later siege constants…). Parsed into typed records at startup and
   validated in their constructors. A game stores its `ruleset_version` at creation and keeps it
-  (new games use `strategy.ruleset.current-version`, currently `v2`); balance changes add a new
+  (new games use `strategy.ruleset.current-version`, currently `v8`); rule or balance changes add a new
   version, never edit an existing one.
 
 ## 7. Observability

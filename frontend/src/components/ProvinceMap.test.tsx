@@ -44,6 +44,7 @@ function renderMap(props: Partial<Parameters<typeof ProvinceMap>[0]> = {}) {
       onSelect={vi.fn()}
       diplomacy={diplomaticView()}
       income={new Map([['varnhold', 12000], ['elmsford', 3000]])}
+      allow3D
       {...props}
     />,
   )

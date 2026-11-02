@@ -15,6 +15,9 @@ public interface DiplomacyActions {
 
 	void declareWar(CurrentPlayer me, UUID gameId, UUID targetNationId, UUID idempotencyKey);
 
+	/** Declares war and invites normal allies to join the attack (ruleset v8). */
+	void declareWar(CurrentPlayer me, UUID gameId, UUID targetNationId, java.util.List<UUID> inviteAllies, UUID idempotencyKey);
+
 	void proposeAlliance(CurrentPlayer me, UUID gameId, UUID nationId, String kind, UUID idempotencyKey);
 
 	void acceptAlliance(CurrentPlayer me, UUID gameId, UUID allianceId, UUID idempotencyKey);

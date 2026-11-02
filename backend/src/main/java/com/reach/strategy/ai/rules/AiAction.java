@@ -148,7 +148,17 @@ public sealed interface AiAction {
 
 	}
 
-	record DeclareWar(UUID target, String reason) implements AiAction {
+	/** @param invite normal allies invited to join the attack (ruleset v8; empty before) */
+	record DeclareWar(UUID target, java.util.List<UUID> invite, String reason) implements AiAction {
+
+		public DeclareWar {
+			invite = invite == null ? java.util.List.of() : java.util.List.copyOf(invite);
+		}
+
+		public DeclareWar(UUID target, String reason) {
+			this(target, java.util.List.of(), reason);
+		}
+
 
 		public String signature() {
 			return "DECLARE_WAR:" + target;

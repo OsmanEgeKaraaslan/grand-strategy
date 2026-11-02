@@ -5,6 +5,7 @@ import { describeRedirectError } from '../auth/redirects'
 import { ResendConfirmation } from '../auth/ResendConfirmation'
 import { AuthFrame } from '../components/AppShell'
 import { Alert } from '../components/Alert'
+import { PasswordField } from '../components/PasswordInput'
 
 export function LoginPage() {
   const { session, signIn, redirectError } = useAuth()
@@ -57,16 +58,13 @@ export function LoginPage() {
           <span>Email</span>
           <input type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
-        <label className="field">
-          <span>Password</span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
+        <PasswordField
+          label="Password"
+          autoComplete="current-password"
+          required
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
         <p className="auth-forgot">
           <Link to="/forgot-password">Forgot your password?</Link>
         </p>

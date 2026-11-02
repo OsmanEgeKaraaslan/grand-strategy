@@ -31,10 +31,13 @@ final class Board {
 	static final UUID B = new UUID(0, 2);
 	static final UUID C = new UUID(0, 3);
 
-	static final AiRules RULES = loadRules();
+	static final AiRules RULES = loadRules("v7");
 
-	private static AiRules loadRules() {
-		try (InputStream in = Board.class.getResourceAsStream("/rulesets/v7/ai.json")) {
+	/** Ruleset v8: the same values plus the v8 peace evaluation. */
+	static final AiRules RULES_V8 = loadRules("v8");
+
+	private static AiRules loadRules(String version) {
+		try (InputStream in = Board.class.getResourceAsStream("/rulesets/" + version + "/ai.json")) {
 			return JsonMapper.builder().build().readValue(in, AiRules.class);
 		}
 		catch (IOException e) {
@@ -67,6 +70,8 @@ final class Board {
 	private boolean arrears;
 	private String meKey = "aurelia";
 	private int nextUnit = 100;
+	private final Map<UUID, Integer> truces = new HashMap<>();
+	private boolean v8Features;
 
 	Board() {
 		// key → owner, controller, terrain, population
@@ -184,6 +189,18 @@ final class Board {
 		return this;
 	}
 
+	/** A truce between A and {@code nation} until {@code untilRound}. */
+	Board truce(UUID nation, int untilRound) {
+		truces.put(nation, untilRound);
+		return this;
+	}
+
+	/** The ruleset v8 switches (offensive calls to arms, truces do not block calls). */
+	Board v8() {
+		v8Features = true;
+		return this;
+	}
+
 	Board fort(String province, int level) {
 		forts.put(province, level);
 		return this;
@@ -241,14 +258,14 @@ final class Board {
 			String s = status.get(n);
 			List<String> warBlockers = "PEACE".equals(s) ? List.of() : List.of("NOT_AT_PEACE");
 			nations.put(n, new AiState.Nation(n, keys.get(n), keys.get(n), control.get(n), false, capitals.get(n), s,
-					"ALLIED".equals(s) ? "DEFENSIVE" : null, null, null, access.get(n), warBlockers,
+					"ALLIED".equals(s) ? "DEFENSIVE" : null, null, truces.get(n), access.get(n), warBlockers,
 					allianceBlockers.getOrDefault(n, "PEACE".equals(s) ? List.of() : List.of("NOT_AT_PEACE"))));
 		}
 		AiState.Economy economy = new AiState.Economy(treasury, arrears, gross, upkeep, gross - upkeep, 6, 2, 4000, cities);
 		AiState.Research research = new AiState.Research(true, Map.of("MILITARY", 50, "CIVILIAN", 50, "DOCTRINE", 50),
 				techs, doctrines, List.of(), List.of(), List.of());
 		AiState.Diplomacy diplomacy = new AiState.Diplomacy(true,
-				new AiState.Features(true, true, true, true, true, true), wars, alliances, calls, conferences, List.of(),
+				new AiState.Features(true, true, true, true, true, true, v8Features, v8Features), wars, alliances, calls, conferences, List.of(),
 				500_000, 12, 1_000_000);
 		return new AiState(UUID.nameUUIDFromBytes("game".getBytes()), round, round * 3, maxRounds, A, meKey, nations, map,
 				units, economy, recruitment, research, diplomacy, forts, sieges,

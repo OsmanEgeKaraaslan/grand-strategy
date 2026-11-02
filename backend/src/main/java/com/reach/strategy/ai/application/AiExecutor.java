@@ -50,7 +50,7 @@ class AiExecutor {
 			case AiAction.Recruit a -> military.recruit(actor, gameId, a.cityId(), a.unitType(), key);
 			case AiAction.Reinforce a -> military.reinforce(actor, gameId, a.battalionId(), a.soldiers(), key);
 			case AiAction.Move a -> military.move(actor, gameId, a.battalionIds(), a.to(), key);
-			case AiAction.DeclareWar a -> diplomacy.declareWar(actor, gameId, a.target(), key);
+			case AiAction.DeclareWar a -> diplomacy.declareWar(actor, gameId, a.target(), a.invite(), key);
 			case AiAction.ProposeAlliance a -> diplomacy.proposeAlliance(actor, gameId, a.nation(), a.kind(), key);
 			case AiAction.AnswerAlliance a -> {
 				if (a.accept()) {

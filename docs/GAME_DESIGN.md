@@ -199,6 +199,11 @@ recruitment cost, upkeep, owner, army membership, relevant military technology.
   regrouping (moving battalions between armies in the same province) is free
   during the owner's turn and **never resets or transfers movement eligibility**.
 - Empty armies are deleted automatically.
+- What an army is **not** (clarified after the 2026-10-29 playtest): it does not change combat (every
+  battalion in a province fights together, grouped or not), movement (each battalion moves on its
+  own), upkeep or attachments to allies (lending a battalion is a separate command). Its value is
+  organisational: a name on the battalion rows and a quick way to re-select the same battalions (the
+  army window's group tag). The UI calls it "Name as army group".
 
 ### 7.4 Movement — APPROVED: battalion-level eligibility (Q-M1, 2026-10-17)
 

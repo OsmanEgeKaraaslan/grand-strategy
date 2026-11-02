@@ -181,7 +181,9 @@ describe('Diplomacy panel', () => {
     await showPanel('diplomacy')
 
     const panel = await diplomacyPanel()
-    await userEvent.selectOptions(within(panel).getByRole('combobox', { name: /Alliance type/ }), 'DEFENSIVE')
+    const kinds = within(panel).getByRole('radiogroup', { name: /Alliance type/ })
+    expect(within(kinds).getByRole('radio', { name: /Normal alliance/ })).toHaveAttribute('aria-checked', 'true')
+    await userEvent.click(within(kinds).getByRole('radio', { name: /Defensive pact/ }))
     await userEvent.click(within(panel).getByRole('button', { name: 'Propose alliance' }))
 
     expect(proposeAlliance).toHaveBeenCalledWith('g1', OSTRA, 'DEFENSIVE', expect.any(String))
@@ -196,8 +198,9 @@ describe('Diplomacy panel', () => {
     expect(within(war).getByRole('meter', { name: 'War score' })).toHaveAttribute('aria-valuenow', '7')
     expect(within(war).getByText('+7')).toBeInTheDocument()
     const panel = await diplomacyPanel()
-    expect(within(panel).getByText(/Kingdom of Varn declared war on Ostran Confederacy/)).toBeInTheDocument()
     expect(within(panel).queryByRole('button', { name: 'Declare war' })).not.toBeInTheDocument()
+    // The event log lives in the History window, not among the live matters.
+    expect(within(panel).queryByText(/Kingdom of Varn declared war on Ostran Confederacy/)).not.toBeInTheDocument()
   })
 
   it('does not pretend allies fight when they only joined legally', async () => {
@@ -230,9 +233,10 @@ describe('Movement and war', () => {
 
     const province = await openForces('Elmsford')
     await userEvent.click(await within(province).findByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
-    const sable = within(province).getByRole('button', { name: 'Move to Sablewater' })
-    expect(sable).toBeDisabled()
-    expect(within(province).getByText('Closed — not at war, no military access')).toBeInTheDocument()
+    const map = screen.getByRole('group', { name: /^Map of/ })
+    // Closed: neither a move nor an attack target on the map.
+    expect(within(map).getByRole('button', { name: /^Sablewater/ }).getAttribute('aria-label')).not.toMatch(/target/)
+    expect(within(map).getByRole('button', { name: /^Varnhold.*move target/ })).toBeInTheDocument()
   })
 
   it('offers the attack once the nations are at war', async () => {
@@ -242,7 +246,7 @@ describe('Movement and war', () => {
     await screen.findByRole('article', { name: /War:/ })
     const province = await openForces('Elmsford')
     await userEvent.click(await within(province).findByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
-    expect(within(province).getByRole('button', { name: 'Attack Sablewater' })).toBeEnabled()
+    expect(within(screen.getByRole('group', { name: /^Map of/ })).getByRole('button', { name: /^Sablewater.*attack target/ })).toBeInTheDocument()
   })
 })
 
@@ -450,3 +454,138 @@ describe('Game completion', () => {
     expect(await screen.findByRole('heading', { name: 'The game ended in a draw' })).toBeInTheDocument()
   })
 })
+
+describe('Diplomacy from the map (playtest feedback)', () => {
+  it('opens the legal owner’s diplomacy from the province window and keeps the province selected', async () => {
+    const helm = 'nation-helm'
+    const overview = diplomacyFixture('PEACE', {
+      alliances: [
+        { id: 'al1', kind: 'NORMAL', status: 'ACTIVE', nationA: OSTRA, nationB: helm, proposerNationId: OSTRA, proposedRound: 1, acceptedRound: 2, endedRound: null, expiresAfterRound: 3, endReason: null, grantsMilitaryAccess: true, canAccept: false, canEnd: false, endBlockers: [] },
+      ] as DiplomacyOverview['alliances'],
+    })
+    const state = gameStateFixture({
+      nations: [...gameStateFixture().nations, { id: helm, key: 'helm', name: 'Helm', color: '#999999', seat: null, eliminatedRound: null } as never],
+      // Sablewater is owned by Ostra but held (occupied) by Varn: the owner, not the occupier, opens.
+      provinces: gameStateFixture().provinces.map((p) => (p.key === 'sablewater' ? { ...p, controllerNationId: VARN } : p)),
+    })
+    const proposeAlliance = vi.fn().mockResolvedValue({ alliance: {}, withdrawals: [] })
+    renderGame({ getDiplomacy: vi.fn().mockResolvedValue(overview), proposeAlliance }, state)
+
+    const map = await screen.findByRole('group', { name: /^Map of/ })
+    await userEvent.click(await within(map).findByRole('button', { name: /^Sablewater,/ }))
+    const province = screen.getByRole('region', { name: 'Sablewater' })
+    await userEvent.click(await within(province).findByRole('button', { name: 'Diplomacy with Ostran Confederacy' }))
+
+    const nation = await screen.findByRole('region', { name: 'Ostran Confederacy' })
+    expect(within(nation).getByText('At peace')).toBeInTheDocument()
+    expect(within(nation).getByText(/Normal alliance with/)).toHaveTextContent('Helm')
+    expect(within(nation).getByText('At peace with everyone.')).toBeInTheDocument()
+    await userEvent.click(within(nation).getByRole('button', { name: 'Propose alliance' }))
+    expect(proposeAlliance).toHaveBeenCalledWith('g1', OSTRA, 'NORMAL', expect.any(String))
+    // The province stays selected and its window open.
+    expect(screen.getByRole('region', { name: 'Sablewater' })).toBeInTheDocument()
+
+    await userEvent.click(within(nation).getByRole('button', { name: 'Open the full diplomacy window' }))
+    expect(await diplomacyPanel()).toBeInTheDocument()
+  })
+
+  it('lists a nation’s current wars with its side and the war score', async () => {
+    renderGame({ getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('WAR')) })
+    const province = await (async () => {
+      const map = await screen.findByRole('group', { name: /^Map of/ })
+      await userEvent.click(await within(map).findByRole('button', { name: /^Sablewater,/ }))
+      return screen.getByRole('region', { name: 'Sablewater' })
+    })()
+    await userEvent.click(await within(province).findByRole('button', { name: 'Diplomacy with Ostran Confederacy' }))
+    const nation = await screen.findByRole('region', { name: 'Ostran Confederacy' })
+    expect(within(nation).getByText(/Defending against/)).toHaveTextContent('Kingdom of Varn')
+    expect(within(nation).getByText(/war score \+7/)).toBeInTheDocument()
+    expect(within(nation).queryByRole('button', { name: 'Declare war' })).not.toBeInTheDocument()
+  })
+})
+
+describe('History window (playtest feedback)', () => {
+  it('shows one category at a time from an icon bar: ended wars, then battles', async () => {
+    const ended = warFixture({ id: 'w0', status: 'ENDED', endedRound: 6, endReason: 'PEACE' })
+    const getBattles = vi.fn().mockResolvedValue([
+      { id: 'bt1', round: 3, turnNumber: 5, provinceKey: 'sablewater', attackerNationId: VARN, defenderNationId: OSTRA, winner: 'ATTACKER', attackerLosses: 120, defenderLosses: 300, createdAt: '' },
+    ])
+    renderGame({ getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('PEACE', { wars: [ended] })), getBattles })
+
+    await showPanel('diplomacy')
+    // Ended wars are not among the live matters any more.
+    expect(within(await diplomacyPanel()).queryByText(/rounds 2–6/)).not.toBeInTheDocument()
+
+    await showPanel('history')
+    const history = await screen.findByRole('region', { name: 'History' })
+    const tabs = within(history).getByRole('tablist', { name: 'History category' })
+    expect(within(tabs).getByRole('tab', { name: 'Past wars' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(tabs).getByRole('tab', { name: 'Battles' })).toHaveAttribute('title', expect.any(String))
+    expect(within(history).getByText(/rounds 2–6/)).toBeInTheDocument()
+    expect(getBattles).not.toHaveBeenCalled()
+
+    await userEvent.click(within(tabs).getByRole('tab', { name: 'Battles' }))
+    expect(await within(history).findByText(/Kingdom of Varn won at Sablewater/)).toBeInTheDocument()
+    expect(within(history).queryByText(/rounds 2–6/)).not.toBeInTheDocument()
+  })
+})
+
+describe('Offensive calls to arms (ruleset v8)', () => {
+  const HELM = 'nation-helm'
+  const KESH = 'nation-kesh'
+  function v8Overview(extra: Partial<DiplomacyOverview> = {}) {
+    const base = diplomacyFixture('PEACE')
+    const ally = (id: string, name: string, kind: 'NORMAL' | 'DEFENSIVE') => ({
+      ...base.nations[1], nationId: id, name, status: 'ALLIED' as const, allianceKind: kind, warBlockers: ['ALLIED_NATION'], allianceBlockers: ['ALREADY_ALLIED'],
+    })
+    return diplomacyFixture('PEACE', {
+      rules: { ...RULES, features: { coalitionWarfare: true, attachments: true, callsToArms: true, peaceConferences: true, separatePeace: true, capitalsCedable: true, elimination: true, offensiveCallsToArms: true, truceAllowsCallsToArms: true } },
+      nations: [...base.nations, ally(HELM, 'Helm', 'NORMAL'), ally(KESH, 'Kesh', 'DEFENSIVE')],
+      ...extra,
+    } as Partial<DiplomacyOverview>)
+  }
+
+  it('lets the declarer invite only its normal allies, or nobody', async () => {
+    const declareWar = vi.fn().mockResolvedValue({ war: warFixture(), joinedDefenders: [], invitedAllies: [HELM] })
+    renderGame({ getDiplomacy: vi.fn().mockResolvedValue(v8Overview()), declareWar })
+    await showPanel('diplomacy')
+    const panel = await diplomacyPanel()
+    const ostra = within(panel).getByText('Ostran Confederacy').closest('li')!
+    await userEvent.click(within(ostra).getByRole('button', { name: 'Declare war' }))
+
+    const invitations = within(ostra).getByRole('group', { name: 'Invite allies to join the attack' })
+    expect(within(invitations).getByRole('checkbox', { name: /Helm/ })).not.toBeChecked()
+    // A defensive-pact partner is no offensive ally.
+    expect(within(invitations).queryByRole('checkbox', { name: /Kesh/ })).not.toBeInTheDocument()
+    expect(within(invitations).getByText(/Nobody invited/)).toBeInTheDocument()
+    await userEvent.click(within(invitations).getByRole('checkbox', { name: /Helm/ }))
+    expect(within(invitations).getByText(/Invited: Helm/)).toBeInTheDocument()
+    await userEvent.click(within(ostra).getByRole('button', { name: 'Confirm declaration' }))
+
+    expect(declareWar).toHaveBeenCalledWith('g1', OSTRA, expect.any(String), [HELM])
+    expect(await within(panel).findByText(/Invited to join you: Helm/)).toBeInTheDocument()
+  })
+
+  it('declares without invitations when none is chosen', async () => {
+    const declareWar = vi.fn().mockResolvedValue({ war: warFixture(), joinedDefenders: [], invitedAllies: [] })
+    renderGame({ getDiplomacy: vi.fn().mockResolvedValue(v8Overview()), declareWar })
+    await showPanel('diplomacy')
+    const ostra = within(await diplomacyPanel()).getByText('Ostran Confederacy').closest('li')!
+    await userEvent.click(within(ostra).getByRole('button', { name: 'Declare war' }))
+    await userEvent.click(within(ostra).getByRole('button', { name: 'Confirm declaration' }))
+    expect(declareWar).toHaveBeenCalledWith('g1', OSTRA, expect.any(String))
+  })
+
+  it('tells an invited ally that declining keeps the alliance', async () => {
+    const overview = diplomacyFixture('PEACE', {
+      calls: [{ id: 'c1', warId: 'w9', callerNationId: OSTRA, allyNationId: VARN, status: 'PENDING', createdRound: 4, answeredRound: null, canAnswer: true, side: 'ATTACKER' }],
+    } as Partial<DiplomacyOverview>)
+    renderGame({ getDiplomacy: vi.fn().mockResolvedValue(overview) })
+    await showPanel('diplomacy')
+    const panel = await diplomacyPanel()
+    expect(within(panel).getByText(/Ostran Confederacy invites you to join its attack/)).toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Decline' }))
+    expect(within(panel).getByText(/Declining keeps your alliance with Ostran Confederacy/)).toBeInTheDocument()
+  })
+})
+

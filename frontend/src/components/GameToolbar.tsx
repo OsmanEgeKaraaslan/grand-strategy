@@ -7,6 +7,7 @@ export type PanelKey =
   | 'military'
   | 'technology'
   | 'diplomacy'
+  | 'history'
   | 'players'
   | 'social'
   | 'notifications'
@@ -24,6 +25,7 @@ const GAME_PANELS: ToolbarEntry[] = [
   { key: 'military', label: 'Military', icon: 'military' },
   { key: 'technology', label: 'Technology', icon: 'technology' },
   { key: 'diplomacy', label: 'Diplomacy', icon: 'diplomacy' },
+  { key: 'history', label: 'History', icon: 'history' },
   { key: 'players', label: 'Players', icon: 'players' },
   { key: 'social', label: 'Social', icon: 'social' },
   { key: 'notifications', label: 'Notifications', icon: 'bell' },

@@ -141,8 +141,11 @@ The planners in `ai.rules` are pure Java (no Spring, no database, no clock, no `
   threat; a refusal is not retried for `allianceRetryRounds`. An expansionist may end an alliance
   with a much weaker neighbour it means to conquer.
 - **Calls to arms**: answered on the computer's turn — honoured when the coalition (the computer and
-  the defenders) reaches `honourRatioBps` of the attackers and it is not itself fighting for its life,
-  declined otherwise (the alliance ends, as the rules say). As attacked leader it calls every ally.
+  the side it would join) reaches `honourRatioBps` of the side it would fight and it is not itself
+  fighting for its life, declined otherwise (a declined defensive call ends the alliance, as the rules
+  say; a declined invitation does not). As attacked leader it calls every ally. In v8 a declaring
+  computer invites every normal ally that is not allied with its target, and a truce no longer makes
+  it decline a call (DIPLOMACY.md §12a).
 - **Peace**: a computer asks for peace when losing (score, lost provinces, or strength), when the war
   has lasted its patience, when it holds enemy land and is winning, or before the game ends while it
   holds enemy land. A non-leader that is losing asks for a separate peace. A clearly stronger side
@@ -157,6 +160,26 @@ The planners in `ai.rules` are pure Java (no Spring, no database, no clock, no `
   it has already lost militarily (more when desperate), never its own elimination while it still
   holds land; a winning or clearly stronger one wants a gain unless the war has dragged on or the
   game ends soon; otherwise a fair settlement is accepted.
+- **Peace in ruleset v8** (playtest feedback, 2026-10-29: computers accepted white peace too easily).
+  Values in `ai.json` → `peace`; v7 games keep the rules above. The deciding nation looks at its
+  **held gains** (the value of the enemy provinces it controls and would demand — exactly the terms it
+  asks for), whether they are **at risk** (the enemy side stronger by `gainsAtRiskRatioBps`), whether
+  it **can take more** (clearly stronger and an enemy province borders its land), and whether a
+  **siege** of its is within `siegeNearlyDoneRounds` of success. Then:
+  - *Losing*: unchanged — it seeks peace and accepts reasonable concessions.
+  - *Holding land*: it wants at least `keepGainsShareBps` (70%) of the held value; the share drops by
+    `concessionPerRoundBps` (10 points) for every round the war lasts beyond `peaceAfterRounds`, and is
+    halved when the gains are at risk or the game ends soon. A white peace is therefore refused
+    early and accepted once the share reaches 0 (round `peaceAfterRounds + 7` of the war at the
+    latest) — no deadlock. It asks for a conference after half its patience, or at once when its
+    gains are at risk, and counters the opening white peace with its demands; its own drafts are
+    approved as submitted.
+  - *Holding nothing, but able to advance* (stronger, land within reach or a siege about to
+    succeed): it neither asks for nor accepts an empty peace until the war has lasted
+    `stalemateRounds` (14) or the game nears its end; any positive offer is accepted.
+  - *Otherwise* (a stalemate): a fair settlement or white peace is accepted as before.
+  Deterministic tests: `PeaceEvaluationV8Test` (decisive victory, defeat, stalemate, occupation, risk,
+  sieges, requests, invitations and truces).
 - **Gifts**: rare — only to a much weaker partner fighting a common enemy, from a treasury above
   `giftMinTreasuryMg`, a share of the spendable gold, at most once per `giftEveryRounds` rounds per
   partner; all gift rules of the server apply.

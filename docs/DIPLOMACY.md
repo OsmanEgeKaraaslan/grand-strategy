@@ -192,6 +192,11 @@ tribute this cannot happen in v5 between the treaty's own parties.
 War may be declared again from round `truceUntilRound + 1`. A nation in truce with an attacker does
 not join that attacker's war through the defensive response.
 
+**Ruleset v8 (APPROVED by the product owner, 2026-10-29):** a truce restricts only *initiating* a war —
+a direct declaration stays blocked (`TRUCE_IN_EFFECT`) — but does **not** by itself prevent joining a
+war through an otherwise valid call to arms, defensive or offensive (§12a). The truce then gives way
+to the war (a new truce follows the next treaty). Games on v1–v7 keep the earlier rule.
+
 ### 6.3 Withdrawal — PROVISIONAL
 
 After a treaty, and after an alliance ends, every battalion standing where its nation may no longer
@@ -286,7 +291,27 @@ them by an AI that uses the same services.
     reputation or opinion exists yet.
 - A call has no deadline and is never answered automatically; it is cancelled when the war ends or
   either nation is eliminated. Calls are public (`CALL_TO_ARMS`, `CALL_HONORED`, `CALL_DECLINED`).
-- Only defensive calls exist. Offensive calls (the attacker's allies) are not implemented.
+- Up to v7 only defensive calls exist. v8 adds offensive invitations (§12a).
+
+## 12a. Offensive calls to arms and truces — ruleset v8 (APPROVED by the product owner, 2026-10-29)
+
+- **Invitations at the declaration.** `POST /diplomacy/wars` accepts `inviteAllyNationIds`: the
+  declarer chooses any of its **normal (full) allies** — never a defensive-pact-only partner, never the
+  target — or nobody. Each invitee gets an offensive call to arms (`side = ATTACKER`) in the same
+  transaction as the war; an ineligible invitee refuses the whole declaration
+  (`422 INVITEE_NOT_ELIGIBLE`), so no war exists without its invitations or vice versa. Duplicates are
+  ignored; a replayed declaration returns the same invitations.
+- **Nobody is forced in.** Each invitee answers on its own turn like any call (§12). **Honour** joins
+  the attacking side (`join_reason = CALL_TO_ARMS`) with fronts against every defender. **Decline**
+  has no consequence — the alliance stays (unlike declining a defensive call, which still ends it).
+- **Participation checks** when honouring, for both kinds of call: not already in the war, not allied
+  with, not already at war with, and not fighting alongside any nation of the opposing side in
+  another war; an invitation also needs the normal alliance to be still in force. **A truce is no
+  longer one of these checks in v8** (§6.2).
+- **Older rulesets:** invitations are refused (`409 OFFENSIVE_CALLS_NOT_AVAILABLE`) and the truce
+  check on calls applies as before.
+- Computers (docs/AI.md §7) invite every normal ally not allied with the target and judge an
+  invitation from the side they would join.
 
 ## 13. War leaders
 

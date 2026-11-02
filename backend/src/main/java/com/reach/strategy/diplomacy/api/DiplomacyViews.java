@@ -42,9 +42,10 @@ public final class DiplomacyViews {
 			Features features, int victoryPointsPerHundredGold, boolean domination) {
 	}
 
-	/** The ruleset's Phase 10 switches (JSON shape unchanged). */
+	/** The ruleset's Phase 10 switches and the v8 call-to-arms rules. */
 	public record Features(boolean coalitionWarfare, boolean attachments, boolean callsToArms, boolean peaceConferences,
-			boolean separatePeace, boolean capitalsCedable, boolean elimination) {
+			boolean separatePeace, boolean capitalsCedable, boolean elimination, boolean offensiveCallsToArms,
+			boolean truceAllowsCallsToArms) {
 	}
 
 	/**
@@ -158,8 +159,9 @@ public final class DiplomacyViews {
 	 * @param status PENDING, HONORED, DECLINED or CANCELLED
 	 * @param canAnswer the viewer is the called ally and the call is pending
 	 */
+	/** @param side the side the called ally would join: DEFENDER (a defensive call) or ATTACKER (v8 invitation) */
 	public record CallView(UUID id, UUID warId, UUID callerNationId, UUID allyNationId, String status, int createdRound,
-			Integer answeredRound, boolean canAnswer) {
+			Integer answeredRound, boolean canAnswer, String side) {
 	}
 
 	/**
@@ -186,7 +188,13 @@ public final class DiplomacyViews {
 
 	// --- command results ------------------------------------------------------------------------
 
-	public record WarResult(WarView war, List<UUID> joinedDefenders) {
+	/** @param invitedAllies normal allies the declarer invited to join the attack (v8); each answers on its turn */
+	public record WarResult(WarView war, List<UUID> joinedDefenders, List<UUID> invitedAllies) {
+
+		public WarResult(WarView war, List<UUID> joinedDefenders) {
+			this(war, joinedDefenders, List.of());
+		}
+
 	}
 
 	/** @param treasuryMg the sender's treasury after the gift */

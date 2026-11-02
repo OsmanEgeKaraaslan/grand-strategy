@@ -135,49 +135,81 @@ public class CallToArmsService {
 		});
 	}
 
+	/**
+	 * Joins the side the call names. Before ruleset v8 a truce with any nation of the opposing side
+	 * forbids it; from v8 a truce forbids only declaring war, so a valid call can be honoured anyway
+	 * (the truce gives way to the war). Alliances, other wars and fighting together still forbid it, and
+	 * an invitation to attack requires the normal alliance to still be in force.
+	 */
 	private void honor(UUID gameId, GameCommands.CommandContext context, DiplomacyState.Picture picture,
 			CallToArmsRepository.CallRow call, RelationsRepository.WarRow war) {
 		Diplomacy.Standing standing = picture.standing();
+		String side = call.side();
+		String enemySide = "ATTACKER".equals(side) ? "DEFENDER" : "ATTACKER";
+		String enemyWords = "ATTACKER".equals(enemySide) ? "the attacking side" : "the defending side";
+		if (picture.sideOf(war.id(), call.ally()).isPresent()) {
+			throw DiplomacyErrors.conflict("ALREADY_IN_WAR", "You already fight in this war.");
+		}
+		if (call.offensive() && picture.alliances()
+			.stream()
+			.noneMatch(a -> a.id().equals(call.allianceId()) && "ACTIVE".equals(a.status()))) {
+			throw DiplomacyErrors.conflict("NOT_ALLIED", "Your alliance with the inviting nation has ended.");
+		}
+		boolean truceBlocks = !picture.rules().features().truceAllowsCallsToArms();
 		List<UUID> attackers = picture.participantsOf(war.id())
 			.stream()
-			.filter(p -> "ATTACKER".equals(p.side()))
+			.filter(p -> enemySide.equals(p.side()))
 			.map(RelationsRepository.ParticipantRow::nationId)
 			.toList();
 		for (UUID enemy : attackers) {
 			if (standing.alliance(call.ally(), enemy) != null) {
 				throw DiplomacyErrors.conflict("ALLIED_WITH_ENEMY",
-						"You are allied with a nation of the attacking side; end that alliance first.");
+						"You are allied with a nation of " + enemyWords + "; end that alliance first.");
 			}
-			if (standing.inTruce(call.ally(), enemy, context.round())) {
-				throw DiplomacyErrors.conflict("TRUCE_IN_EFFECT", "A truce binds you to a nation of the attacking side.");
+			if (truceBlocks && standing.inTruce(call.ally(), enemy, context.round())) {
+				throw DiplomacyErrors.conflict("TRUCE_IN_EFFECT", "A truce binds you to a nation of " + enemyWords + ".");
 			}
 			if (standing.atWar(call.ally(), enemy)) {
 				throw DiplomacyErrors.conflict("ALREADY_AT_WAR",
-						"You already fight a nation of the attacking side in another war.");
+						"You already fight a nation of " + enemyWords + " in another war.");
 			}
 			if (standing.coBelligerents().contains(Diplomacy.Pair.of(call.ally(), enemy))) {
 				throw DiplomacyErrors.conflict("FIGHTING_TOGETHER",
-						"You fight on the same side as a nation of the attacking side in another war.");
+						"You fight on the same side as a nation of " + enemyWords + " in another war.");
 			}
 		}
-		calls.close(gameId, call.id(), "HONORED", context.round(), context.now());
-		relations.insertParticipant(gameId, new RelationsRepository.ParticipantRow(war.id(), call.ally(), "DEFENDER",
+		if (!calls.close(gameId, call.id(), "HONORED", context.round(), context.now())) {
+			throw DiplomacyErrors.conflict("CALL_NOT_PENDING", "This call to arms has already been answered.");
+		}
+		relations.insertParticipant(gameId, new RelationsRepository.ParticipantRow(war.id(), call.ally(), side,
 				context.round(), "CALL_TO_ARMS"));
 		for (UUID enemy : attackers) {
-			relations.insertFront(gameId, war.id(), enemy, call.ally());
+			// Fronts are stored attacker first.
+			if ("DEFENDER".equals(side)) {
+				relations.insertFront(gameId, war.id(), enemy, call.ally());
+			}
+			else {
+				relations.insertFront(gameId, war.id(), call.ally(), enemy);
+			}
 			diplomacy.endPeacefulTies(gameId, context, enemy, call.ally(), war.id());
 		}
 		diplomacy.event(gameId, context, "CALL_HONORED", call.ally(), call.caller(), war.id(), Map.of("callId", call.id()));
-		diplomacy.event(gameId, context, "JOINED_WAR", call.ally(), war.attackerLeader(), war.id(),
-				Map.of("defending", call.caller()));
+		diplomacy.event(gameId, context, "JOINED_WAR", call.ally(), "DEFENDER".equals(side) ? war.attackerLeader()
+				: war.defenderLeader(), war.id(), Map.of("DEFENDER".equals(side) ? "defending" : "attackingWith", call.caller()));
 	}
 
 	private void decline(UUID gameId, GameCommands.CommandContext context, DiplomacyState.Picture picture,
 			CallToArmsRepository.CallRow call) {
-		calls.close(gameId, call.id(), "DECLINED", context.round(), context.now());
+		if (!calls.close(gameId, call.id(), "DECLINED", context.round(), context.now())) {
+			throw DiplomacyErrors.conflict("CALL_NOT_PENDING", "This call to arms has already been answered.");
+		}
 		diplomacy.event(gameId, context, "CALL_DECLINED", call.ally(), call.caller(), call.warId(),
 				Map.of("callId", call.id()));
-		// Declining breaks the alliance (no other consequence yet).
+		if (call.offensive()) {
+			// Nobody owes an ally an attack: declining an invitation leaves the alliance as it is.
+			return;
+		}
+		// Declining a defensive call breaks the alliance (no other consequence yet).
 		if (relations.closeAlliance(gameId, call.allianceId(), "ACTIVE", "ENDED", "CALL_DECLINED", context.round(),
 				context.now())) {
 			RelationsRepository.AllianceRow alliance = picture.alliances()

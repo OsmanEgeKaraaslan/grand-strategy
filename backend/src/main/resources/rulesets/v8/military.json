@@ -1,0 +1,33 @@
+{
+  "version": "v8",
+  "battalionManpower": 1000,
+  "minResidualPopulation": 1000,
+  "reinforcementPerTurn": 500,
+  "units": {
+    "INFANTRY":  { "recruitCostMg": 10000, "upkeepMg": 500,  "attack": 1.0, "defence": 1.2, "screen": 1.0 },
+    "CAVALRY":   { "recruitCostMg": 25000, "upkeepMg": 1500, "attack": 1.4, "defence": 0.9, "screen": 0.5 },
+    "ARTILLERY": { "recruitCostMg": 40000, "upkeepMg": 2000, "attack": 2.5, "defence": 0.5, "screen": 0.0 }
+  },
+  "combat": {
+    "maxPhases": 3,
+    "lossPerDamage": 40,
+    "breakThresholdBps": 3000,
+    "riverAttackMultiplier": 0.80,
+    "mountainAttackMultiplier": 0.65,
+    "screenPerArtillery": 1.0,
+    "artilleryMinEffectiveness": 0.4,
+    "artilleryProtectedExposure": 0.2,
+    "artilleryUnprotectedExtraExposure": 1.3,
+    "cavalryMountainFactor": 0.6,
+    "flankMaxBonus": 0.30,
+    "flankEnemyShare": 0.5
+  },
+  "startingForces": { "INFANTRY": 3, "CAVALRY": 1 },
+  "startingForcesByTier": {
+    "POWER":    { "INFANTRY": 3, "CAVALRY": 1 },
+    "MAJOR":    { "INFANTRY": 5, "CAVALRY": 1, "ARTILLERY": 1 },
+    "REGIONAL": { "INFANTRY": 3, "CAVALRY": 1 },
+    "MINOR":    { "INFANTRY": 2 }
+  },
+  "roundBasedMovement": true
+}

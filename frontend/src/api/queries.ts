@@ -320,6 +320,28 @@ export function useBuildWorkshop(gameId: string) {
 // --- Phase 9: diplomacy and match completion ----------------------------------------------------
 
 /** The caller's diplomatic picture; refetched with the state version like every other game view. */
+/** Every battle of the game (newest first, as the server orders them); for the History window. */
+export function useBattles(gameId: string, stateVersion: number | undefined) {
+  const api = useApi()
+  return useQuery({
+    queryKey: ['games', gameId, 'battles', 'all', stateVersion] as const,
+    queryFn: () => api.getBattles(gameId),
+    enabled: stateVersion !== undefined,
+    placeholderData: keepPreviousData,
+  })
+}
+
+/** The public diplomatic event log (the server keeps the latest 200); for the History window. */
+export function useDiplomacyEvents(gameId: string, stateVersion: number | undefined, enabled = true) {
+  const api = useApi()
+  return useQuery({
+    queryKey: ['games', gameId, 'diplomacy-events', stateVersion] as const,
+    queryFn: () => api.getDiplomacyEvents(gameId),
+    enabled: enabled && stateVersion !== undefined,
+    placeholderData: keepPreviousData,
+  })
+}
+
 export function useDiplomacy(gameId: string, stateVersion: number | undefined) {
   const api = useApi()
   return useQuery({
@@ -343,8 +365,12 @@ export function useGameResult(gameId: string, finished: boolean) {
 
 export function useDeclareWar(gameId: string) {
   const api = useApi()
-  return useGameCommand(gameId, ({ targetNationId, idempotencyKey }: { targetNationId: string; idempotencyKey: string }) =>
-    api.declareWar(gameId, targetNationId, idempotencyKey),
+  return useGameCommand(
+    gameId,
+    ({ targetNationId, idempotencyKey, invite }: { targetNationId: string; idempotencyKey: string; invite?: string[] }) =>
+      invite && invite.length > 0
+        ? api.declareWar(gameId, targetNationId, idempotencyKey, invite)
+        : api.declareWar(gameId, targetNationId, idempotencyKey),
   )
 }
 

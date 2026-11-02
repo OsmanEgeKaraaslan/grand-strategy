@@ -189,13 +189,23 @@ code {
 /* ---------- Forms ---------- */
 .form {
   display: grid;
+  /* minmax(0, 1fr): a long option text or code must never widen the form beyond its card. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 
 .field {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.35rem;
   font-size: 0.92rem;
+  min-width: 0;
+}
+
+.field input,
+.field select {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .field > span,
@@ -217,6 +227,23 @@ input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-color: var(--accent);
+}
+
+/* Dropdowns inside form fields look like the text inputs beside them. */
+.field select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 0.6rem 0.6rem;
+  width: 100%;
+  text-overflow: ellipsis;
+}
+
+.field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .input--code {
@@ -3305,4 +3332,152 @@ a.person:focus-visible .person__display {
   padding: 0.45rem 0.6rem;
   text-align: left;
   vertical-align: top;
+}
+
+/* ---------- Password fields with a show/hide toggle ---------- */
+.password-input {
+  position: relative;
+  display: block;
+}
+
+.password-input input {
+  padding-right: 2.6rem;
+}
+
+.password-input__toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.35rem;
+  transform: translateY(-50%);
+}
+
+/* A tag that is also a control (an army group's name selects the group). */
+.tag--button {
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.tag--button:hover,
+.tag--button:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+/* ---------- Playtest UX (2026-10-29): icon tabs, segmented choices, nation links, history ---------- */
+.icon-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0.4rem 0 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.icon-tabs__tab {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.1rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.icon-tabs__tab:hover,
+.icon-tabs__tab:focus-visible {
+  color: var(--accent-strong);
+  outline: none;
+}
+
+.icon-tabs__tab--active {
+  color: var(--accent-strong);
+  border-bottom-color: var(--accent);
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmented__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  background: var(--bg-sunken);
+  border: none;
+  cursor: pointer;
+}
+
+.segmented__option + .segmented__option {
+  border-left: 1px solid var(--border-strong);
+}
+
+.segmented__option--active {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.nation-link {
+  font-weight: 600;
+}
+
+.diplomacy__tip {
+  font-size: 0.85rem;
+}
+
+.history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.history__list > li {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.88rem;
+}
+
+.history__list summary {
+  cursor: pointer;
+}
+
+.declare-war {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 8px;
+}
+
+.segmented__option {
+  white-space: nowrap;
+}
+
+.diplomacy__alliance {
+  flex-wrap: wrap;
+}
+
+.declare-war__allies {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.declare-war__allies legend {
+  padding: 0 0.3rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
 }

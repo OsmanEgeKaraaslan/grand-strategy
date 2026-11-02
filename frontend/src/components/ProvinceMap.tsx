@@ -2,9 +2,12 @@ import { Suspense, lazy, useCallback, useEffect, useRef, useState, type Keyboard
 import type { GameMap, MapProvince, ProvinceState } from '../api/types'
 import type { Perspective } from '../lib/diplomacy'
 import { webglAvailable } from '../lib/mapGeometry'
+import { Icon, type IconName } from './icons'
 
-// three.js is only downloaded when a player opens the 3D view.
+// three.js is only downloaded when the 3D view is opened. The view is not ready for players: it is off
+// unless a development build sets VITE_ENABLE_3D_MAP=true (playtest feedback, 2026-10-29).
 const Map3D = lazy(() => import('./Map3D'))
+const MAP_3D_ENABLED = import.meta.env.VITE_ENABLE_3D_MAP === 'true'
 
 export interface NationStyle {
   name: string
@@ -58,6 +61,8 @@ interface ProvinceMapProps {
   diplomacy?: DiplomaticView
   /** Collectible income per round of the viewer's own provinces, in milligold (economy mode). */
   income?: Map<string, number>
+  /** Offers the experimental 3D view (development builds only; never in the player UI). */
+  allow3D?: boolean
 }
 
 interface View {
@@ -70,11 +75,11 @@ interface View {
 const MIN_ZOOM = 1
 const MAX_ZOOM = 6
 
-const MODES: { key: MapMode; label: string }[] = [
-  { key: 'political', label: 'Political' },
-  { key: 'diplomatic', label: 'Diplomatic' },
-  { key: 'terrain', label: 'Terrain' },
-  { key: 'economy', label: 'Economy' },
+const MODES: { key: MapMode; label: string; icon: IconName; hint: string }[] = [
+  { key: 'political', label: 'Political', icon: 'flag', hint: 'Political map: provinces in their owner\'s colour' },
+  { key: 'diplomatic', label: 'Diplomatic', icon: 'diplomacy', hint: 'Diplomatic map: allies, enemies and neutrals of one nation' },
+  { key: 'terrain', label: 'Terrain', icon: 'mountain', hint: 'Terrain map: plains and mountains' },
+  { key: 'economy', label: 'Economy', icon: 'gold', hint: 'Economy map: income of your provinces' },
 ]
 
 /** Whose relations the diplomatic map shows, and how a click on the map picks another nation. */
@@ -210,6 +215,7 @@ export function ProvinceMap({
   besieged = new Set(),
   diplomacy,
   income = new Map(),
+  allow3D = MAP_3D_ENABLED,
 }: ProvinceMapProps) {
   const controllers = new Set(
     [...provinces.values()].filter((p) => p.controllerNationId !== p.ownerNationId).map((p) => p.controllerNationId),
@@ -419,19 +425,21 @@ export function ProvinceMap({
         <button type="button" className="button" onClick={() => setView(base)} disabled={zoom <= MIN_ZOOM} aria-label="Show the whole map">
           ⤢
         </button>
-        <button
-          type="button"
-          className="button"
-          onClick={() => {
-            showHover.current(null)
-            setThreeD((on) => !on)
-          }}
-          disabled={!canUse3D}
-          aria-pressed={threeD}
-          title={canUse3D ? undefined : 'Your browser has no WebGL; the 2D map is used.'}
-        >
-          3D
-        </button>
+        {allow3D && (
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              showHover.current(null)
+              setThreeD((on) => !on)
+            }}
+            disabled={!canUse3D}
+            aria-pressed={threeD}
+            title={canUse3D ? undefined : 'Your browser has no WebGL; the 2D map is used.'}
+          >
+            3D
+          </button>
+        )}
       </div>
       <div className="province-map__modes" role="group" aria-label="Map mode">
         {MODES.filter((m) => m.key !== 'diplomatic' || diplomacy).map((m) => (
@@ -440,9 +448,11 @@ export function ProvinceMap({
             type="button"
             className={`button province-map__mode ${mode === m.key ? 'province-map__mode--active' : ''}`}
             aria-pressed={mode === m.key}
+            aria-label={m.label}
+            title={m.hint}
             onClick={() => setMode(m.key)}
           >
-            {m.label}
+            <Icon name={m.icon} size={16} />
           </button>
         ))}
       </div>
@@ -458,7 +468,7 @@ export function ProvinceMap({
           }
         }
       />
-      {threeD ? (
+      {threeD && allow3D ? (
         <Suspense fallback={<p className="province-map province-map--loading">Loading 3D view…</p>}>
           <Map3D
             map={map}

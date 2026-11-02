@@ -39,6 +39,12 @@ class DiplomacyActionsAdapter implements DiplomacyActions {
 	}
 
 	@Override
+	public void declareWar(CurrentPlayer me, UUID gameId, UUID targetNationId, java.util.List<UUID> inviteAllies,
+			UUID idempotencyKey) {
+		diplomacy.declareWar(me, gameId, targetNationId, inviteAllies, idempotencyKey);
+	}
+
+	@Override
 	public void proposeAlliance(CurrentPlayer me, UUID gameId, UUID nationId, String kind, UUID idempotencyKey) {
 		diplomacy.proposeAlliance(me, gameId, nationId, Diplomacy.AllianceKind.valueOf(kind), idempotencyKey);
 	}

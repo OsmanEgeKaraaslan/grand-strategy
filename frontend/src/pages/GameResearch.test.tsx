@@ -109,7 +109,8 @@ describe('Research panel', () => {
     const panel = await screen.findByRole('region', { name: 'Research' })
     expect(within(panel).getByText('45 points')).toBeInTheDocument()
     expect(within(panel).getAllByText('(+10 per round)')).toHaveLength(2)
-    expect(within(panel).getByText('Military Academy in Varn')).toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('tab', { name: 'Institutions' }))
+    expect(within(panel).getByText(/Military Academy in Varn/)).toBeInTheDocument()
     expect(within(panel).getByText(/ready at the end of round 4, produces from round 5/)).toBeInTheDocument()
   })
 
@@ -130,6 +131,7 @@ describe('Research panel', () => {
     renderGame()
     await showPanel('technology')
 
+    await userEvent.click(await screen.findByRole('tab', { name: 'Civilian technology' }))
     const track = await screen.findByRole('group', { name: 'Civilian technology' })
     expect(within(track).getByText(/Level 2: unlocks Tier 2 workshops/)).toBeInTheDocument()
     expect(within(track).getByText(/Level 3: \+0.25% population growth per round/)).toBeInTheDocument()
@@ -142,6 +144,7 @@ describe('Research panel', () => {
     renderGame({ unlockDoctrine })
     await showPanel('technology')
 
+    await userEvent.click(await screen.findByRole('tab', { name: 'Doctrines' }))
     const doctrines = await screen.findByRole('group', { name: 'Doctrines' })
     expect(within(doctrines).getByText(/river crossing penalty reduced by 50%/)).toBeInTheDocument()
     expect(within(doctrines).getByText(/battalion upkeep −20%/)).toBeInTheDocument()
@@ -158,6 +161,7 @@ describe('Research panel', () => {
     renderGame({ getResearch: vi.fn().mockResolvedValue(chosen) })
     await showPanel('technology')
 
+    await userEvent.click(await screen.findByRole('tab', { name: 'Doctrines' }))
     const doctrines = await screen.findByRole('group', { name: 'Doctrines' })
     expect(within(doctrines).getByText('Chosen')).toBeInTheDocument()
     within(doctrines)
@@ -172,6 +176,7 @@ describe('Research panel', () => {
     renderGame({ getMilitary: vi.fn().mockResolvedValue(military) })
     await showPanel('technology')
 
+    await userEvent.click(await screen.findByRole('tab', { name: 'Active effects' }))
     const effects = await screen.findByRole('group', { name: 'Active effects' })
     expect(within(effects).getByText('+10%')).toBeInTheDocument()
     expect(within(effects).getByText('−10%')).toBeInTheDocument()

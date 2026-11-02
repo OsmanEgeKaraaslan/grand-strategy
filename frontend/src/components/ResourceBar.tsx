@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { useResearch } from '../api/queries'
 import type { EconomyOverview, MilitaryOverview } from '../api/types'
 import { formatGold, formatGoldDelta } from '../lib/gold'
+import { POOL_ICONS } from '../lib/research'
 import { Icon, type IconName } from './icons'
 
 const POOL_LABELS: Record<string, string> = { MILITARY: 'Military', CIVILIAN: 'Civilian', DOCTRINE: 'Doctrine' }
@@ -13,14 +14,16 @@ interface ResourceBarProps {
   military: MilitaryOverview | undefined
   /** People living in the viewer's own cities (from the game state). */
   population: number | undefined
+  /** Projected change at the next round end (growth − siege attrition; see GamePage). */
+  populationChange?: { net: number; growth: number; attrition: number }
 }
 
 /**
- * The national resources in the top bar: treasury, net change per round, population, army size
- * and upkeep, research points. Compact icon + value pairs with the long form in each title.
+ * The national resources in the top bar: treasury and its net change per round, population and its
+ * projected change per round, army size, research points (upkeep lives in the economy window). Compact icon + value pairs with the long form in each title.
  * Read-only; every number comes from the server's views.
  */
-export function ResourceBar({ gameId, stateVersion, economy, military, population }: ResourceBarProps) {
+export function ResourceBar({ gameId, stateVersion, economy, military, population, populationChange }: ResourceBarProps) {
   const research = useResearch(gameId, stateVersion)
   const net = economy?.nation.projectedNetMg
   return (
@@ -44,16 +47,26 @@ export function ResourceBar({ gameId, stateVersion, economy, military, populatio
         <Resource icon="population" label="Population" hint="People in your cities">
           {population === undefined ? '—' : population.toLocaleString('en-US')}
         </Resource>
-        <Resource icon="army" label="Army" hint="Your battalions, soldiers and their upkeep per round">
-          {military
-            ? `${military.upkeep.battalions} bn · ${military.upkeep.soldiers.toLocaleString('en-US')} men · −${formatGold(military.upkeep.totalMg)}`
-            : '—'}
+        <Resource
+          icon="trend"
+          label="Population per round"
+          hint={
+            populationChange
+              ? `Next round end: growth ${signed(populationChange.growth)}, siege losses −${populationChange.attrition.toLocaleString('en-US')}. Recruitment, battles and disbanding change population at once and are not included.`
+              : 'Projected population change at the end of this round'
+          }
+          tone={populationChange === undefined || populationChange.net === 0 ? undefined : populationChange.net < 0 ? 'negative' : 'positive'}
+        >
+          {populationChange === undefined ? '—' : signed(populationChange.net)}
+        </Resource>
+        <Resource icon="army" label="Army" hint="Your battalions and soldiers (their upkeep is in the economy window)">
+          {military ? `${military.upkeep.battalions} bn · ${military.upkeep.soldiers.toLocaleString('en-US')} men` : '—'}
         </Resource>
         {research.data?.available &&
           research.data.pools.map((p) => (
             <Resource
               key={p.pool}
-              icon="research"
+              icon={POOL_ICONS[p.pool as keyof typeof POOL_ICONS] ?? 'research'}
               label={`${POOL_LABELS[p.pool] ?? p.pool} research`}
               hint={`${POOL_LABELS[p.pool] ?? p.pool} research points${p.perRound > 0 ? `, +${p.perRound} per round` : ''}`}
             >
@@ -69,6 +82,10 @@ export function ResourceBar({ gameId, stateVersion, economy, military, populatio
       </dl>
     </section>
   )
+}
+
+function signed(value: number): string {
+  return `${value > 0 ? '+' : value < 0 ? '−' : '±'}${Math.abs(value).toLocaleString('en-US')}`
 }
 
 function Resource({

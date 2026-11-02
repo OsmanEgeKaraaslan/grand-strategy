@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
@@ -127,18 +127,16 @@ describe('Game military', () => {
     renderGame({ move })
 
     const panel = await openForces('Elmsford')
-    const attack = await within(panel).findByRole('button', { name: 'Attack Sablewater' })
-    expect(attack).toBeDisabled()
-    expect(within(panel).getByText('Select battalions to move them.')).toBeInTheDocument()
+    expect(await within(panel).findByText('Select battalions to move them.')).toBeInTheDocument()
+    // Orders are given on the map only: the window has no duplicate move or attack buttons.
+    expect(within(panel).queryByRole('button', { name: /^(Attack|Move to) / })).not.toBeInTheDocument()
 
     await userEvent.click(within(panel).getByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
-    expect(within(panel).getByText('1 enemy battalion')).toBeInTheDocument()
-    expect(within(panel).getByText('River: attack −20%')).toBeInTheDocument()
-    expect(within(panel).getByRole('button', { name: 'Move to Varnhold' })).toBeEnabled()
+    expect(within(panel).getByText(/Right-click a highlighted province/)).toBeInTheDocument()
     const map = screen.getByRole('group', { name: /^Map of/ })
-    expect(within(map).getByRole('button', { name: /^Sablewater.*attack target/ })).toBeInTheDocument()
-    await userEvent.click(within(panel).getByRole('button', { name: 'Attack Sablewater' }))
-    // The same confirmation as a right-click attack on the map.
+    expect(within(map).getByRole('button', { name: /^Varnhold.*move target/ })).toBeInTheDocument()
+    fireEvent.contextMenu(within(map).getByRole('button', { name: /^Sablewater.*attack target/ }))
+    // A right-click attack asks for confirmation first.
     expect(move).not.toHaveBeenCalled()
     const confirm = screen.getByRole('alertdialog', { name: 'Confirm attack' })
     await userEvent.click(within(confirm).getByRole('button', { name: 'Attack Sablewater' }))
@@ -163,10 +161,13 @@ describe('Game military', () => {
     await userEvent.click(await within(panel).findByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
     await userEvent.click(within(panel).getByRole('checkbox', { name: 'Select Infantry, 650 of 1,000 men' }))
     expect(within(panel).getByText('1 selected battalion cannot move this turn.')).toBeInTheDocument()
-    expect(within(panel).getByRole('button', { name: 'Move to Varnhold' })).toBeDisabled()
+    const map = screen.getByRole('group', { name: /^Map of/ })
+    expect(within(map).queryByRole('button', { name: /move target/ })).not.toBeInTheDocument()
 
     await userEvent.click(within(panel).getByRole('checkbox', { name: 'Select Infantry, 650 of 1,000 men' }))
-    await userEvent.click(within(panel).getByRole('button', { name: 'Move to Varnhold' }))
+    // Keyboard path: focus the province on the map and press M.
+    within(map).getByRole('button', { name: /^Varnhold.*move target/ }).focus()
+    await userEvent.keyboard('m')
     expect(await screen.findByText('A selected battalion has already moved this turn.')).toBeInTheDocument()
   })
 
@@ -181,10 +182,10 @@ describe('Game military', () => {
     within(panel)
       .getAllByRole('checkbox')
       .forEach((box) => expect(box).toBeDisabled())
-    expect(within(panel).getByRole('button', { name: 'Move to Varnhold' })).toBeDisabled()
+    expect(within(screen.getByRole('group', { name: /^Map of/ })).queryByRole('button', { name: /move target/ })).not.toBeInTheDocument()
   })
 
-  it('groups selected battalions into a named army', async () => {
+  it('names selected battalions as a group, explains that it is only a label, and re-selects it from its tag', async () => {
     const regroup = vi.fn().mockResolvedValue({
       army: { id: 'a1', nationId: 'nation-varn', name: 'First Army', provinceKey: 'elmsford', battalionIds: ['b1'] },
     })
@@ -192,9 +193,12 @@ describe('Game military', () => {
 
     const panel = await openForces('Elmsford')
     await userEvent.click(await within(panel).findByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
-    await userEvent.click(within(panel).getByRole('button', { name: 'Group as army' }))
-    await userEvent.type(within(panel).getByRole('textbox', { name: 'Army name' }), 'First Army')
-    await userEvent.click(within(panel).getByRole('button', { name: 'Group 1 as army' }))
+    const tool = within(panel).getByRole('button', { name: 'Name as army group' })
+    expect(tool).toHaveAttribute('title', expect.stringContaining('does not change movement or combat'))
+    await userEvent.click(tool)
+    expect(within(panel).getByText(/Only a label: battalions in a province always fight together/)).toBeInTheDocument()
+    await userEvent.type(within(panel).getByRole('textbox', { name: 'Group name' }), 'First Army')
+    await userEvent.click(within(panel).getByRole('button', { name: 'Name 1 as a group' }))
 
     expect(regroup).toHaveBeenCalledWith('g1', 'First Army', ['b1'], expect.stringMatching(/^[0-9a-f-]{36}$/))
     expect(await within(panel).findByText('Formed First Army.')).toBeInTheDocument()

@@ -68,6 +68,10 @@ final class DiplomacyErrors {
 		return new ApiException(HttpStatus.NOT_FOUND, "PEACE_PROPOSAL_NOT_FOUND", "Peace proposal not found.");
 	}
 
+	static ApiException unprocessable(String code, String detail) {
+		return new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, code, detail);
+	}
+
 	static ApiException conflict(String code, String detail) {
 		return new ApiException(HttpStatus.CONFLICT, code, detail);
 	}

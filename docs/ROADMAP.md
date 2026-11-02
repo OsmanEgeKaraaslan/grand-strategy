@@ -525,6 +525,17 @@ deployment and closed beta (Phase 16). Much of Phase 14's UI/UX overhaul was don
   guidance — [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md). Nothing deployed.
 - Non-goals kept: no gameplay balancing, no new matchmaking features, no deployment.
 
+## Playtest feedback iteration — UX cleanup and diplomacy (2026-10-29)
+
+- **Milestone A (UI only)**: dashboard overflow fixed; diplomacy opens from a province's owner name;
+  duplicate move/attack buttons removed (right-click and M on a focused province remain); 3D view
+  hidden behind `VITE_ENABLE_3D_MAP`; History window (past wars, conferences, treaties, events,
+  battles); population and its projected change per round in the top bar, army upkeep removed there;
+  password show/hide; distinct research icons and icon tabs; army groups explained and re-selectable.
+- **Milestone B (ruleset v8)**: truce vs calls to arms, offensive invitations for normal allies (V21),
+  AI peace evaluation that values held land. v1–v7 games unchanged.
+- Non-goals kept: no new maps, mechanics beyond the above, 3D work, or UI framework.
+
 ## Phase 16 — Cloud Deployment & Public Beta
 
 - Production deployment pipeline (e.g. VPS + Caddy + GHCR), backups and restore drill,
