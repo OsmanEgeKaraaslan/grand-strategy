@@ -49,7 +49,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 		com.reach.strategy.social.application.ProfileService.class,
 		com.reach.strategy.social.application.FriendService.class, com.reach.strategy.social.application.Notifications.class,
 		com.reach.strategy.social.application.InvitationService.class,
-		com.reach.strategy.social.application.MatchmakingService.class })
+		com.reach.strategy.social.application.MatchmakingService.class,
+		com.reach.strategy.identity.application.ModerationService.class,
+		com.reach.strategy.game.application.GameModerationService.class })
 public @interface ApiSliceTest {
 
 	@AliasFor(annotation = WebMvcTest.class, attribute = "controllers")

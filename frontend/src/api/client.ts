@@ -1,4 +1,6 @@
 import type {
+  AdminGame,
+  AdminPlayer,
   AttachmentResult,
   CallResult,
   Conference,
@@ -137,6 +139,16 @@ export function createApiClient({ baseUrl, accessToken, onUnauthorized, fetch: f
     acceptTerms: (termsVersion: string, privacyVersion: string) =>
       request<PlayerProfile>('POST', '/me/terms-acceptance', { termsVersion, privacyVersion }),
     deleteAccount: () => request<DeletedAccount>('POST', '/me/deletion', { confirmation: 'DELETE' }),
+    // Moderation (administrators only; the server refuses everyone else with ADMIN_ONLY).
+    adminPlayers: (query: string) => request<AdminPlayer[]>('GET', `/admin/players?query=${encodeURIComponent(query)}`),
+    banPlayer: (playerId: string, reason: string) =>
+      request<AdminPlayer>('POST', `/admin/players/${encodeURIComponent(playerId)}/ban`, { reason }),
+    unbanPlayer: (playerId: string) => request<AdminPlayer>('POST', `/admin/players/${encodeURIComponent(playerId)}/unban`, {}),
+    resetPlayerName: (playerId: string) =>
+      request<AdminPlayer>('POST', `/admin/players/${encodeURIComponent(playerId)}/name-reset`, {}),
+    adminGames: () => request<AdminGame[]>('GET', '/admin/games'),
+    abandonGame: (gameId: string, reason: string) =>
+      request<AdminGame>('POST', `/admin/games/${encodeURIComponent(gameId)}/abandon`, { reason }),
     getProfile: (username: string) => request<PublicProfile>('GET', `/profiles/${encodeURIComponent(username)}`),
     searchPlayers: (query: string) => request<PlayerCard[]>('GET', `/players/search?q=${encodeURIComponent(query)}`),
     getFriends: () => request<FriendsOverview>('GET', '/friends'),
@@ -428,7 +440,17 @@ export function describeError(error: unknown): string {
         return 'Please confirm your password again.'
       case 'ACCOUNT_DELETION_BLOCKED':
       case 'TOO_MANY_UNFINISHED_GAMES':
+      case 'ACCOUNT_SUSPENDED':
+      case 'CANNOT_MODERATE_ADMIN':
         return error.message
+      case 'ADMIN_ONLY':
+        return 'Only administrators can do that.'
+      case 'GAME_ABANDONED':
+        return 'This game was closed by an administrator.'
+      case 'GAME_ALREADY_CLOSED':
+        return 'This game has already finished or been closed.'
+      case 'GAME_CAPACITY_REACHED':
+        return 'The server is running as many games as it can right now. Please try again later.'
       case 'PAYLOAD_TOO_LARGE':
         return 'That request is too large.'
       case 'GAME_FULL':

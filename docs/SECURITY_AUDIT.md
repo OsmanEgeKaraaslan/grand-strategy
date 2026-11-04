@@ -71,7 +71,11 @@ Existing suites already cover host-only invitations, blocked players, double-acc
 matchmaking ownership, peace-conference participants and computer seats (InvitationsIT,
 FriendsIT, MatchmakingIT, PeaceConferenceIT, ComputerTurnsIT, ComputerActorLimitsIT).
 
-Function-level authorization (API5): there are no admin or operator endpoints. Mass assignment
+Function-level authorization (API5): the only privileged endpoints are `/api/v1/admin/**`
+(moderation, 2026-11-03). Each service method checks the caller against the server-side allow-list
+`ADMIN_SUPABASE_USER_IDS` (no role claim from the token is trusted, no API can grant it);
+administrators cannot moderate themselves or each other, and every action is recorded. `ModerationIT`
+covers 401 for anonymous and 403 `ADMIN_ONLY` for ordinary players on every admin endpoint. Mass assignment
 (API3): request records list their fields explicitly and unknown JSON properties are rejected
 (`fail-on-unknown-properties`).
 
@@ -143,3 +147,43 @@ Dependabot (or an OSV scan in CI) for Maven, npm and Actions — **operator deci
 - **Dependency scanning is not in CI yet** (§5).
 - Supabase access tokens are stored in `localStorage` (supabase-js default), readable by any script
   running on the origin; mitigated by the absence of third-party scripts and by the CSP.
+
+## 7. Pre-launch review — 2026-11-03
+
+Scope: the whole repository before a public launch (not a closed beta). Three passes: (a) own code
+and configuration review; (b) OWASP Top 10:2025 and OWASP API Security Top 10:2023, item by item;
+(c) the mistakes most often reported in AI-generated ("vibe-coded") applications. Code review and
+automated checks only — no penetration test of a deployed system.
+
+**Verified clean:** no secrets in tracked files or git history (only the local throwaway database
+password); the frontend bundle contains only public values and no source maps; `npm audit` 0 and an
+OSV scan of 105 backend runtime libraries 0; no unsafe deserialization, shell execution or external
+scripts; all dependencies are mainstream packages (no hallucinated names); idempotency keys are
+scoped per player and game; gifts, reparations and population transfers reject non-positive or
+oversized values on the server; invitation codes carry 60 bits from `SecureRandom`; identifiers are
+UUIDs; every endpoint requires a token (default deny) and the authorization matrix (§3) still holds.
+
+| # | Finding | Severity | Recommendation |
+|---|---|---|---|
+| P1 | Mass account creation is not throttled by the app: sign-up is Supabase's, with no CAPTCHA; per-account limits (10 unfinished games, rate limits) multiply with every new account, and there is no global cap on running games, each Quick Match carrying eight computer nations | Medium | **Fixed (2026-11-03):** the frontend passes a Cloudflare Turnstile token to Supabase on sign-up, sign-in, password reset, resend-confirmation and re-authentication when `VITE_TURNSTILE_SITE_KEY` is set (🛠 enable CAPTCHA protection in Supabase with the Turnstile secret); server-wide cap `GAME_MAX_UNFINISHED_TOTAL` (default 200) refuses new lobbies, Quick Matches and matchmaking searches with 503 `GAME_CAPACITY_REACHED` (`GameCapacityIT`) |
+| P2 | The frontend's CSP and security headers exist only as a template (`deploy/frontend/_headers.example`); the Supabase session lives in `localStorage`, so without a CSP any XSS could steal sessions | Medium | **Fixed (2026-11-03):** every production build writes `dist/_headers` from `VITE_API_BASE_URL`, `VITE_SUPABASE_URL` and `VITE_TURNSTILE_SITE_KEY` (`frontend/securityHeaders.ts`); checked in a browser with the policy enforced: app and Turnstile load, no violations |
+| P3 | 19 tables from V11/V14 (wars, alliances, treaties, conferences, calls to arms, results, …) have no row-level security, although the docs say every table has it. Not reachable today: the `game` schema is not exposed by Supabase and V1 revokes its privileges | Medium (defence in depth) | **Fixed (2026-11-03):** V23 enables RLS on every table of schema `game` (except Flyway's history, which Flyway locks while migrating); `ApplicationIT` fails if any table lacks it. The application role therefore needs `BYPASSRLS` (`deploy/supabase/app-role.sql`) |
+| P4 | Password length, email confirmation, secure email change and leaked-password checks are enforced only if the Supabase project is configured so (the frontend's 8-character check alone can be bypassed with the public key) | Low (configuration) | PRODUCTION_READINESS §5: minimum length 8+, Confirm email on, Secure email change on, leaked-password protection (Pro) |
+| P5 | Security events are not logged: 401/403/429 responses leave no trace; no alerting is configured | Low | WARN log lines for refused authorization and rate limits; alert on ERROR/WARN spikes |
+| P6 | Display names allow letters of every script, so look-alike names (Latin "a" vs Cyrillic "а") can impersonate other players; handles are ASCII-only | Low | Reject mixed-script display names, or show the handle next to the name in social views |
+| P7 | Supply chain hygiene: no Dependabot; GitHub Actions pinned by major tag; Maven wrapper without `distributionSha256Sum`; container base images by tag | Low | Enable Dependabot (Maven, npm, Actions); pin actions by commit SHA; add the wrapper checksum |
+| P8 | Sign-in links use Supabase's implicit flow (tokens in the URL fragment) | Low | Switch supabase-js to `flowType: 'pkce'` |
+
+OWASP Top 10:2025 mapping: A01 Broken Access Control — clean (matrix tests; no SSRF surface).
+A02 Misconfiguration — P2, P4. A03 Supply Chain — P7 (no known vulnerable components). A04
+Cryptographic Failures — clean in code (TLS/HSTS at the proxy, `sslmode=require`, hashes at
+Supabase); backups must be encrypted (PRODUCTION_READINESS §8). A05 Injection — clean. A06 Insecure
+Design — P1. A07 Authentication Failures — P4, P8 (brute force and sessions are Supabase's). A08
+Integrity Failures — clean (server-authoritative commands, strict JSON, no default typing). A09
+Logging & Alerting — P5. A10 Exceptional Conditions — clean: errors fail closed; the rate limiter
+deliberately fails open when its memory bound is hit (§4).
+
+OWASP API Security Top 10:2023: API1 BOLA, API5 BFLA, API7 SSRF, API9 inventory — clean. API2 —
+P4, P8. API3 property-level — clean (no player-facing secrets; full visibility of game state is a
+game rule, Q-T4). API4 and API6 (sensitive business flows: sign-up, game creation) — P1. API8 — P2,
+P4. API10 unsafe consumption — clean (only the Supabase JWKS; user-controlled metadata is validated).

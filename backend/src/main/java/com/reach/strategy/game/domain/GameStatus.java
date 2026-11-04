@@ -1,8 +1,7 @@
 package com.reach.strategy.game.domain;
 
 /**
- * Lifecycle status of a game (docs/TURN_SYSTEM.md §3.1). ABANDONED arrives once stalled-game
- * handling (Q-T3) is decided.
+ * Lifecycle status of a game (docs/TURN_SYSTEM.md §3.1).
  */
 public enum GameStatus {
 
@@ -19,6 +18,12 @@ public enum GameStatus {
 	 * Completed by the ruleset's victory condition (Phase 9, PROVISIONAL Q-T2). Final: the state stays
 	 * readable, every gameplay command is refused.
 	 */
-	FINISHED
+	FINISHED,
+
+	/**
+	 * Closed by an administrator (Q-T3 operator action, Q-MOD1), from any status before FINISHED. Final:
+	 * no result is stored, a started game stays readable, every command is refused.
+	 */
+	ABANDONED
 
 }

@@ -93,12 +93,17 @@ public class InvitationStore {
 				""", Timestamp.from(now), a, b, b, a);
 	}
 
-	/** Account deletion: pending invitations from or to the player are cancelled; answered ones stay with their game. */
-	public void cancelAllPendingOf(UUID playerId, Instant now) {
+	/**
+	 * Account deletion or suspension: pending invitations from or to the player are cancelled; answered
+	 * ones stay with their game.
+	 *
+	 * @param reason ACCOUNT_DELETED or ACCOUNT_SUSPENDED
+	 */
+	public void cancelAllPendingOf(UUID playerId, String reason, Instant now) {
 		jdbc.update("""
-				UPDATE game.game_invitation SET status = 'CANCELLED', reason = 'ACCOUNT_DELETED', responded_at = ?
+				UPDATE game.game_invitation SET status = 'CANCELLED', reason = ?, responded_at = ?
 				WHERE status = 'PENDING' AND (inviter_id = ? OR invitee_id = ?)
-				""", Timestamp.from(now), playerId, playerId);
+				""", reason, Timestamp.from(now), playerId, playerId);
 	}
 
 }

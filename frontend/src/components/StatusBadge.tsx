@@ -5,6 +5,7 @@ const LABELS: Record<GameStatus, string> = {
   READY: 'Ready',
   IN_PROGRESS: 'In progress',
   FINISHED: 'Finished',
+  ABANDONED: 'Closed',
 }
 
 export function StatusBadge({ status }: { status: GameStatus }) {

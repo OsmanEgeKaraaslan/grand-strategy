@@ -1,0 +1,14 @@
+# Nightly encrypted backup and offsite copy (docs/PRODUCTION_READINESS.md §8).
+# Install: copy both strategy-backup* unit pairs to /etc/systemd/system, then
+#   systemctl daemon-reload && systemctl enable --now strategy-backup.timer strategy-backup-offsite.timer
+[Unit]
+Description=Clash of Empires database backup
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker run --rm --network host --env-file /etc/strategy/backup.env \
+  -v /srv/strategy/backups:/backups \
+  -v /etc/strategy/backup-public.asc:/keys/backup-public.asc:ro \
+  strategy-backup sh -c "/scripts/backup.sh && /scripts/offsite.sh"

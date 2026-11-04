@@ -17,8 +17,10 @@ function destination(game: GameSummary): string {
  */
 export function ActiveGames({ currentGameId, title = 'My active games' }: { currentGameId?: string; title?: string }) {
   const games = useMyGames()
-  const active = (games.data ?? []).filter((g) => g.status !== 'FINISHED')
-  const finished = (games.data ?? []).filter((g) => g.status === 'FINISHED')
+  // Games an administrator closed are listed with the finished ones.
+  const over = (g: GameSummary) => g.status === 'FINISHED' || g.status === 'ABANDONED'
+  const active = (games.data ?? []).filter((g) => !over(g))
+  const finished = (games.data ?? []).filter(over)
   return (
     <section className="card active-games" aria-labelledby="active-games-title">
       <h2 id="active-games-title">{title}</h2>

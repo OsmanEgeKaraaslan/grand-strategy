@@ -2,8 +2,11 @@
 # Restores a dump made by backup.sh into a database (docs/PRODUCTION_READINESS.md §8).
 # Practise on a scratch database first; restoring over production replaces its game schema.
 #
-#   docker run --rm -e RESTORE_DATABASE_URL -v "$PWD/backups:/backups:ro" -v "$PWD/backup:/scripts:ro" \
-#     postgres:17-alpine sh /scripts/restore.sh /backups/strategy-game-<stamp>.dump <database-name>
+#   docker run --rm -e RESTORE_DATABASE_URL -v "$PWD:/restore:ro" strategy-backup \
+#     sh /scripts/restore.sh /restore/strategy-game-<stamp>.dump <database-name>
+#
+# Backups are encrypted: decrypt the .dump.gpg first, on the machine that holds the private key
+# (gpg --output strategy-game-<stamp>.dump --decrypt strategy-game-<stamp>.dump.gpg).
 #
 # The second argument must equal the target's database name: a guard against restoring into the
 # wrong database by a stale environment variable.
@@ -16,9 +19,11 @@ dump="${1:?usage: restore.sh <dump-file> <expected-database-name>}"
 expected="${2:?usage: restore.sh <dump-file> <expected-database-name>}"
 : "${RESTORE_DATABASE_URL:?set RESTORE_DATABASE_URL}"
 
-if [ -f "$dump.sha256" ]; then
-	sha256sum -c "$dump.sha256"
-fi
+case "$dump" in
+*.gpg)
+	echo "Refusing: $dump is encrypted. Decrypt it first (see the comment at the top of this script)." >&2
+	exit 1 ;;
+esac
 
 actual="$(psql "$RESTORE_DATABASE_URL" -Atqc 'SELECT current_database()')"
 if [ "$actual" != "$expected" ]; then

@@ -193,6 +193,12 @@ public class WorldService implements WorldApi {
 
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
+	public void handOverToComputer(UUID gameId, UUID gamePlayerId) {
+		worldState.handOverToComputer(gameId, gamePlayerId);
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.MANDATORY)
 	public void setController(UUID gameId, String provinceKey, UUID controllerNationId) {
 		worldState.setController(gameId, provinceKey, controllerNationId);
 	}

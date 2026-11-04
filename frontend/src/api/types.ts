@@ -15,6 +15,8 @@ export interface PlayerProfile {
   updatedAt: string
   /** Legal acceptance (Phase 15A); older test fixtures may omit it. */
   terms?: TermsStatus
+  /** May use the moderation tools at /admin (configured on the server). */
+  admin?: boolean
 }
 
 /** Which Terms of Service / Privacy Policy versions are current and which the player accepted. */
@@ -170,7 +172,31 @@ export interface QuickMatch {
   } | null
 }
 
-export type GameStatus = 'WAITING_FOR_PLAYERS' | 'READY' | 'IN_PROGRESS' | 'FINISHED'
+export type GameStatus = 'WAITING_FOR_PLAYERS' | 'READY' | 'IN_PROGRESS' | 'FINISHED' | 'ABANDONED'
+
+/** An account as administrators see it (GET /admin/players). */
+export interface AdminPlayer {
+  id: string
+  username: string | null
+  displayName: string
+  createdAt: string
+  deleted: boolean
+  bannedAt: string | null
+  banReason: string | null
+  admin: boolean
+}
+
+/** A lobby or running game as administrators see it (GET /admin/games), least recently active first. */
+export interface AdminGame {
+  id: string
+  name: string
+  status: GameStatus
+  round: number | null
+  computerSeats: number
+  humans: string[]
+  createdAt: string
+  lastActionAt: string
+}
 
 export interface GameSummary {
   id: string

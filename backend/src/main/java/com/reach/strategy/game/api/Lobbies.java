@@ -32,8 +32,11 @@ public interface Lobbies {
 	/** Games the player is seated in that have not finished (lobbies and running games). */
 	int unfinishedGames(UUID playerId);
 
+	/** Whether the server may start another game now (server-wide bound on unfinished games). */
+	boolean capacityAvailable();
+
 	/**
-	 * @param status WAITING_FOR_PLAYERS, READY, IN_PROGRESS or FINISHED
+	 * @param status WAITING_FOR_PLAYERS, READY, IN_PROGRESS, FINISHED or ABANDONED
 	 * @param humanMemberIds human players seated in the game
 	 */
 	record LobbyFacts(UUID gameId, String name, String mapName, String status, UUID hostId, int playerCount,

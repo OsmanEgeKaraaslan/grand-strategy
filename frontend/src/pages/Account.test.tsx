@@ -13,6 +13,7 @@ import { fakeApi, fakeAuth, fakeSession, renderPage } from '../test/render'
 import { AccountPage } from './AccountPage'
 import { ForgotPasswordPage } from './ForgotPasswordPage'
 import { LegalPage } from './LegalPage'
+import { withContact } from '../legal/documents'
 import { LoginPage } from './LoginPage'
 import { ResetPasswordPage } from './ResetPasswordPage'
 
@@ -109,7 +110,7 @@ describe('ForgotPasswordPage', () => {
     await userEvent.type(screen.getByLabelText('Email'), 'queen@reach.test')
     await userEvent.click(screen.getByRole('button', { name: 'Send recovery link' }))
 
-    expect(auth.requestPasswordReset).toHaveBeenCalledWith('queen@reach.test')
+    expect(auth.requestPasswordReset).toHaveBeenCalledWith('queen@reach.test', undefined)
     expect(await screen.findByText(/If an account exists for/)).toBeInTheDocument()
   })
 
@@ -197,7 +198,7 @@ describe('LoginPage account help', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Log in' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Resend confirmation email' }))
 
-    expect(auth.resendConfirmation).toHaveBeenCalledWith('queen@reach.test')
+    expect(auth.resendConfirmation).toHaveBeenCalledWith('queen@reach.test', undefined)
   })
 })
 
@@ -214,7 +215,7 @@ describe('AccountPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Change password' }))
 
     expect(await screen.findByText('Your password has been changed.')).toBeInTheDocument()
-    expect(auth.reauthenticate).toHaveBeenCalledWith('old-password')
+    expect(auth.reauthenticate).toHaveBeenCalledWith('old-password', undefined)
     expect(auth.updatePassword).toHaveBeenCalledWith('new-password-1')
     expect(await screen.findByText(/You accepted Terms draft-1/)).toBeInTheDocument()
   })
@@ -256,7 +257,7 @@ describe('AccountPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Delete my account' }))
 
     expect(await screen.findByText('Deleted page')).toBeInTheDocument()
-    expect(auth.reauthenticate).toHaveBeenCalledWith('my-password')
+    expect(auth.reauthenticate).toHaveBeenCalledWith('my-password', undefined)
     expect(api.deleteAccount).toHaveBeenCalled()
     expect(auth.signOut).toHaveBeenCalled()
   })
@@ -335,12 +336,18 @@ describe('TermsGate', () => {
 })
 
 describe('legal pages', () => {
-  it('render the drafts publicly with their placeholders highlighted', () => {
+  it('render the documents publicly, complete and without placeholders', () => {
     renderPage(<LegalPage document="privacy" />, { auth: fakeAuth({ session: null }) })
     expect(screen.getByRole('heading', { level: 1, name: 'Privacy Policy' })).toBeInTheDocument()
-    expect(screen.getByText(/DRAFT — version draft-1/)).toBeInTheDocument()
-    expect(document.querySelectorAll('mark.legal__placeholder').length).toBeGreaterThan(3)
+    expect(screen.getByText(/Version 1.0 · Clash of Empires/)).toBeInTheDocument()
+    expect(document.querySelectorAll('mark.legal__placeholder')).toHaveLength(0)
+    expect(document.body.textContent).not.toMatch(/OPERATOR|{{CONTACT_EMAIL}}/)
     expect(screen.getAllByRole('link', { name: 'Cookie and Storage Notice' })[0]).toHaveAttribute('href', '/legal/cookies')
+  })
+
+  it('fills in the configured contact address and says so when none is configured', () => {
+    expect(withContact('Write to **{{CONTACT_EMAIL}}**.', 'support@example.org')).toBe('Write to **support@example.org**.')
+    expect(withContact('Write to **{{CONTACT_EMAIL}}**.', '')).toBe('Write to **the contact address (not yet published)**.')
   })
 
   it('never turns document text into markup or unsafe links', () => {

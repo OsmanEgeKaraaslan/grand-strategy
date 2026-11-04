@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.reach.strategy.identity.api.AccountDeletionParticipant;
+import com.reach.strategy.identity.api.Administrators;
 import com.reach.strategy.identity.domain.Player;
 import com.reach.strategy.identity.domain.PlayerRepository;
 import com.reach.strategy.identity.domain.Username;
@@ -35,10 +36,12 @@ public class AccountService {
 	private final List<AccountDeletionParticipant> participants;
 	private final Duration reauthenticationWindow;
 	private final Clock clock;
+	private final Administrators admins;
 
 	AccountService(PlayerRepository players, LegalTerms legal, List<AccountDeletionParticipant> participants,
 			@Value("${strategy.account.deletion-reauthentication-window:PT10M}") Duration reauthenticationWindow,
-			Clock clock) {
+			Clock clock, Administrators admins) {
+		this.admins = admins;
 		this.players = players;
 		this.legal = legal;
 		// A stable order, so the deleting transaction always takes locks in the same sequence.
@@ -63,7 +66,7 @@ public class AccountService {
 			player.acceptTerms(termsVersion, privacyVersion, now);
 		}
 		players.recordAcceptance(playerId, termsVersion, privacyVersion, now);
-		return PlayerProfile.of(player, legal);
+		return PlayerProfile.of(player, legal, admins.isAdmin(playerId));
 	}
 
 	public record DeletedAccount(Instant deletedAt) {

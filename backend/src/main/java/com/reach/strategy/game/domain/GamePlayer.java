@@ -24,7 +24,8 @@ public class GamePlayer implements Persistable<UUID> {
 	@Column(name = "game_id", nullable = false, updatable = false)
 	private UUID gameId;
 
-	@Column(name = "player_id", nullable = false, updatable = false)
+	// Changes only when a suspended player's seat is handed to a computer account (Q-MOD1).
+	@Column(name = "player_id", nullable = false)
 	private UUID playerId;
 
 	@Column(name = "seat_order", nullable = false, updatable = false)
@@ -39,7 +40,7 @@ public class GamePlayer implements Persistable<UUID> {
 
 	/** Round in which this player's nation was eliminated (Phase 10); it takes no more turns. */
 	/** A computer-controlled seat (Phase 11): its player is a computer account without a login. */
-	@Column(name = "computer", nullable = false, updatable = false)
+	@Column(name = "computer", nullable = false)
 	private boolean computer;
 
 	@Column(name = "eliminated_round")
@@ -85,6 +86,15 @@ public class GamePlayer implements Persistable<UUID> {
 		seat.computer = true;
 		seat.nationTemplateId = nationTemplateId;
 		return seat;
+	}
+
+	/** The seat, its nation and its place in the turn order stay; only who plays it changes. */
+	public void handOverToComputer(UUID computerPlayerId) {
+		if (computer) {
+			throw new IllegalStateException("Seat " + id + " is already a computer seat");
+		}
+		playerId = computerPlayerId;
+		computer = true;
 	}
 
 	public boolean computer() {

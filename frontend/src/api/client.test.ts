@@ -70,6 +70,7 @@ describe('createApiClient', () => {
     expect(describeError(new ApiError({ status: 403, code: 'TERMS_NOT_ACCEPTED' }))).toMatch(/accept the current Terms/)
     expect(describeError(new ApiError({ status: 409, code: 'ACCOUNT_DELETION_BLOCKED', detail: 'Seated in 1 unfinished game.' })))
       .toBe('Seated in 1 unfinished game.')
+    expect(describeError(new ApiError({ status: 503, code: 'GAME_CAPACITY_REACHED' }))).toMatch(/try again later/)
   })
 
   it('omits the Authorization header when signed out', async () => {

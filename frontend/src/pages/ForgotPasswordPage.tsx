@@ -3,6 +3,8 @@ import { Link } from 'react-router'
 import { useAuth } from '../auth/AuthContext'
 import { AuthFrame } from '../components/AppShell'
 import { Alert } from '../components/Alert'
+import { Captcha } from '../components/Captcha'
+import { useCaptcha } from '../auth/useCaptcha'
 
 /**
  * Starts Supabase's password recovery. The answer is the same whether or not the address has an
@@ -14,6 +16,7 @@ export function ForgotPasswordPage() {
   const [sentTo, setSentTo] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const captcha = useCaptcha()
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -25,7 +28,7 @@ export function ForgotPasswordPage() {
     setError(null)
     setSubmitting(true)
     try {
-      await requestPasswordReset(address)
+      await requestPasswordReset(address, captcha.consume())
       setSentTo(address)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The request failed. Please try again.')
@@ -56,7 +59,8 @@ export function ForgotPasswordPage() {
           <span>Email</span>
           <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
-        <button type="submit" className="button button--primary" disabled={submitting || !email}>
+        <Captcha onToken={captcha.setToken} resetSignal={captcha.resetSignal} />
+        <button type="submit" className="button button--primary" disabled={submitting || !email || !captcha.ready}>
           {submitting ? 'Sending…' : 'Send recovery link'}
         </button>
       </form>

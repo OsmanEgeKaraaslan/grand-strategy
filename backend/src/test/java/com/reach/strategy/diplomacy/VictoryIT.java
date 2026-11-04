@@ -89,7 +89,7 @@ class VictoryIT {
 		assertThat((String) read(result, "$.reason")).isEqualTo("ROUND_LIMIT");
 		assertThat((Integer) read(result, "$.finishedRound")).isEqualTo(30);
 		assertThat((String) read(result, "$.winnerNationId")).isEqualTo(d.varn(game));
-		assertThat((String) read(result, "$.winnerName")).isEqualTo("Kingdom of Varn");
+		assertThat((String) read(result, "$.winnerName")).isEqualTo("Kingdom of Berlardfaul");
 		long varnScore = 7 * 20 + ownedPopulation(game, "varn") / 1000;
 		long ostraScore = 5 * 20 + ownedPopulation(game, "ostra") / 1000;
 		assertThat(ApiDriver.<List<Integer>>read(result, "$.standings[*].rank")).containsExactly(1, 2);

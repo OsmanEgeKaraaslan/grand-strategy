@@ -11,7 +11,7 @@ import com.reach.strategy.identity.domain.Player;
  * or email.
  */
 public record PlayerProfile(UUID id, String username, String displayName, String emblem, boolean usernameChosen,
-		boolean matchHistoryPublic, Instant createdAt, Instant updatedAt, Terms terms) {
+		boolean matchHistoryPublic, Instant createdAt, Instant updatedAt, Terms terms, boolean admin) {
 
 	/**
 	 * @param accepted the player accepted exactly the current versions
@@ -21,12 +21,13 @@ public record PlayerProfile(UUID id, String username, String displayName, String
 			String acceptedTermsVersion, String acceptedPrivacyVersion, Instant acceptedAt) {
 	}
 
-	static PlayerProfile of(Player player, LegalTerms legal) {
+	/** @param admin the account may use the moderation tools (Q-MOD1); shown only to its owner */
+	static PlayerProfile of(Player player, LegalTerms legal, boolean admin) {
 		Terms terms = new Terms(legal.termsVersion(), legal.privacyVersion(),
 				legal.isCurrent(player.termsVersion(), player.privacyVersion()), player.termsVersion(),
 				player.privacyVersion(), player.termsAcceptedAt());
 		return new PlayerProfile(player.id(), player.username(), player.displayName(), player.emblem(),
-				player.usernameChosen(), player.matchHistoryPublic(), player.createdAt(), player.updatedAt(), terms);
+				player.usernameChosen(), player.matchHistoryPublic(), player.createdAt(), player.updatedAt(), terms, admin);
 	}
 
 }

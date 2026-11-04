@@ -45,7 +45,7 @@ describe('RegisterPage', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Resend confirmation email' }))
 
-    expect(auth.resendConfirmation).toHaveBeenCalledWith('queen@reach.test')
+    expect(auth.resendConfirmation).toHaveBeenCalledWith('queen@reach.test', undefined)
     expect(await screen.findByText(/If this address has an unconfirmed account/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Resend possible in/ })).toBeDisabled()
   })
@@ -59,7 +59,7 @@ describe('RegisterPage', () => {
 
     await fillForm()
 
-    expect(auth.signUp).toHaveBeenCalledWith('queen@reach.test', 'long-enough-1', 'Queen of Varn')
+    expect(auth.signUp).toHaveBeenCalledWith('queen@reach.test', 'long-enough-1', 'Queen of Varn', undefined)
     expect(await screen.findByText('Check your inbox')).toBeInTheDocument()
     expect(screen.getByText('queen@reach.test')).toBeInTheDocument()
   })

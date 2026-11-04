@@ -59,13 +59,15 @@ public class LobbyService implements MatchCreation {
 	private final ComputerPlayers computerPlayers;
 	private final ApplicationEventPublisher events;
 	private final int maxUnfinishedGames;
+	private final GameCapacity capacity;
 
 	LobbyService(GameRepository games, GamePlayerRepository memberships, PlayerDirectory playerDirectory, WorldApi world,
 			List<GameStartInitializer> startInitializers,
 			@Value("${strategy.ruleset.current-version}") String currentRulesetVersion, Clock clock,
 			ObjectProvider<ComputerOpponents> computerOpponents, ComputerPlayers computerPlayers,
 			ApplicationEventPublisher events,
-			@Value("${strategy.game.max-unfinished-games:10}") int maxUnfinishedGames) {
+			@Value("${strategy.game.max-unfinished-games:10}") int maxUnfinishedGames, GameCapacity capacity) {
+		this.capacity = capacity;
 		this.events = events;
 		this.maxUnfinishedGames = maxUnfinishedGames;
 		this.computerOpponents = computerOpponents;
@@ -102,6 +104,7 @@ public class LobbyService implements MatchCreation {
 					"This map supports 2 to " + map.maxPlayers() + " human players.");
 		}
 		requireRoomForAnotherGame(me);
+		capacity.require();
 		Game.Created created = Game.create(name.strip(), me.id(), players, mapId, currentRulesetVersion,
 				freshInviteCode(), now);
 		games.save(created.game());
@@ -159,6 +162,9 @@ public class LobbyService implements MatchCreation {
 	public LobbyView join(CurrentPlayer me, String rawInviteCode) {
 		InviteCode code = InviteCode.parse(rawInviteCode).orElseThrow(GameErrors::inviteCodeNotFound);
 		Game game = games.findByInviteCodeForUpdate(code.value()).orElseThrow(GameErrors::inviteCodeNotFound);
+		if (game.closed() && !game.finished()) {
+			throw GameErrors.abandoned();
+		}
 		if (!memberships.existsByGameIdAndPlayerId(game.id(), me.id())) {
 			requireRoomForAnotherGame(me);
 			try {
@@ -225,8 +231,11 @@ public class LobbyService implements MatchCreation {
 			throw new ApiException(HttpStatus.FORBIDDEN, "NOT_HOST", "Only the host can start the game.");
 		}
 		WorldApi.MapSummary map = world.mapSummary(game.mapTemplateId());
-		if (game.status() == GameStatus.IN_PROGRESS || game.status() == GameStatus.FINISHED) {
+		if (game.status() == GameStatus.IN_PROGRESS || game.finished()) {
 			return view(game, members, me, map);
+		}
+		if (game.closed()) {
+			throw GameErrors.abandoned();
 		}
 		LobbyView.StartBlocker blocker = LobbyView.startBlocker(game, members, map);
 		if (blocker == LobbyView.StartBlocker.NOT_READY) {
@@ -290,6 +299,7 @@ public class LobbyService implements MatchCreation {
 		if (playerIds.size() != 2 || playerIds.get(0).equals(playerIds.get(1))) {
 			throw new IllegalArgumentException("A Quick Match needs two different players");
 		}
+		capacity.require();
 		Instant now = clock.instant();
 		UUID mapId = world.mapId(mapKey).orElseThrow(() -> new IllegalStateException("Quick Match map missing: " + mapKey));
 		WorldApi.MapSummary map = world.mapSummary(mapId);

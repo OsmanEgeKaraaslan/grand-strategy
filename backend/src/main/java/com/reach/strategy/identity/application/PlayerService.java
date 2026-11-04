@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import com.reach.strategy.identity.api.Administrators;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.identity.api.PlayerDirectory;
 import com.reach.strategy.identity.api.PublicProfiles;
@@ -34,8 +35,10 @@ public class PlayerService implements PlayerDirectory, PublicProfiles {
 	private final PlayerRepository players;
 	private final LegalTerms legal;
 	private final Clock clock;
+	private final Administrators admins;
 
-	PlayerService(PlayerRepository players, LegalTerms legal, Clock clock) {
+	PlayerService(PlayerRepository players, LegalTerms legal, Clock clock, Administrators admins) {
+		this.admins = admins;
 		this.players = players;
 		this.legal = legal;
 		this.clock = clock;
@@ -63,6 +66,11 @@ public class PlayerService implements PlayerDirectory, PublicProfiles {
 		if (player.deleted()) {
 			throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_DELETED", "This account has been deleted.");
 		}
+		if (player.banned()) {
+			// The Terms promise a reason where reasonable; it is the administrator's own wording.
+			throw new ApiException(HttpStatus.FORBIDDEN, "ACCOUNT_SUSPENDED",
+					"This account has been suspended. Reason: " + player.banReason());
+		}
 		if (!termsExempt && legal.requireAcceptance() && !legal.isCurrent(player.termsVersion(), player.privacyVersion())) {
 			throw new ApiException(HttpStatus.FORBIDDEN, "TERMS_NOT_ACCEPTED",
 					"Please accept the current Terms of Service and Privacy Policy to continue.");
@@ -72,7 +80,7 @@ public class PlayerService implements PlayerDirectory, PublicProfiles {
 
 	@Transactional(readOnly = true)
 	public PlayerProfile profile(UUID playerId) {
-		return PlayerProfile.of(load(playerId), legal);
+		return PlayerProfile.of(load(playerId), legal, admins.isAdmin(playerId));
 	}
 
 	@Transactional
@@ -134,7 +142,7 @@ public class PlayerService implements PlayerDirectory, PublicProfiles {
 			// Whichever unique index fired, the message must name the field that was contested.
 			throw changes.username() != null ? usernameTaken() : displayNameTaken();
 		}
-		return PlayerProfile.of(player, legal);
+		return PlayerProfile.of(player, legal, admins.isAdmin(playerId));
 	}
 
 	@Override

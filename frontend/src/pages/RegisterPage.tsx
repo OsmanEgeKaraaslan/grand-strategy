@@ -6,6 +6,8 @@ import { ResendConfirmation } from '../auth/ResendConfirmation'
 import { AuthFrame } from '../components/AppShell'
 import { Alert } from '../components/Alert'
 import { PasswordField } from '../components/PasswordInput'
+import { Captcha } from '../components/Captcha'
+import { useCaptcha } from '../auth/useCaptcha'
 
 const DISPLAY_NAME_PATTERN = /^[\p{L}\p{N}_-]+( [\p{L}\p{N}_-]+)*$/u
 
@@ -20,6 +22,7 @@ export function RegisterPage() {
   const [confirmationSentTo, setConfirmationSentTo] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [consent, setConsent] = useState(false)
+  const captcha = useCaptcha()
 
   if (session) {
     return <Navigate to="/" replace />
@@ -60,7 +63,7 @@ export function RegisterPage() {
     if (problem) return
     setSubmitting(true)
     try {
-      const result = await signUp(email.trim(), password, displayName.trim().replace(/\s+/g, ' '))
+      const result = await signUp(email.trim(), password, displayName.trim().replace(/\s+/g, ' '), captcha.consume())
       if (result.status === 'confirmation-required') {
         setConfirmationSentTo(result.email)
       } else {
@@ -117,7 +120,8 @@ export function RegisterPage() {
             .
           </span>
         </label>
-        <button type="submit" className="button button--primary" disabled={submitting}>
+        <Captcha onToken={captcha.setToken} resetSignal={captcha.resetSignal} />
+        <button type="submit" className="button button--primary" disabled={submitting || !captcha.ready}>
           {submitting ? 'Creating account…' : 'Register'}
         </button>
       </form>

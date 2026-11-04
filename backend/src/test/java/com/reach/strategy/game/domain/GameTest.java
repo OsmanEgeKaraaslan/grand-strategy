@@ -127,4 +127,28 @@ class GameTest {
 			.isInstanceOf(IllegalArgumentException.class);
 	}
 
+	@Test
+	void anAdministratorCanAbandonAGameOnceBeforeItFinishes() {
+		Game game = Game.create("Stuck", host, 2, MAP, "v1", InviteCode.generate(), NOW).game();
+		long version = game.stateVersion();
+		game.abandon(NOW);
+		assertThat(game.status()).isEqualTo(GameStatus.ABANDONED);
+		assertThat(game.closed()).isTrue();
+		assertThat(game.finished()).isFalse();
+		assertThat(game.stateVersion()).isGreaterThan(version);
+		assertThatThrownBy(() -> game.abandon(NOW)).isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void aSeatHandedToTheComputerKeepsItsPlaceButChangesItsPlayer() {
+		Game.Created created = Game.create("Handover", host, 2, MAP, "v1", InviteCode.generate(), NOW);
+		GamePlayer seat = created.host();
+		UUID computer = UUID.randomUUID();
+		seat.handOverToComputer(computer);
+		assertThat(seat.playerId()).isEqualTo(computer);
+		assertThat(seat.computer()).isTrue();
+		assertThat(seat.seatOrder()).isZero();
+		assertThatThrownBy(() -> seat.handOverToComputer(UUID.randomUUID())).isInstanceOf(IllegalStateException.class);
+	}
+
 }

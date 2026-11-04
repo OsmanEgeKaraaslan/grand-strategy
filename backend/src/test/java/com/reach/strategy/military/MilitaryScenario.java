@@ -15,7 +15,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * Game setup and database probes for the military integration tests. The host plays the Kingdom of
- * Varn (west, seat 0, moves first), the guest the Ostran Confederacy (east). Ruleset v2: each starts
+ * Berlardfaul (key varn: west, seat 0, moves first), the guest the Kingdom of Antara (key ostra: east). Ruleset v2: each starts
  * with 3 infantry and 1 cavalry in its capital (Varnhold / Ostrava), raised from 12,000 civilians.
  * <p>
  * Direct inserts stand in for situations that would otherwise take several rounds of play (an

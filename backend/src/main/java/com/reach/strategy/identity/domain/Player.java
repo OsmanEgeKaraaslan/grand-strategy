@@ -52,6 +52,17 @@ public class Player {
 	@Column(name = "deleted_at")
 	private Instant deletedAt;
 
+	/** Set while an administrator has suspended the account (V24); the API refuses it. */
+	@Column(name = "banned_at")
+	private Instant bannedAt;
+
+	@Column(name = "ban_reason")
+	private String banReason;
+
+	/** HUMAN or COMPUTER (V15). */
+	@Column(name = "kind", nullable = false, insertable = false, updatable = false)
+	private String kind;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -115,6 +126,48 @@ public class Player {
 
 	public boolean deleted() {
 		return deletedAt != null;
+	}
+
+	public boolean banned() {
+		return bannedAt != null;
+	}
+
+	public Instant bannedAt() {
+		return bannedAt;
+	}
+
+	public String banReason() {
+		return banReason;
+	}
+
+	public boolean computer() {
+		return "COMPUTER".equals(kind);
+	}
+
+	/** Suspends the account; banning again keeps the first date and replaces the reason. */
+	public void ban(String reason, Instant now) {
+		if (bannedAt == null) {
+			bannedAt = now;
+		}
+		banReason = reason;
+		updatedAt = now;
+	}
+
+	public void unban(Instant now) {
+		bannedAt = null;
+		banReason = null;
+		updatedAt = now;
+	}
+
+	/**
+	 * Replaces an offensive name and handle with generated placeholders; the player chooses a new
+	 * handle afterwards, as after first login.
+	 */
+	public void resetName(DisplayName placeholderName, Username placeholderUsername, Instant now) {
+		this.displayName = placeholderName.value();
+		this.username = placeholderUsername.value();
+		this.usernameChosen = false;
+		this.updatedAt = now;
 	}
 
 	public void acceptTerms(String termsVersion, String privacyVersion, Instant now) {

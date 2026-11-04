@@ -35,7 +35,7 @@ class SocialAccountDeletion implements AccountDeletionParticipant {
 	@Override
 	public void accountDeleted(UUID playerId, Instant now) {
 		tickets.cancelWaitingOf(playerId, now);
-		invitations.cancelAllPendingOf(playerId, now);
+		invitations.cancelAllPendingOf(playerId, "ACCOUNT_DELETED", now);
 		notifications.purge(playerId);
 		friends.purge(playerId);
 	}

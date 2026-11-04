@@ -29,8 +29,11 @@ class LobbiesService implements Lobbies {
 	private final GamePlayerRepository memberships;
 	private final WorldApi world;
 	private final Clock clock;
+	private final GameCapacity capacity;
 
-	LobbiesService(GameRepository games, GamePlayerRepository memberships, WorldApi world, Clock clock) {
+	LobbiesService(GameRepository games, GamePlayerRepository memberships, WorldApi world, Clock clock,
+			GameCapacity capacity) {
+		this.capacity = capacity;
 		this.games = games;
 		this.memberships = memberships;
 		this.world = world;
@@ -75,7 +78,7 @@ class LobbiesService implements Lobbies {
 		if (!game.isHost(inviterId)) {
 			return AdmitOutcome.INVITER_NOT_HOST;
 		}
-		if (game.status() == GameStatus.IN_PROGRESS || game.status() == GameStatus.FINISHED) {
+		if (game.status() == GameStatus.IN_PROGRESS || game.closed()) {
 			return AdmitOutcome.ALREADY_STARTED;
 		}
 		try {
@@ -109,6 +112,12 @@ class LobbiesService implements Lobbies {
 	@Transactional(readOnly = true)
 	public int unfinishedGames(UUID playerId) {
 		return (int) games.countUnfinishedForMember(playerId);
+	}
+
+	@Override
+	@Transactional(readOnly = true)
+	public boolean capacityAvailable() {
+		return capacity.available();
 	}
 
 }

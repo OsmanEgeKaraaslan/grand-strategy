@@ -5,6 +5,7 @@ import { AccountDeletedPage, AccountPage } from './pages/AccountPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { LegalPage } from './pages/LegalPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
+import { AdminPage } from './pages/AdminPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { GamePage } from './pages/GamePage'
 import { LobbyPage } from './pages/LobbyPage'
@@ -77,6 +78,16 @@ export function App() {
           <RequireAuth>
             <TermsGate>
               <ProfilePage />
+            </TermsGate>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <RequireAuth>
+            <TermsGate>
+              <AdminPage />
             </TermsGate>
           </RequireAuth>
         }

@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.List;
+
 import javax.sql.DataSource;
 
 import org.flywaydb.core.Flyway;
@@ -52,6 +54,22 @@ class ApplicationIT {
 			assertThat(connection.getMetaData().getDatabaseMajorVersion()).isEqualTo(17);
 		}
 		assertThat(jdbc.queryForObject("SELECT 1", Integer.class)).isEqualTo(1);
+	}
+
+	/** Defence in depth (SECURITY_AUDIT §7, P3): no table of the game schema may lack row-level security. */
+	@Test
+	void everyGameTableHasRowLevelSecurity() {
+		List<String> without = jdbc.queryForList("""
+				SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE n.nspname = 'game' AND c.relkind IN ('r', 'p') AND NOT c.relrowsecurity
+				  AND c.relname <> 'flyway_schema_history'
+				ORDER BY c.relname
+				""", String.class);
+		assertThat(without).isEmpty();
+		assertThat(jdbc.queryForObject("""
+				SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+				WHERE n.nspname = 'game' AND c.relkind = 'r'
+				""", Integer.class)).isGreaterThan(50);
 	}
 
 	@Test

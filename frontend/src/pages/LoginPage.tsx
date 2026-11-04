@@ -6,6 +6,8 @@ import { ResendConfirmation } from '../auth/ResendConfirmation'
 import { AuthFrame } from '../components/AppShell'
 import { Alert } from '../components/Alert'
 import { PasswordField } from '../components/PasswordInput'
+import { Captcha } from '../components/Captcha'
+import { useCaptcha } from '../auth/useCaptcha'
 
 export function LoginPage() {
   const { session, signIn, redirectError } = useAuth()
@@ -16,6 +18,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [unconfirmed, setUnconfirmed] = useState(false)
+  const captcha = useCaptcha()
 
   const from = (location.state as { from?: string } | null)?.from ?? '/'
 
@@ -29,7 +32,7 @@ export function LoginPage() {
     setUnconfirmed(false)
     setSubmitting(true)
     try {
-      await signIn(email.trim(), password)
+      await signIn(email.trim(), password, captcha.consume())
       navigate(from, { replace: true })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Sign-in failed.'
@@ -68,7 +71,8 @@ export function LoginPage() {
         <p className="auth-forgot">
           <Link to="/forgot-password">Forgot your password?</Link>
         </p>
-        <button type="submit" className="button button--primary" disabled={submitting || !email || !password}>
+        <Captcha onToken={captcha.setToken} resetSignal={captcha.resetSignal} />
+        <button type="submit" className="button button--primary" disabled={submitting || !email || !password || !captcha.ready}>
           {submitting ? 'Signing in…' : 'Log in'}
         </button>
       </form>

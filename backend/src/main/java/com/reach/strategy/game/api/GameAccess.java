@@ -20,7 +20,7 @@ public interface GameAccess {
 	 * @param yourTurn whether the caller is the active player right now
 	 * @param round current round (0 before the start)
 	 * @param turnNumber global player-turn counter (movement eligibility is keyed on it)
-	 * @param finished whether the game has finished (read-only from then on)
+	 * @param finished whether the game has finished, or was abandoned after its start (read-only from then on)
 	 * @param paused normal play is paused for a peace conference (Phase 10)
 	 * @param eliminated the caller's nation has been eliminated (Phase 10)
 	 */

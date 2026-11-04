@@ -1,0 +1,10 @@
+[Unit]
+Description=Nightly Clash of Empires database backup
+
+[Timer]
+# 30 minutes after the other app's backup on the same VPS.
+OnCalendar=*-*-* 03:45:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

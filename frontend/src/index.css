@@ -3481,3 +3481,73 @@ a.person:focus-visible .person__display {
   font-size: 0.85rem;
   color: var(--text-muted);
 }
+
+/* --- Moderation (Q-MOD1) ------------------------------------------------------------------------ */
+.badge--abandoned {
+  color: var(--text-muted);
+  border-color: var(--border-strong);
+}
+
+.admin {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  align-items: start;
+}
+
+.admin__search {
+  display: flex;
+  gap: 0.5rem;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.admin__search .field {
+  flex: 1 1 14rem;
+}
+
+.admin__list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.admin__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  justify-content: space-between;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+}
+
+.admin__who {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin__meta {
+  font-size: 0.85rem;
+}
+
+.admin__banned {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.admin__actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.admin__reason {
+  flex-basis: 100%;
+  display: grid;
+  gap: 0.5rem;
+}

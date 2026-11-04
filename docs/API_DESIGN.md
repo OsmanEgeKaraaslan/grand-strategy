@@ -408,13 +408,25 @@ search ≤ 32, lists ≤ 100 ids).
 `currentRound`, `yourTurn`, `paused`, `youAreEliminated`, `humanPlayers`, `computerPlayers` and
 `lastActivityAt` (Phase 13A).
 
-### 2.7 Operator (Phase 16+; none implemented)
+### 2.7 Moderation (2026-11-03 — implemented, Q-MOD1)
 
-No operator endpoints exist (Phase 15B audit). Operator tasks such as removing the Supabase user of
-a deleted account are manual (PRODUCTION_READINESS.md §5.4). A future `/admin/**` would require an
-operator role claim (or allowlisted player ids):
-mark game abandoned, view incidents, create/schedule announcement campaigns.
-Not exposed in the public UI.
+Administrators only: the accounts whose Supabase user ids are listed in `ADMIN_SUPABASE_USER_IDS`.
+Everyone else gets 403 `ADMIN_ONLY`; there is no way to become an administrator through the API.
+Rate-limit policy `admin` (120/min). Every change is recorded in `moderation_action`. `GET /me`
+returns `admin: true` for administrators so the frontend can show its `/admin` page.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/admin/players?query=` | Human accounts whose handle or display name contains the text, or whose id it is (newest 25 without a query): id, username, displayName, createdAt, deleted, bannedAt, banReason, admin |
+| POST | `/admin/players/{id}/ban` | `{reason}` (3–200 chars, shown to the player). Suspends the account; lobbies abandoned, seats in running games handed to the computer, pending invitations and the Quick Match search cancelled |
+| POST | `/admin/players/{id}/unban` | Reinstates the account (seats stay with the computer) |
+| POST | `/admin/players/{id}/name-reset` | Generated display name and handle; the player chooses a new handle |
+| GET | `/admin/games` | Lobbies and running games, least recently active first (50) |
+| POST | `/admin/games/{id}/abandon` | `{reason}`. Marks the game `ABANDONED` |
+
+Administrators cannot moderate themselves or each other (409 `CANNOT_MODERATE_ADMIN`). Other
+operator tasks, such as removing the Supabase user of a deleted account, stay manual
+(PRODUCTION_READINESS.md §5.4).
 
 ## 3. Errors
 
@@ -437,9 +449,10 @@ RFC 9457 problem details with a stable machine `code`:
 |---|---|---|
 | 400 | Malformed request, DTO validation | `VALIDATION_FAILED` (with `errors[]` per field), `IDEMPOTENCY_KEY_MISSING` |
 | 401 | Missing/invalid/expired token | `UNAUTHENTICATED` |
-| 403 | Authenticated but not allowed | `NOT_HOST`, `NOT_OWNER`, `TERMS_NOT_ACCEPTED`, `ACCOUNT_DELETED`, `REAUTHENTICATION_REQUIRED` |
+| 403 | Authenticated but not allowed | `NOT_HOST`, `NOT_OWNER`, `TERMS_NOT_ACCEPTED`, `ACCOUNT_DELETED`, `ACCOUNT_SUSPENDED` (detail carries the reason), `ADMIN_ONLY`, `REAUTHENTICATION_REQUIRED` |
 | 404 | Not found **or not visible to you** | `GAME_NOT_FOUND`, `INVITE_CODE_NOT_FOUND`, `MAP_NOT_FOUND`, `CITY_NOT_FOUND`, `RESOURCE_NOT_FOUND`, `PLAYER_NOT_FOUND`, `FRIEND_REQUEST_NOT_FOUND`, `INVITATION_NOT_FOUND` |
-| 409 | State conflict — retry after refresh may help | `NOT_ACTIVE_PLAYER`, `TURN_CHANGED`, `GAME_NOT_IN_PROGRESS`, `GAME_FINISHED`, `ALREADY_AT_WAR`, `TRUCE_IN_EFFECT`, `PEACE_TERMS_NO_LONGER_VALID`, `GAME_FULL`, `DISPLAY_NAME_TAKEN`, `NATION_TAKEN`, `GAME_NOT_READY`, `NATIONS_NOT_SELECTED`, `GAME_ALREADY_STARTED`, `PROVINCE_OCCUPIED`, `USERNAME_TAKEN`, `ALREADY_FRIENDS`, `PLAYER_UNAVAILABLE`, `REQUEST_NOT_PENDING`, `TOO_MANY_PENDING_REQUESTS`, `TOO_MANY_FRIENDS`, `NOT_FRIENDS`, `ALREADY_IN_GAME`, `LOBBY_NOT_JOINABLE`, `TOO_MANY_INVITATIONS`, `INVITATION_NOT_PENDING`, `INVITATION_INVALID`, `TOO_MANY_ACTIVE_GAMES`, `OFFENSIVE_CALLS_NOT_AVAILABLE`, `TOO_MANY_UNFINISHED_GAMES`, `TERMS_VERSION_OUTDATED`, `ACCOUNT_DELETION_BLOCKED` |
+| 409 | State conflict — retry after refresh may help | `NOT_ACTIVE_PLAYER`, `TURN_CHANGED`, `GAME_NOT_IN_PROGRESS`, `GAME_FINISHED`, `ALREADY_AT_WAR`, `TRUCE_IN_EFFECT`, `PEACE_TERMS_NO_LONGER_VALID`, `GAME_FULL`, `DISPLAY_NAME_TAKEN`, `NATION_TAKEN`, `GAME_NOT_READY`, `NATIONS_NOT_SELECTED`, `GAME_ALREADY_STARTED`, `PROVINCE_OCCUPIED`, `USERNAME_TAKEN`, `ALREADY_FRIENDS`, `PLAYER_UNAVAILABLE`, `REQUEST_NOT_PENDING`, `TOO_MANY_PENDING_REQUESTS`, `TOO_MANY_FRIENDS`, `NOT_FRIENDS`, `ALREADY_IN_GAME`, `LOBBY_NOT_JOINABLE`, `TOO_MANY_INVITATIONS`, `INVITATION_NOT_PENDING`, `INVITATION_INVALID`, `TOO_MANY_ACTIVE_GAMES`, `OFFENSIVE_CALLS_NOT_AVAILABLE`, `TOO_MANY_UNFINISHED_GAMES`, `TERMS_VERSION_OUTDATED`, `ACCOUNT_DELETION_BLOCKED`, `GAME_ABANDONED`, `GAME_ALREADY_CLOSED`, `CANNOT_MODERATE_ADMIN` |
+| 503 | The server is at its game capacity; retry later | `GAME_CAPACITY_REACHED` (new lobby, Quick Match or matchmaking search while `GAME_MAX_UNFINISHED_TOTAL` games are unfinished) |
 | 413 | Body larger than 64 KB | `PAYLOAD_TOO_LARGE` |
 | 422 | Well-formed but illegal game action | `INVITEE_NOT_ELIGIBLE`, `INVALID_DISPLAY_NAME`, `INVALID_USERNAME`, `USERNAME_RESERVED`, `INVALID_EMBLEM`, `CANNOT_FRIEND_SELF`, `CANNOT_BLOCK_SELF`, `NATION_NOT_FOUND`, `TIER_LOCKED`, `WORKSHOP_LIMIT_REACHED`, `INSUFFICIENT_GOLD`, `INSUFFICIENT_POPULATION`, `NOT_ADJACENT`, `BATTALION_ALREADY_MOVED`, `BATTALION_NOT_READY` (recruited this turn), `BATTALIONS_NOT_COLOCATED`, `CITY_BESIEGED`, `NOT_FRIENDLY_TERRITORY`, `IN_ARREARS`, `TECH_REQUIRED`, `IDEMPOTENCY_KEY_REUSED` |
 | 429 | Per-account budget exhausted (Phase 15B; policies in SECURITY_AUDIT.md §4), with `Retry-After` seconds | `RATE_LIMITED` |

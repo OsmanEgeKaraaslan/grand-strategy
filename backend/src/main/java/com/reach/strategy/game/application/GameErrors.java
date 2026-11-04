@@ -34,6 +34,10 @@ final class GameErrors {
 				"The game has finished; its final state can be viewed but not changed.");
 	}
 
+	static ApiException abandoned() {
+		return new ApiException(HttpStatus.CONFLICT, "GAME_ABANDONED", "This game was closed by an administrator.");
+	}
+
 	static ApiException pausedForConference() {
 		return new ApiException(HttpStatus.CONFLICT, "GAME_PAUSED_FOR_CONFERENCE",
 				"A peace conference is in progress; normal play resumes when it is concluded or cancelled.");
@@ -46,7 +50,11 @@ final class GameErrors {
 
 	/** Commands need a running game: not started yet, or already finished. */
 	static ApiException notPlayable(GameStatus status) {
-		return status == GameStatus.FINISHED ? finished() : notInProgress();
+		return switch (status) {
+			case FINISHED -> finished();
+			case ABANDONED -> abandoned();
+			default -> notInProgress();
+		};
 	}
 
 }

@@ -1,6 +1,6 @@
-# Fictional Grand Strategy (working title)
+# Clash of Empires
 
-A browser-based, multiplayer, **classic sequential turn-based** grand strategy game set
+**Clash of Empires** is a browser-based, multiplayer, **classic sequential turn-based** grand strategy game set
 in an entirely fictional world. Players govern nations made of irregular provinces,
 grow numeric populations into a working economy, recruit infantry, cavalry and
 artillery, fight deterministic terrain-dependent battles, besiege and starve cities,
@@ -32,7 +32,8 @@ The project has two equal goals:
 | **12–13 — Profiles, friends, invitations, Quick Match** | **Implemented**: unique usernames, emblems and public profiles with statistics from stored results; friend requests, friendships, blocks and in-app notifications; host invitations of friends into private lobbies; *My active games* with resume; unranked Quick Match (two humans, eight computer nations) on a race-safe PostgreSQL queue; social panel on the dashboard and inside a running game. All backend (unit + PostgreSQL) and frontend tests pass locally |
 | **15 — Closed beta readiness: accounts, legal, security** | **Implemented**: password recovery and change, resend confirmation, account deletion (anonymization), versioned Terms/Privacy acceptance, draft legal pages with operator placeholders ([privacy inventory](docs/DATA_PRIVACY_INVENTORY.md)); authorization matrix over every endpoint, per-account rate limits, resource bounds, security headers, dependency patch upgrade ([security audit](docs/SECURITY_AUDIT.md)); production configuration, Docker/Caddy templates and backup scripts ([production readiness](docs/PRODUCTION_READINESS.md)). Nothing deployed; legal texts are drafts. All backend (unit + PostgreSQL) and frontend tests pass locally |
 | **Playtest feedback (2026-10-29)** | **Implemented**: UX cleanup (map-based diplomacy from a province's owner, History window, population change per round, password visibility, icon tabs, 3D view hidden, duplicate order buttons removed) and ruleset **v8** (truces no longer block valid calls to arms, offensive invitations for normal allies, computer peace decisions that value held land). New games use v8; older games keep their rules |
-| Next | Operator decisions (legal texts, SMTP, Supabase production settings), staging and a restore drill, then Phase 16 (deployment and closed beta) |
+| **Naming and legal texts (2026-11-02)** | The game is **Clash of Empires**; the twelve factions have new names (migration V22, also in running games); Terms, Privacy Policy and Cookie Notice are version 1.0, written from how the application works (contact address via `VITE_CONTACT_EMAIL`) |
+| Next | Operator steps (contact mailbox, SMTP, Supabase production settings), staging and a restore drill, then Phase 16 (deployment and closed beta) |
 
 Playable so far: create a lobby, invite a rival, choose nations, start, take turns on the map, earn gold and build workshops, recruit, reinforce and disband battalions, move them, fight battles, occupy open provinces, besiege fortresses and repair the damage, build research institutions, unlock technology and doctrines, upgrade workshops to Tier 2 and watch cities grow. Declare war, form alliances, negotiate peace with territory, gold, tribute and people, and play a complete game to its round-30 result. Pick a username, add friends, invite them into a private game, resume any of your games from the dashboard, or find an opponent with Quick Match. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
@@ -148,7 +149,7 @@ Needs a Supabase project with the redirect URLs above (and, to see the emails, C
 the built-in sender is enough locally).
 
 1. **Sign-up consent**: on *Register* the button refuses until the Terms checkbox is ticked; the
-   legal links open `/legal/terms`, `/legal/privacy`, `/legal/cookies` (drafts, placeholders
+   legal links open `/legal/terms`, `/legal/privacy`, `/legal/cookies` (version 1.0; the contact address comes from `VITE_CONTACT_EMAIL`
    highlighted). After confirming the email and signing in, no acceptance screen appears.
 2. **Existing account**: sign in with an account created before Phase 15 — the *Before you play*
    screen appears; accept it and the dashboard opens.
@@ -323,7 +324,7 @@ set the variables in your shell or IDE run configuration (Docker Compose does re
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | **set to the frontend origin** | Browser origins allowed to call the API |
 | `RATE_LIMITS_ENABLED` | `true` | `true` | Per-account request budgets (policies in `application.yml`) |
 | `GAME_MAX_UNFINISHED_PER_PLAYER` | `10` | `10` | Lobbies and running games per account |
-| `LEGAL_TERMS_VERSION` / `LEGAL_PRIVACY_VERSION` | `draft-1` | must match `frontend/src/legal/documents.ts` | Versions players accept |
+| `LEGAL_TERMS_VERSION` / `LEGAL_PRIVACY_VERSION` | `1.0` | must match `frontend/src/legal/documents.ts` | Versions players accept |
 | `LEGAL_REQUIRE_ACCEPTANCE` | `true` | `true` | Refuse game requests until accepted |
 | `POSTGRES_*` | `strategy` …, port `5432` | — | Compose database only |
 

@@ -57,7 +57,7 @@ describe('AuthProvider', () => {
       expect.objectContaining({
         email: 'queen@reach.test',
         options: expect.objectContaining({
-          data: { display_name: 'Queen of Varn', accepted_terms_version: 'draft-1', accepted_privacy_version: 'draft-1' },
+          data: { display_name: 'Queen of Varn', accepted_terms_version: '1.0', accepted_privacy_version: '1.0' },
         }),
       }),
     )
@@ -78,6 +78,27 @@ describe('AuthProvider', () => {
     await waitFor(() => expect(latest?.loading).toBe(false))
 
     await expect(latest!.signIn('a@b.c', 'x')).rejects.toThrow('Wrong email or password.')
+  })
+
+  it('passes the CAPTCHA token to Supabase, and only when there is one', async () => {
+    const client = fakeSupabase(null)
+    let latest: Auth | undefined
+    render(
+      <AuthProvider client={client}>
+        <Probe onAuth={(auth) => (latest = auth)} />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(latest?.loading).toBe(false))
+
+    await latest!.signIn('a@b.c', 'secret-1', 'turnstile-token')
+    expect(client.auth.signInWithPassword).toHaveBeenLastCalledWith({
+      email: 'a@b.c',
+      password: 'secret-1',
+      options: { captchaToken: 'turnstile-token' },
+    })
+    await latest!.signIn('a@b.c', 'secret-1')
+    expect(client.auth.signInWithPassword).toHaveBeenLastCalledWith({ email: 'a@b.c', password: 'secret-1' })
+    expect(describeAuthError('captcha protection: request disallowed (timeout-or-duplicate)')).toMatch(/check that you are human/)
   })
 
   it('maps known Supabase messages', () => {

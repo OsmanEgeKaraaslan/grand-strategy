@@ -34,7 +34,8 @@ class GameAccessService implements GameAccess {
 			.findFirst()
 			.orElseThrow(GameErrors::gameNotFound);
 		boolean inProgress = game.status() == GameStatus.IN_PROGRESS;
-		boolean finished = game.finished();
+		// An abandoned game that had started is read-only like a finished one (Q-MOD1).
+		boolean finished = game.finished() || (game.closed() && game.startedAt() != null);
 		// Nobody has a normal turn while a peace conference pauses play or once eliminated.
 		boolean yourTurn = inProgress && !game.paused() && !mine.eliminated() && game.activeSeat() == mine.seatOrder();
 		return new Membership(game.id(), mine.id(), mine.seatOrder(), inProgress, yourTurn,

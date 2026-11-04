@@ -1,11 +1,13 @@
 # Data Privacy Inventory
 
-Status: **Phase 15A — engineering inventory, not legal advice.** It records what personal data the
-software processes today, where it lives and how it is removed, so the operator (and their legal
-adviser) can complete the legal drafts. It does not establish compliance with any law.
+Status: **2026-11-02 — engineering inventory behind the published legal texts (version 1.0).** It
+records what personal data the software processes, where it lives and how it is removed. The Terms,
+Privacy Policy and Cookie Notice were written from this inventory to describe the application as it
+works; they make no promise the application does not keep. They have not been reviewed by a lawyer,
+and this document does not establish compliance with any particular law.
 
-Legend: **Implemented** = in code and tested; **Operator** = a decision or configuration only the
-operator can make (placeholders `[OPERATOR: …]` in the legal drafts).
+Legend: **Implemented** = in code and tested; **Operator** = something the person running the
+service must do or decide.
 
 ## 1. Systems that hold personal data
 
@@ -71,26 +73,28 @@ the notice and the consent decision must be revisited first. Whether the CDN set
   those users in the Supabase dashboard (Authentication → Users). See
   [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md).
 
-## 5. Open decisions for the operator
+## 5. Decisions and operator duties
 
-| Topic | Needed for | Status |
-| --- | --- | --- |
-| Operator identity, address, contact, representative/DPO | Privacy Policy §1, Terms §1/§9 | **Operator** |
-| Legal bases per purpose | Privacy Policy §3 | **Operator** |
-| Retention periods (accounts, logs, backups, Supabase Auth after deletion) | Privacy Policy §5 | **Operator** |
-| Deadline for removing the Supabase user after deletion | Privacy Policy §5 | **Operator** |
-| Deletion when a game can never finish (forfeit or leave rules) | Deletion flow | **OPEN** (Q-AC1 in OPEN_QUESTIONS.md) |
-| Whether `terms_acceptance` rows are kept after deletion | Evidence vs. minimisation | **Operator** (kept today) |
-| Minimum age | Terms §2, Privacy §8 | **Operator** |
-| Governing law, disputes, consumer statements | Terms §8 | **Operator** |
-| Hosting/SMTP providers, regions, transfers | Privacy §4 | **Operator** |
-| Proxy access logs (IP) on or off, and retention | Privacy §2 | **Operator** |
-| Data export (portability) | Rights | Not implemented — **Operator** to decide if required |
+| Topic | Decision / duty | Status |
+|---|---|---|
+| Contact address | One address for privacy, terms and support questions, configured as `VITE_CONTACT_EMAIL` and shown in all three texts | **Operator**: create the mailbox and set the variable before a public launch |
+| Operator identity | The texts name "the developer" as the operator; some laws require a name and postal address in the privacy notice or an imprint | **Operator** to decide whether to add them |
+| Legal bases | Agreement (providing the game), legitimate interests (security, abuse protection, backups, acceptance records), legal obligations — no consent-based processing | Written (Privacy §3) |
+| Moderation | Suspension date and reason on the player; `moderation_action` (administrator, target, action, reason, time) | Kept while the game is run, as for acceptance records (Privacy §2, §5) |
+| Retention | Account until deletion; finished matches stay (anonymized after deletion); social data deleted with the account; acceptance records kept while the game runs; logs rotated, not archived; encrypted backups kept 30 days (local and offsite at Backblaze B2, EU) | Written (Privacy §5) |
+| Supabase user removal after deletion | "Without undue delay", done by the operator (no service-role key in the app; PRODUCTION_READINESS §5.4) | **Operator** duty |
+| Deletion during unfinished games | Refused; the player may write to the contact address | Written; Q-AC1 stays OPEN for an in-game rule |
+| Minimum age | 16 | Set 2026-11-02 (product owner may change it in Terms §2 and Privacy §9) |
+| Processors | Supabase (auth, database), Cloudflare (Turnstile human check), Backblaze B2 (encrypted backups, EU), email delivery service for account emails, hosting providers — named by category except these | **Operator**: accept Supabase's data processing agreement and the providers' equivalents |
+| International transfers | Stated that providers may process data outside the player's country | Written (Privacy §4) |
+| Proxy access logs (IP) | Off in the Caddy template; turning them on needs a retention period and a Privacy §2 update | Operator |
+| Data export (portability) | No self-service export; requests go to the contact address | Written (Privacy §6) |
 
 ## 6. Where the documents live
 
-The drafts are Markdown in `frontend/src/legal/` (`terms.md`, `privacy.md`, `cookies.md`), rendered
-on the public routes `/legal/terms`, `/legal/privacy` and `/legal/cookies` (linked from sign-in,
-sign-up, the acceptance screen and the account page). Placeholders render highlighted so an
-unfinished draft is visible. They are **drafts requiring operator and legal review**; nothing in
-this repository claims they are compliant.
+The texts are Markdown in `frontend/src/legal/` (`terms.md`, `privacy.md`, `cookies.md`, version 1.0),
+rendered on the public routes `/legal/terms`, `/legal/privacy` and `/legal/cookies` (linked from
+sign-in, sign-up, the acceptance screen and the account page). `{{CONTACT_EMAIL}}` in them is filled
+from `VITE_CONTACT_EMAIL`. When a text changes in a way that matters, raise its version
+(`LEGAL_TERMS_VERSION` / `LEGAL_PRIVACY_VERSION` and `SIGN_UP_VERSIONS` together): every player is
+asked to accept again. A lawyer's review is still recommended before a public launch.

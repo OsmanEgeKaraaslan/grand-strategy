@@ -33,9 +33,10 @@ from four tensions:
 
 ### 2.1 Fictional setting — APPROVED
 
-World, geography, nations, cultures and history are fictional. The first map
-(PROPOSED working name **"The Sundered Reach"**) is a small two-to-four-nation map
-for the vertical slice. Names are placeholders until a world bible exists.
+The game is called **Clash of Empires** (product owner, 2026-11-02). World, geography, nations,
+cultures and history are fictional. The first map, **"The Sundered Reach"**, is a small two-nation
+map for the vertical slice; the Grand Campaign (§15) is the main map. Faction names were set by the
+product owner on 2026-11-02 (migration V22).
 
 ### 2.2 Provinces — APPROVED
 
@@ -452,14 +453,15 @@ can be added (all state reads go through a viewer-aware query service).
   geometry at startup.
 - **Factions and tiers** (starting values per tier in the ruleset, ECONOMY §10b):
 
-  | Faction | Tier | Provinces | People | Playable |
+  | Faction (key) | Tier | Provinces | People | Playable |
   |---|---|---|---|---|
-  | Castavar, Nordmark, Vostrava, Dravonia | POWER | 7 each | 46,000 each | yes |
-  | Aurelian Empire | MAJOR | 12 | 80,000 | no |
-  | Serenna, Karpathia | REGIONAL | 9 each | 49,000 each | no |
-  | Frisia, Helvaria, Aestia | MINOR | 4–5 | 21,000–24,000 | no |
+  | Empires of Kodor (castavar), Kalirferstgrad (nordmark), Porvolo (vostrava), Trots (dravonia) | POWER | 7 each | 46,000 each | yes |
+  | Kingdom of Wilkreen (aurelia) | MAJOR | 12 | 80,000 | no |
+  | Kingdoms of Darpholia (serenna), Friltenbour (karpathia) | REGIONAL | 9 each | 49,000 each | no |
+  | Kingdoms of Frantisco (frisia), Yorklar (helvaria), Krees (aestia) | MINOR | 4–5 | 21,000–24,000 | no |
 
-  The four powers never border each other. The Sundered Reach (two nations) stays available.
+  Display names since migration V22 (2026-11-02); the keys are unchanged. The four powers never
+  border each other. The Sundered Reach (Kingdoms of Berlardfaul and Antara) stays available.
 - **Lobbies** for 2–4 human players (up to the map's maximum); every nation not chosen by a player is
   controlled by the game as a passive placeholder (DIPLOMACY §11) — not an AI.
 - **Turns** stay sequential in seat order; nations without a player and eliminated players are

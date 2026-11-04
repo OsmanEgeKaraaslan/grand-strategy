@@ -2,11 +2,12 @@ import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useApi } from '../api/ApiContext'
-import { describeError } from '../api/client'
+import { ApiError, describeError } from '../api/client'
 import { queryKeys, useMe } from '../api/queries'
 import { Alert } from '../components/Alert'
 import { AuthFrame } from '../components/AppShell'
 import { Spinner } from '../components/Spinner'
+import { useAuth } from './AuthContext'
 
 /**
  * Shows the game only to players who accepted the current Terms of Service and Privacy Policy
@@ -16,9 +17,37 @@ import { Spinner } from '../components/Spinner'
 export function TermsGate({ children }: { children: ReactNode }) {
   const me = useMe()
   if (me.isPending) return <Spinner label="Loading your account…" />
+  if (me.error instanceof ApiError && me.error.code === 'ACCOUNT_SUSPENDED') return <Suspended message={me.error.message} />
   const terms = me.data?.terms
   if (!terms || terms.accepted) return <>{children}</>
   return <AcceptTerms termsVersion={terms.currentTermsVersion} privacyVersion={terms.currentPrivacyVersion} reaccept={terms.acceptedTermsVersion !== null} />
+}
+
+/** An administrator suspended the account (Q-MOD1): the server refuses it, so only signing out is left. */
+function Suspended({ message }: { message: string }) {
+  const { signOut } = useAuth()
+  const queryClient = useQueryClient()
+  return (
+    <AuthFrame title="Account suspended" subtitle="This account can no longer play.">
+      <div className="form">
+        <Alert>{message}</Alert>
+        <p className="muted">
+          If you think this is a mistake, write to the contact address in the{' '}
+          <Link to="/legal/privacy">Privacy Policy</Link>.
+        </p>
+        <button
+          type="button"
+          className="button button--primary"
+          onClick={async () => {
+            await signOut()
+            queryClient.clear()
+          }}
+        >
+          Log out
+        </button>
+      </div>
+    </AuthFrame>
+  )
 }
 
 function AcceptTerms({ termsVersion, privacyVersion, reaccept }: { termsVersion: string; privacyVersion: string; reaccept: boolean }) {

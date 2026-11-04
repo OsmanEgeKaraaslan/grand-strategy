@@ -18,8 +18,12 @@ export interface Auth {
   passwordRecovery: boolean
   /** An email link (confirmation, recovery) that Supabase rejected, e.g. because it expired. */
   redirectError: AuthRedirectError | null
-  signIn(email: string, password: string): Promise<void>
-  signUp(email: string, password: string, displayName: string): Promise<SignUpResult>
+  /**
+   * Every method that talks to Supabase on behalf of a not-yet-proven person takes the CAPTCHA token
+   * of the form (Turnstile; components/Captcha.tsx) when CAPTCHA protection is on.
+   */
+  signIn(email: string, password: string, captchaToken?: string): Promise<void>
+  signUp(email: string, password: string, displayName: string, captchaToken?: string): Promise<SignUpResult>
   signOut(): Promise<void>
   /** A current (auto-refreshed) access token, or null when signed out. */
   accessToken(): Promise<string | null>
@@ -27,13 +31,13 @@ export interface Auth {
    * Asks Supabase to email a recovery link. Never reveals whether the address has an account: only
    * rate-limit and connection problems are reported.
    */
-  requestPasswordReset(email: string): Promise<void>
+  requestPasswordReset(email: string, captchaToken?: string): Promise<void>
   /** Sends the sign-up confirmation email again; as enumeration-safe as requestPasswordReset. */
-  resendConfirmation(email: string): Promise<void>
+  resendConfirmation(email: string, captchaToken?: string): Promise<void>
   /** Sets a new password for the signed-in (or recovering) user. */
   updatePassword(newPassword: string): Promise<void>
   /** Confirms the current password by signing in again, which also refreshes the session's sign-in time. */
-  reauthenticate(password: string): Promise<void>
+  reauthenticate(password: string, captchaToken?: string): Promise<void>
 }
 
 const AuthContext = createContext<Auth | null>(null)
@@ -91,11 +95,11 @@ export function AuthProvider({
       loading,
       passwordRecovery,
       redirectError: initialRedirectError,
-      async signIn(email, password) {
-        const { error } = await client.auth.signInWithPassword({ email, password })
+      async signIn(email, password, captchaToken) {
+        const { error } = await client.auth.signInWithPassword({ email, password, ...captcha(captchaToken) })
         if (error) throw new Error(describeAuthError(error.message))
       },
-      async signUp(email, password, displayName) {
+      async signUp(email, password, displayName, captchaToken) {
         const { data, error } = await client.auth.signUp({
           email,
           password,
@@ -108,6 +112,7 @@ export function AuthProvider({
               accepted_privacy_version: SIGN_UP_VERSIONS.privacy,
             },
             emailRedirectTo: authRedirects.confirmation(),
+            ...(captchaToken ? { captchaToken } : {}),
           },
         })
         if (error) throw new Error(describeAuthError(error.message))
@@ -120,15 +125,18 @@ export function AuthProvider({
         const { data } = await client.auth.getSession()
         return data.session?.access_token ?? null
       },
-      async requestPasswordReset(email) {
-        const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: authRedirects.recovery() })
+      async requestPasswordReset(email, captchaToken) {
+        const { error } = await client.auth.resetPasswordForEmail(email, {
+          redirectTo: authRedirects.recovery(),
+          ...(captchaToken ? { captchaToken } : {}),
+        })
         throwIfReportable(error)
       },
-      async resendConfirmation(email) {
+      async resendConfirmation(email, captchaToken) {
         const { error } = await client.auth.resend({
           type: 'signup',
           email,
-          options: { emailRedirectTo: authRedirects.confirmation() },
+          options: { emailRedirectTo: authRedirects.confirmation(), ...(captchaToken ? { captchaToken } : {}) },
         })
         throwIfReportable(error)
       },
@@ -137,10 +145,10 @@ export function AuthProvider({
         if (error) throw new Error(describeAuthError(error.message))
         setPasswordRecovery(false)
       },
-      async reauthenticate(password) {
+      async reauthenticate(password, captchaToken) {
         const email = session?.user?.email
         if (!email) throw new Error('Your session has ended. Please sign in again.')
-        const { error } = await client.auth.signInWithPassword({ email, password })
+        const { error } = await client.auth.signInWithPassword({ email, password, ...captcha(captchaToken) })
         if (error) {
           throw new Error(
             error.message.toLowerCase().includes('invalid login credentials')
@@ -156,6 +164,11 @@ export function AuthProvider({
   return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>
 }
 
+/** Supabase's sign-in options with the CAPTCHA token, when there is one. */
+function captcha(token: string | undefined) {
+  return token ? { options: { captchaToken: token } } : {}
+}
+
 /**
  * For the emails that must not reveal whether an address is registered: only throttling and
  * connection failures reach the player; everything else looks like success.
@@ -163,7 +176,7 @@ export function AuthProvider({
 function throwIfReportable(error: { message: string } | null) {
   if (!error) return
   const normalized = error.message.toLowerCase()
-  const reportable = ['rate limit', 'for security purposes', 'failed to fetch', 'networkerror', 'load failed']
+  const reportable = ['rate limit', 'for security purposes', 'captcha', 'failed to fetch', 'networkerror', 'load failed']
   if (reportable.some((fragment) => normalized.includes(fragment))) throw new Error(describeAuthError(error.message))
 }
 
@@ -171,6 +184,7 @@ function throwIfReportable(error: { message: string } | null) {
 export function describeAuthError(message: string): string {
   const normalized = message.toLowerCase()
   if (normalized.includes('for security purposes')) return 'Please wait a minute before requesting another email.'
+  if (normalized.includes('captcha')) return 'The check that you are human did not succeed. Please complete it and try again.'
   if (normalized.includes('should be different from the old')) return 'Choose a password different from your current one.'
   if (normalized.includes('auth session missing') || normalized.includes('session_not_found')) {
     return 'Your sign-in link has expired. Please request a new one.'

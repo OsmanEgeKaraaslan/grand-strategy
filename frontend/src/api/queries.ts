@@ -28,7 +28,9 @@ export function useLobby(gameId: string) {
     queryFn: () => api.getGame(gameId),
     // Keep polling until the game starts: joins, nation choices and the start all happen remotely.
     refetchInterval: (query) =>
-      query.state.data?.status === 'IN_PROGRESS' || query.state.data?.status === 'FINISHED' ? false : LOBBY_POLL_INTERVAL_MS,
+      query.state.data?.status === 'IN_PROGRESS' || query.state.data?.status === 'FINISHED' || query.state.data?.status === 'ABANDONED'
+        ? false
+        : LOBBY_POLL_INTERVAL_MS,
     retry: (failureCount, error) => !('status' in error && error.status === 404) && failureCount < 2,
   })
 }

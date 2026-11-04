@@ -20,7 +20,7 @@ describe('LoginPage', () => {
     await userEvent.type(screen.getByLabelText('Password'), 'correct-horse')
     await userEvent.click(screen.getByRole('button', { name: 'Log in' }))
 
-    expect(auth.signIn).toHaveBeenCalledWith('general@reach.test', 'correct-horse')
+    expect(auth.signIn).toHaveBeenCalledWith('general@reach.test', 'correct-horse', undefined)
     expect(await screen.findByText('Dashboard')).toBeInTheDocument()
   })
 

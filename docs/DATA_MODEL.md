@@ -106,6 +106,14 @@ migrations V1–V11 are unchanged.
 | `V18__game_invitations.sql` | `game_invitation` (§3.8) |
 | `V19__matchmaking.sql` | `matchmaking_ticket` (§3.8) |
 
+### 3.0f Naming migration (V22)
+
+| Migration | Changes |
+|---|---|
+| `V24__moderation.sql` | `player.banned_at`, `player.ban_reason` (suspension, Q-MOD1; humans only); game status `ABANDONED`; table `moderation_action` (administrator, action BAN/UNBAN/RESET_NAME/ABANDON_GAME, target player or game, reason, time), with RLS. Seats handed to the computer change `game_player.player_id`/`computer` and `nation.control` |
+| `V23__row_level_security_everywhere.sql` | Enables row-level security on every table of schema `game` except Flyway's history table (19 tables from V11/V14 had none). No policies: only roles with `BYPASSRLS` or the table owner see rows |
+| `V22__rename_factions.sql` | Display names of the 12 nation templates (keys, colours, tiers unchanged) and the per-game copies in `nation.name`, so running games show the new names. Data only |
+
 ### 3.0e Playtest feedback migration (V21)
 
 | Migration | Changes |

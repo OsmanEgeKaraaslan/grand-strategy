@@ -235,6 +235,26 @@ public class Game implements Persistable<UUID> {
 		touch(now);
 	}
 
+	/**
+	 * Any status before FINISHED → ABANDONED (administrator action). The turn state is kept as it was,
+	 * so a started game reads as of the moment it was closed.
+	 *
+	 * @throws IllegalStateException if the game is already finished or abandoned
+	 */
+	public void abandon(Instant now) {
+		if (closed()) {
+			throw new IllegalStateException("Game " + id + " is already " + status);
+		}
+		status = GameStatus.ABANDONED;
+		pausedConferenceId = null;
+		touch(now);
+	}
+
+	/** FINISHED or ABANDONED: nothing changes any more. */
+	public boolean closed() {
+		return status == GameStatus.FINISHED || status == GameStatus.ABANDONED;
+	}
+
 	/** Normal play pauses for a peace conference; round, seat and turn number are preserved. */
 	public void pause(UUID conferenceId, Instant now) {
 		if (status != GameStatus.IN_PROGRESS || pausedConferenceId != null) {
@@ -335,6 +355,10 @@ public class Game implements Persistable<UUID> {
 
 	public Instant startedAt() {
 		return startedAt;
+	}
+
+	public Instant lastActionAt() {
+		return lastActionAt;
 	}
 
 	public record Created(Game game, GamePlayer host) {

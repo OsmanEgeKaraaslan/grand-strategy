@@ -100,10 +100,10 @@ strategy:
       # No new search while the player has this many unfinished games (bounds game creation).
       max-unfinished-games: 5
   # Legal documents players accept (Phase 15A). Raise a version when its text changes: everyone is asked
-  # again. The texts are drafts until the operator has had them reviewed (docs/DATA_PRIVACY_INVENTORY.md).
+  # again (docs/DATA_PRIVACY_INVENTORY.md).
   legal:
-    terms-version: ${LEGAL_TERMS_VERSION:draft-1}
-    privacy-version: ${LEGAL_PRIVACY_VERSION:draft-1}
+    terms-version: ${LEGAL_TERMS_VERSION:1.0}
+    privacy-version: ${LEGAL_PRIVACY_VERSION:1.0}
     require-acceptance: ${LEGAL_REQUIRE_ACCEPTANCE:true}
   web:
     # Every API body is a small JSON document (Phase 15B); larger requests get 413.
@@ -111,9 +111,16 @@ strategy:
   game:
     # Lobbies and running games one account may be seated in at once (Phase 15B).
     max-unfinished-games: ${GAME_MAX_UNFINISHED_PER_PLAYER:10}
+    # Lobbies and running games of the whole server (SECURITY_AUDIT §7 P1): beyond it new games and Quick
+    # Match searches get 503 GAME_CAPACITY_REACHED. Size it to the server (each Quick Match has 8 computers).
+    max-unfinished-games-total: ${GAME_MAX_UNFINISHED_TOTAL:200}
   # Account deletion requires a sign-in this recent (Supabase `amr` claim); PT0S turns the check off.
   account:
     deletion-reauthentication-window: PT10M
+  # Moderation (Q-MOD1): Supabase user ids (Authentication -> Users -> UID) of the administrators,
+  # comma-separated. Empty: nobody can moderate.
+  admin:
+    supabase-user-ids: ${ADMIN_SUPABASE_USER_IDS:}
   # Per-account request budgets (Phase 15B, docs/SECURITY_AUDIT.md §4). capacity requests refill evenly
   # over window. In memory: each API instance counts on its own. Sized well above normal play (a game
   # screen polls about 30 times a minute).
@@ -134,3 +141,4 @@ strategy:
       matchmaking: { capacity: 20, window: PT10M }
       matchmaking-heartbeat: { capacity: 30, window: PT1M }
       account: { capacity: 20, window: PT10M }
+      admin: { capacity: 120, window: PT1M }

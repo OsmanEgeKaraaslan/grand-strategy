@@ -16,7 +16,10 @@ import com.reach.strategy.identity.api.PublicProfiles;
 import com.reach.strategy.social.domain.TicketStore;
 import com.reach.strategy.social.rules.QuickMatchQueue;
 
+import com.reach.strategy.platform.web.ApiException;
+
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -104,7 +107,7 @@ public class MatchmakingService {
 		Optional<TicketStore.Ticket> latest = tickets.latest(me.id(), QUEUE);
 		boolean unopenedMatchRunning = latest.isPresent() && "MATCHED".equals(latest.get().status())
 				&& latest.get().acknowledgedAt() == null
-				&& lobbies.facts(latest.get().matchedGameId()).filter(f -> !"FINISHED".equals(f.status())).isPresent();
+				&& lobbies.facts(latest.get().matchedGameId()).filter(f -> !"FINISHED".equals(f.status()) && !"ABANDONED".equals(f.status())).isPresent();
 		Optional<TicketStore.Ticket> waiting = tickets.waiting(me.id(), QUEUE);
 		return switch (QuickMatchQueue.decideJoin(unopenedMatchRunning, waiting.isPresent(),
 				waiting.isPresent() || unopenedMatchRunning ? 0 : lobbies.unfinishedGames(me.id()), maxUnfinishedGames)) {
@@ -116,6 +119,10 @@ public class MatchmakingService {
 			case REFUSE_TOO_MANY_GAMES -> throw SocialErrors.conflict("TOO_MANY_ACTIVE_GAMES",
 					"Finish some of your " + maxUnfinishedGames + " open games before searching for another.");
 			case START_SEARCH -> {
+				if (!lobbies.capacityAvailable()) {
+					throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "GAME_CAPACITY_REACHED",
+							"The server is running as many games as it can right now. Please try again later.");
+				}
 				UUID id = UUID.randomUUID();
 				tickets.insertWaiting(id, me.id(), QUEUE, now);
 				yield tryMatch(me, id, now);

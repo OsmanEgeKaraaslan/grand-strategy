@@ -83,7 +83,7 @@ The planners in `ai.rules` are pure Java (no Spring, no database, no clock, no `
 - **Deterministic.** Planners use no randomness; ties are broken by id or key. The battle engine
   is unchanged and deterministic.
 - **Explainable.** `ai_decision` keeps every major decision with its reason (e.g. "declare war on
-  Frisian Free Cities: strength 337% of theirs, 26 border prize", "approve revision 2: an
+  Kingdom of Frantisco: strength 337% of theirs, 26 border prize", "approve revision 2: an
   acceptable price while losing"); `ai_turn` keeps goal, actions, failures, observations and
   duration per turn; structured logs (`AiTurnRunner`, `AiNegotiator`) repeat both. Public history
   shows the ordinary events (wars, treaties, battles) — internal scores are not published.

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from './AuthContext'
 import { Alert } from '../components/Alert'
+import { Captcha } from '../components/Captcha'
+import { useCaptcha } from './useCaptcha'
 
 const COOLDOWN_SECONDS = 60
 
@@ -14,6 +16,7 @@ export function ResendConfirmation({ email }: { email: string }) {
   const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [wait, setWait] = useState(0)
+  const captcha = useCaptcha()
 
   useEffect(() => {
     if (wait <= 0) return
@@ -25,7 +28,7 @@ export function ResendConfirmation({ email }: { email: string }) {
     setError(null)
     setState('sending')
     try {
-      await resendConfirmation(email.trim())
+      await resendConfirmation(email.trim(), captcha.consume())
       setState('sent')
       setWait(COOLDOWN_SECONDS)
     } catch (err) {
@@ -40,10 +43,11 @@ export function ResendConfirmation({ email }: { email: string }) {
       {state === 'sent' && (
         <Alert kind="success">If this address has an unconfirmed account, a new confirmation link is on its way.</Alert>
       )}
+      <Captcha onToken={captcha.setToken} resetSignal={captcha.resetSignal} />
       <button
         type="button"
         className="button button--ghost"
-        disabled={!email.includes('@') || state === 'sending' || wait > 0}
+        disabled={!email.includes('@') || state === 'sending' || wait > 0 || !captcha.ready}
         onClick={resend}
       >
         {state === 'sending' ? 'Sending…' : wait > 0 ? `Resend possible in ${wait}s` : 'Resend confirmation email'}

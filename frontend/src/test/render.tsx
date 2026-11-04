@@ -102,6 +102,12 @@ export function fakeApi(overrides: Partial<ApiClient> = {}): ApiClient {
     unlockTechnology: notStubbed('unlockTechnology'),
     unlockDoctrine: notStubbed('unlockDoctrine'),
     upgradeWorkshop: notStubbed('upgradeWorkshop'),
+    adminPlayers: notStubbed('adminPlayers'),
+    banPlayer: notStubbed('banPlayer'),
+    unbanPlayer: notStubbed('unbanPlayer'),
+    resetPlayerName: notStubbed('resetPlayerName'),
+    adminGames: notStubbed('adminGames'),
+    abandonGame: notStubbed('abandonGame'),
     // Social reads (Phases 12–13) are polled on most screens: empty by default so other tests need no stubs.
     getProfile: notStubbed('getProfile'),
     searchPlayers: vi.fn().mockResolvedValue([]),

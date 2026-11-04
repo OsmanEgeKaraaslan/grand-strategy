@@ -11,6 +11,8 @@ import { Alert } from '../components/Alert'
 import { AppShell } from '../components/AppShell'
 import { PasswordField } from '../components/PasswordInput'
 import { LegalLinks } from './LegalPage'
+import { Captcha } from '../components/Captcha'
+import { useCaptcha } from '../auth/useCaptcha'
 
 /**
  * Account settings (Phase 15A): password, legal acceptance and account deletion. Password and email
@@ -63,6 +65,7 @@ function ChangePassword() {
   const [error, setError] = useState<string | null>(null)
   const [changed, setChanged] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const captcha = useCaptcha()
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -72,7 +75,7 @@ function ChangePassword() {
     if (problem) return
     setSubmitting(true)
     try {
-      await reauthenticate(current)
+      await reauthenticate(current, captcha.consume())
       await updatePassword(password)
       setChanged(true)
       setCurrent('')
@@ -98,7 +101,8 @@ function ChangePassword() {
           onPassword={setPassword}
           onConfirmation={setConfirmation}
         />
-        <button type="submit" className="button button--primary" disabled={submitting}>
+        <Captcha onToken={captcha.setToken} resetSignal={captcha.resetSignal} />
+        <button type="submit" className="button button--primary" disabled={submitting || !captcha.ready}>
           {submitting ? 'Saving…' : 'Change password'}
         </button>
       </form>
@@ -117,11 +121,12 @@ function DeleteAccount() {
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const captcha = useCaptcha()
 
   const deletion = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (captchaToken: string | undefined) => {
       // A fresh sign-in proves the password and satisfies the server's recent-sign-in check.
-      await reauthenticate(password)
+      await reauthenticate(password, captchaToken)
       return api.deleteAccount()
     },
     onSuccess: async () => {
@@ -143,7 +148,7 @@ function DeleteAccount() {
       setError('Enter your password.')
       return
     }
-    deletion.mutate()
+    deletion.mutate(captcha.consume())
   }
 
   return (
@@ -162,7 +167,8 @@ function DeleteAccount() {
           <span>Type DELETE to confirm</span>
           <input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} autoComplete="off" />
         </label>
-        <button type="submit" className="button button--danger" disabled={deletion.isPending}>
+        <Captcha onToken={captcha.setToken} resetSignal={captcha.resetSignal} />
+        <button type="submit" className="button button--danger" disabled={deletion.isPending || !captcha.ready}>
           {deletion.isPending ? 'Deleting…' : 'Delete my account'}
         </button>
       </form>

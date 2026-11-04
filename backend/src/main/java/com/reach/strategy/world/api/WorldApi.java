@@ -65,6 +65,12 @@ public interface WorldApi {
 	void markEliminated(UUID gameId, UUID nationId, int round);
 
 	/**
+	 * The nation of a human seat becomes AI-controlled because the seat was handed to a computer account
+	 * (Q-MOD1: its player was suspended). Must run inside the caller's transaction.
+	 */
+	void handOverToComputer(UUID gameId, UUID gamePlayerId);
+
+	/**
 	 * Legal ownership transfer by an accepted peace treaty (Phase 9) — the only way ownership ever
 	 * changes. The new owner also becomes the controller; city, buildings and population stay with the
 	 * province. Must run inside the caller's transaction.

@@ -295,9 +295,13 @@ APPROVED: no automatic timeout rule. Design:
   `last_action_at`, so stalls are visible.
 - **No concede or surrender** in the MVP (APPROVED 2026-10-17).
 - **Host cancel** for lobbies.
-- **Admin action** (operator endpoint) to mark a running game `ABANDONED`. This
-  is the only way a running MVP game closes; it is administrative, not a
-  gameplay outcome, and records no winner.
+- **Admin action** (`POST /api/v1/admin/games/{id}/abandon`, implemented 2026-11-03,
+  Q-MOD1) marks a lobby or running game `ABANDONED`. It is administrative, not a
+  gameplay outcome, and records no winner; a started game stays readable, every
+  command is refused with `GAME_ABANDONED`.
+- **Suspended players** (Q-MOD1): their seat in a running game is handed to a new
+  computer account (same seat, nation and turn order; the nation becomes AI); their
+  lobbies are abandoned. If no human is left, the game ends at once (`NO_HUMAN_PLAYERS`).
 - OPEN Q-T3: a player-facing way to handle stalled games (e.g. unanimous vote
   to abandon, or an optional per-lobby turn timer chosen at creation). Nothing is
   implemented until decided.

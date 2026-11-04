@@ -25,7 +25,7 @@ export function AppShell({ children, onOpenSocial }: { children: ReactNode; onOp
       <header className="shell__header">
         <Link to="/" className="brand">
           <span className="brand__mark" aria-hidden="true">⚜</span>
-          <span className="brand__name">Sundered Reach</span>
+          <span className="brand__name">Clash of Empires</span>
         </Link>
         <div className="shell__account">
           <NotificationBell onOpenSocial={onOpenSocial} />
@@ -33,6 +33,11 @@ export function AppShell({ children, onOpenSocial }: { children: ReactNode; onOp
             <Link to="/profile" className="shell__player" title="Your profile">
               <EmblemBadge emblem={me.data.emblem} size={13} />
               {me.data.displayName}
+            </Link>
+          )}
+          {me.data?.admin && (
+            <Link to="/admin" className="button button--ghost">
+              Admin
             </Link>
           )}
           <Link to="/account" className="button button--ghost">
@@ -55,7 +60,7 @@ export function AuthFrame({ title, subtitle, children }: { title: string; subtit
       <div className="auth-card">
         <div className="brand brand--large">
           <span className="brand__mark" aria-hidden="true">⚜</span>
-          <span className="brand__name">Sundered Reach</span>
+          <span className="brand__name">Clash of Empires</span>
         </div>
         <h1>{title}</h1>
         <p className="muted">{subtitle}</p>

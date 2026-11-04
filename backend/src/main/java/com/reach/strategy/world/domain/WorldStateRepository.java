@@ -100,6 +100,15 @@ public class WorldStateRepository {
 				rs.getString("control")), gameId);
 	}
 
+	public void handOverToComputer(UUID gameId, UUID gamePlayerId) {
+		int updated = jdbc.update(
+				"UPDATE game.nation SET control = 'AI' WHERE game_id = ? AND game_player_id = ? AND control = 'HUMAN'",
+				gameId, gamePlayerId);
+		if (updated != 1) {
+			throw new IllegalStateException("No human nation of seat " + gamePlayerId + " in game " + gameId);
+		}
+	}
+
 	public void markEliminated(UUID gameId, UUID nationId, int round) {
 		int updated = jdbc.update(
 				"UPDATE game.nation SET eliminated_round = ? WHERE game_id = ? AND id = ? AND eliminated_round IS NULL", round,

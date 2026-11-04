@@ -35,10 +35,28 @@ public interface GameRepository extends JpaRepository<Game, UUID> {
 			""")
 	List<Game> findAllForMember(@Param("playerId") UUID playerId);
 
+	/** Lobbies and running games of the whole server (bounded, SECURITY_AUDIT §7 P1). */
+	@Query("""
+			select count(g) from Game g
+			where g.status not in (com.reach.strategy.game.domain.GameStatus.FINISHED,
+			                       com.reach.strategy.game.domain.GameStatus.ABANDONED)
+			""")
+	long countUnfinished();
+
+	/** Lobbies and running games, least recently active first (administrators, Q-MOD1). */
+	@Query("""
+			select g from Game g
+			where g.status not in (com.reach.strategy.game.domain.GameStatus.FINISHED,
+			                       com.reach.strategy.game.domain.GameStatus.ABANDONED)
+			order by coalesce(g.lastActionAt, g.updatedAt), g.id
+			""")
+	List<Game> findUnfinished(org.springframework.data.domain.Limit limit);
+
 	/** Lobbies and running games the player is seated in (bounded per player, Phase 15B). */
 	@Query("""
 			select count(g) from Game g
-			where g.status <> com.reach.strategy.game.domain.GameStatus.FINISHED
+			where g.status not in (com.reach.strategy.game.domain.GameStatus.FINISHED,
+			                       com.reach.strategy.game.domain.GameStatus.ABANDONED)
 			  and exists (select 1 from GamePlayer m where m.gameId = g.id and m.playerId = :playerId)
 			""")
 	long countUnfinishedForMember(@Param("playerId") UUID playerId);

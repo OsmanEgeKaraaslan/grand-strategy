@@ -17,7 +17,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * Diplomacy commands and database probes for the Phase 9 integration tests (ruleset v5). Host =
- * Kingdom of Varn (seat 0, odd turns), guest = Ostran Confederacy (even turns). Every new v5 game
+ * Kingdom of Berlardfaul (seat 0, odd turns), guest = Kingdom of Antara (even turns). Every new v5 game
  * starts at peace.
  */
 final class DiplomacyScenario {

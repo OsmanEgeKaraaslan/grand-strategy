@@ -1,0 +1,11 @@
+# Hourly: retries failed uploads, prunes local copies, alerts when the offsite copy is stale.
+[Unit]
+Description=Clash of Empires backup offsite check
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker run --rm --network host --env-file /etc/strategy/backup.env \
+  -v /srv/strategy/backups:/backups \
+  strategy-backup /scripts/offsite.sh

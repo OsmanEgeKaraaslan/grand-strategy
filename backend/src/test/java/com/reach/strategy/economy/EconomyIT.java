@@ -22,7 +22,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * Phase 4 economy against PostgreSQL through the real API: starting state, construction rules and
- * races, round-end income exactly once, and occupation. The host plays the Kingdom of Varn
+ * races, round-end income exactly once, and occupation. The host plays the Kingdom of Berlardfaul
  * (6 provinces, 42,000 people, capital Varnhold with one Tier 1 workshop): 42 gold of farming plus
  * 8 gold extra from the 4,000 workshop workers = 50 gold per round. Ostra is symmetric. Pinned to
  * ruleset v1 (no starting battalions, no upkeep) so it isolates the Phase 4 economy; MilitaryIT covers

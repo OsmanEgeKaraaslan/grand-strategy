@@ -48,8 +48,11 @@ public class GameStateService {
 			.filter(member -> member.playerId().equals(me.id()))
 			.findFirst()
 			.orElseThrow(GameErrors::gameNotFound);
-		if (game.status() != GameStatus.IN_PROGRESS && game.status() != GameStatus.FINISHED) {
-			throw GameErrors.notInProgress();
+		// An abandoned game stays readable if it had started (a closed lobby has no world).
+		boolean readable = game.status() == GameStatus.IN_PROGRESS || game.status() == GameStatus.FINISHED
+				|| (game.status() == GameStatus.ABANDONED && game.startedAt() != null);
+		if (!readable) {
+			throw game.status() == GameStatus.ABANDONED ? GameErrors.abandoned() : GameErrors.notInProgress();
 		}
 
 		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
