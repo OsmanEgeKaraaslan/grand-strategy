@@ -1,0 +1,69 @@
+/* ---------- Atlas (shared by the landing and auth pages) ---------- */
+.atlas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  --land: #2b2924;
+}
+
+.atlas__sea {
+  fill: var(--sea-deep);
+}
+
+.atlas__graticule line {
+  stroke: rgb(111 155 180 / 0.12);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.atlas__province {
+  fill: var(--fill);
+  stroke: var(--map-border);
+  stroke-width: 2.25;
+  stroke-linejoin: round;
+  transition: fill 240ms var(--ease-out), opacity 240ms var(--ease-out);
+}
+
+.atlas__province--dim {
+  fill: var(--land);
+}
+
+.atlas__rivers path {
+  fill: none;
+  stroke: var(--river);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
+
+.atlas__capitals circle {
+  fill: var(--map-ink);
+  stroke: var(--map-border);
+  stroke-width: 3;
+  transition: opacity 240ms var(--ease-out);
+}
+
+.atlas__capitals .atlas__capital--dim {
+  opacity: 0.25;
+}
+
+.atlas--animate .atlas__province {
+  animation: atlas-claim 900ms var(--ease-out) var(--d) both;
+}
+
+@keyframes atlas-claim {
+  from {
+    fill: var(--land);
+  }
+}
+
+.hero-map .atlas__province:hover {
+  fill: var(--c);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas--animate .atlas__province {
+    animation: none;
+  }
+}

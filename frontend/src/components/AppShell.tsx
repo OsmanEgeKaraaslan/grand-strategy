@@ -1,11 +1,15 @@
-import type { ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../auth/AuthContext'
 import { useMe } from '../api/queries'
+import { BrandMark } from './BrandMark'
 import { EmblemBadge } from './social/People'
 import { NotificationBell } from './social/NotificationBell'
 import { LegalLinks } from '../pages/LegalPage'
+
+// The decorative map beside the sign-in forms is loaded on its own so it never delays the form.
+const Atlas = lazy(() => import('../landing/Atlas').then((m) => ({ default: m.Atlas })))
 
 /** Header and frame for signed-in pages. */
 export function AppShell({ children, onOpenSocial }: { children: ReactNode; onOpenSocial?: () => void }) {
@@ -24,7 +28,7 @@ export function AppShell({ children, onOpenSocial }: { children: ReactNode; onOp
     <div className="shell">
       <header className="shell__header">
         <Link to="/" className="brand">
-          <span className="brand__mark" aria-hidden="true">⚜</span>
+          <BrandMark />
           <span className="brand__name">Clash of Empires</span>
         </Link>
         <div className="shell__account">
@@ -35,15 +39,16 @@ export function AppShell({ children, onOpenSocial }: { children: ReactNode; onOp
               {me.data.displayName}
             </Link>
           )}
+          <span className="shell__divider" aria-hidden="true" />
           {me.data?.admin && (
-            <Link to="/admin" className="button button--ghost">
+            <Link to="/admin" className="shell__nav-link">
               Admin
             </Link>
           )}
-          <Link to="/account" className="button button--ghost">
+          <Link to="/account" className="shell__nav-link">
             Account
           </Link>
-          <button type="button" className="button button--ghost" onClick={handleSignOut}>
+          <button type="button" className="shell__nav-link" onClick={handleSignOut}>
             Log out
           </button>
         </div>
@@ -58,16 +63,24 @@ export function AuthFrame({ title, subtitle, children }: { title: string; subtit
   return (
     <div className="auth-frame">
       <div className="auth-card">
-        <div className="brand brand--large">
-          <span className="brand__mark" aria-hidden="true">⚜</span>
+        <Link to="/" className="brand brand--large">
+          <BrandMark />
           <span className="brand__name">Clash of Empires</span>
+        </Link>
+        <div className="auth-card__body">
+          <h1>{title}</h1>
+          <p className="muted">{subtitle}</p>
+          {children}
         </div>
-        <h1>{title}</h1>
-        <p className="muted">{subtitle}</p>
-        {children}
         <footer className="auth-card__footer">
           <LegalLinks />
         </footer>
+      </div>
+      <div className="auth-art" aria-hidden="true">
+        <Suspense fallback={null}>
+          <Atlas />
+        </Suspense>
+        <p className="auth-art__caption">The Grand Campaign: seventy-two provinces, ten nations, thirty rounds.</p>
       </div>
     </div>
   )
