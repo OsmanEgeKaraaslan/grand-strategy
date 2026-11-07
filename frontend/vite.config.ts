@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react'
 import { loadEnv, type Plugin } from 'vite'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import { cloudflareHeaders } from './securityHeaders.ts'
 
 /** Writes Cloudflare Pages' `_headers` (CSP and other security headers) into every production build. */
@@ -40,5 +40,7 @@ export default defineConfig(({ mode }) => ({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // tests/ holds the Playwright end-to-end specs (`npx playwright test`), not Vitest suites.
+    exclude: [...configDefaults.exclude, 'tests/**'],
   },
 }))
