@@ -472,7 +472,6 @@ export function WarCard({
     })`
   const attackers = war.participants.filter((p) => p.side === 'ATTACKER')
   const defenders = war.participants.filter((p) => p.side === 'DEFENDER')
-  const max = war.score.maxScore
   const net = war.score.net
   return (
     <article className="war" aria-label={`War: ${names.nation(war.attackerLeaderId)} against ${names.nation(war.defenderLeaderId)}`}>
@@ -492,16 +491,11 @@ export function WarCard({
           Allies who joined are legally at war; battles with several nations on one side arrive in a later phase.
         </p>
       )}
-      <div className="war__score" role="meter" aria-valuemin={-max} aria-valuemax={max} aria-valuenow={net} aria-label="War score">
-        <ScoreSide title={names.nation(war.attackerLeaderId)} score={war.score.attacker} />
-        <ScoreSide title={names.nation(war.defenderLeaderId)} score={war.score.defender} />
-      </div>
-      <p>
-        War score: <strong>{net > 0 ? `+${net}` : net}</strong>{' '}
-        <span className="muted">
-          ({net === 0 ? 'even' : `favours ${names.nation(net > 0 ? war.attackerLeaderId : war.defenderLeaderId)}`}; it guides
-          the negotiation but never forces a peace)
-        </span>
+      <WarScore war={war} names={names} />
+      <ScoreTable war={war} names={names} />
+      <p className="war__note muted">
+        {net === 0 ? 'The war is even.' : `The score favours ${names.nation(net > 0 ? war.attackerLeaderId : war.defenderLeaderId)}.`} It
+        guides the negotiation but never forces a peace.
       </p>
       {canNegotiate && (
         <button type="button" className="button button--primary" onClick={onNegotiate}>
@@ -513,16 +507,67 @@ export function WarCard({
   )
 }
 
-function ScoreSide({ title, score }: { title: string; score: SideScore }) {
+/**
+ * Tug-of-war bar: the fill grows from the centre towards the side the score favours, scaled to the
+ * ruleset's maximum. Green when it favours your side, red when it favours the enemy.
+ */
+function WarScore({ war, names }: { war: WarView; names: Names }) {
+  const max = war.score.maxScore
+  const net = war.score.net
+  const share = max > 0 ? Math.min(Math.abs(net), max) / max : 0
+  const favoured = net === 0 ? null : net > 0 ? 'ATTACKER' : 'DEFENDER'
+  const tone = favoured === null || !war.yourSide ? 'neutral' : favoured === war.yourSide ? 'good' : 'bad'
   return (
-    <dl className="facts war__side">
-      <dt>{title}</dt>
-      <dd>
-        <strong>{score.total}</strong> points · battles {score.battles} ({score.battlesWon} won) · sieges {score.sieges} (
-        {score.siegesWon} won) · occupation {score.occupation} ({score.occupiedEnemyPopulation.toLocaleString('en-US')} of{' '}
-        {score.enemyPopulation.toLocaleString('en-US')} enemy people)
-      </dd>
-    </dl>
+    <div className="war__score" role="meter" aria-valuemin={-max} aria-valuemax={max} aria-valuenow={net} aria-label="War score">
+      <div className="war-meter__labels" aria-hidden="true">
+        <span>{names.nation(war.attackerLeaderId)}</span>
+        <strong className={`war-meter__value war-meter__value--${tone}`}>{net > 0 ? `+${net}` : net}</strong>
+        <span>{names.nation(war.defenderLeaderId)}</span>
+      </div>
+      <div className="war-meter__track" aria-hidden="true">
+        <span
+          className={`war-meter__fill war-meter__fill--${tone}`}
+          style={net >= 0 ? { right: '50%', width: `${share * 50}%` } : { left: '50%', width: `${share * 50}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function ScoreTable({ war, names }: { war: WarView; names: Names }) {
+  const a: SideScore = war.score.attacker
+  const d: SideScore = war.score.defender
+  const rows: [string, (s: SideScore) => string][] = [
+    ['Battles', (s) => `${s.battles} (${s.battlesWon} won)`],
+    ['Sieges', (s) => `${s.sieges} (${s.siegesWon} won)`],
+    ['Occupation', (s) => `${s.occupation} · ${s.occupiedEnemyPopulation.toLocaleString('en-US')} of ${s.enemyPopulation.toLocaleString('en-US')} people`],
+  ]
+  return (
+    <table className="war-table">
+      <thead>
+        <tr>
+          <th scope="col">
+            <span className="visually-hidden">Score</span>
+          </th>
+          <th scope="col">{names.nation(war.attackerLeaderId)}</th>
+          <th scope="col">{names.nation(war.defenderLeaderId)}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(([label, value]) => (
+          <tr key={label}>
+            <th scope="row">{label}</th>
+            <td>{value(a)}</td>
+            <td>{value(d)}</td>
+          </tr>
+        ))}
+        <tr className="war-table__total">
+          <th scope="row">Points</th>
+          <td>{a.total}</td>
+          <td>{d.total}</td>
+        </tr>
+      </tbody>
+    </table>
   )
 }
 

@@ -516,3 +516,9 @@ Targeted fixes, no redesign; the full-viewport map, inspectors and design langua
   Gameplay, API and test selectors are unchanged.
 - **Tests.** `LandingPage.test.tsx` covers the landing content and the `/` routing for visitors and
   players. Vitest now excludes `tests/` (Playwright end-to-end specs).
+- **Game screen pass (same day).** Management windows are opaque and only as tall as their content
+  (scrolling past a maximum height) instead of always spanning the screen; window borders, toolbar and
+  icon-button states are neutral rather than accent-tinted; the top bar is solid with tabular numbers.
+  The war card shows the score as a tug-of-war meter (green when it favours your side, red when it
+  favours the enemy; still `role="meter"`) and the per-side breakdown as a table. Research levels
+  read as a step track. Gameplay and API unchanged.
