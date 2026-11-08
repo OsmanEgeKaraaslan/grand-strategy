@@ -522,3 +522,14 @@ Targeted fixes, no redesign; the full-viewport map, inspectors and design langua
   The war card shows the score as a tug-of-war meter (green when it favours your side, red when it
   favours the enemy; still `role="meter"`) and the per-side breakdown as a table. Research levels
   read as a step track. Gameplay and API unchanged.
+
+### Session 8 — 2026-11-08 (dashboard decluttering)
+
+- The dashboard is two columns: playing on the left (Quick Match and a "Private game" tile, then
+  *My active games*), people on the right (the Social panel limited to Friends and Invitations via the
+  new `sections` prop; inside a game the panel keeps all four tabs). It stacks to one column below
+  1020 px, with Social last.
+- Creating and joining a private game open a dialog (`components/Dialog.tsx`: Escape and backdrop
+  close it, focus moves in and back) instead of two always-visible forms.
+- Phone header no longer scrolls sideways (brand name hidden below 560 px); an active game's
+  Resume/Open link always sits in the right column.

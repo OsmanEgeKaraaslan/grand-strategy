@@ -3943,6 +3943,7 @@ a.person:focus-visible .person__display {
 }
 
 .game-list__item > .game-list__resume {
+  grid-column: 2;
   justify-self: end;
 }
 
@@ -4008,4 +4009,190 @@ a.person:focus-visible .person__display {
 .war > p.muted {
   margin: 0 0 0.25rem;
   font-size: 0.85rem;
+}
+
+/* ---------- Dashboard (play on the left, people on the right) ---------- */
+.dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 2rem;
+  align-items: start;
+}
+
+.dashboard__main {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.dashboard__main .hero {
+  margin-bottom: 0.25rem;
+}
+
+.dashboard__start {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  align-items: stretch;
+}
+
+.dashboard__start > .card {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard__start > .card > h2 {
+  margin-bottom: 0.35rem;
+}
+
+.dashboard__start > .card > p {
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+}
+
+.private-game__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: auto;
+}
+
+.dashboard__aside {
+  position: sticky;
+  top: 5rem;
+  min-width: 0;
+}
+
+.dashboard__aside .social-tabs {
+  margin-bottom: 0.25rem;
+}
+
+/* The Quick Match card stays the one accented tile on the page, without a gradient wash. */
+.dashboard .quick-match {
+  background: var(--bg-raised);
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+}
+
+@media (max-width: 1020px) {
+  .dashboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dashboard__aside {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard__start {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- Dialog ---------- */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(8 7 6 / 0.7);
+  animation: dialog-fade 160ms var(--ease-out);
+}
+
+.dialog {
+  width: min(460px, 100%);
+  max-height: calc(100vh - 2rem);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 48px -12px rgb(0 0 0 / 0.7);
+  animation: dialog-rise 200ms var(--ease-out);
+}
+
+.dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.25rem 0;
+}
+
+.dialog__header h2 {
+  margin: 0 0 0.3rem;
+  font-size: 1.35rem;
+}
+
+.dialog__header p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.dialog__body {
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+
+.form__note {
+  margin: -0.25rem 0 0;
+  font-size: 0.85rem;
+}
+
+@keyframes dialog-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes dialog-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog-backdrop,
+  .dialog {
+    animation: none;
+  }
+}
+
+/* Both start tiles end on a button row aligned to the bottom edge. */
+.dashboard__start .quick-match__body {
+  margin-top: auto;
+  display: grid;
+  justify-items: start;
+  gap: 0.6rem;
+}
+
+.dashboard__start .button {
+  padding: 0 0.9rem;
+}
+
+/* Phones: the header keeps the mark, bell, player and actions on one line without sideways scroll. */
+@media (max-width: 560px) {
+  .shell__header {
+    gap: 0.5rem;
+    padding: 0 0.75rem;
+  }
+
+  .shell__header .brand__name,
+  .shell__divider {
+    display: none;
+  }
+
+  .shell__account {
+    gap: 0;
+    min-width: 0;
+  }
+
+  .shell__nav-link,
+  .shell__player {
+    padding: 0 0.5rem;
+    white-space: nowrap;
+  }
 }
