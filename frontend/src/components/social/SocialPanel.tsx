@@ -28,18 +28,28 @@ export type SocialTab = 'friends' | 'invitations' | 'games' | 'match'
  * dashboard and over the map during a game. Opening or switching tabs never starts a search or
  * leaves the current game; only explicit buttons act.
  */
-export function SocialPanel({ currentGameId, initialTab = 'friends' }: { currentGameId?: string; initialTab?: SocialTab }) {
+export function SocialPanel({
+  currentGameId,
+  initialTab = 'friends',
+  sections,
+}: {
+  currentGameId?: string
+  initialTab?: SocialTab
+  /** Tabs to offer; the dashboard shows games and Quick Match on the page itself and passes only the people tabs. */
+  sections?: SocialTab[]
+}) {
   const [tab, setTab] = useState<SocialTab>(initialTab)
   const friends = useFriends()
   const invitations = useInvitations()
   const incomingRequests = friends.data?.incoming.length ?? 0
   const incomingInvitations = invitations.data?.incoming.length ?? 0
-  const tabs: { key: SocialTab; label: string; badge: number }[] = [
+  const allTabs: { key: SocialTab; label: string; badge: number }[] = [
     { key: 'friends', label: 'Friends', badge: incomingRequests },
     { key: 'invitations', label: 'Invitations', badge: incomingInvitations },
     { key: 'games', label: 'Games', badge: 0 },
     { key: 'match', label: 'Quick Match', badge: 0 },
   ]
+  const tabs = allTabs.filter((t) => !sections || sections.includes(t.key))
 
   return (
     <section className="card social-panel" aria-labelledby="social-title">

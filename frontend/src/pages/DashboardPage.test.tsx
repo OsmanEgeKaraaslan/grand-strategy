@@ -59,7 +59,10 @@ describe('DashboardPage', () => {
     })
     renderDashboard(api)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Create game' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create a game' }))
+    const dialog = screen.getByRole('dialog', { name: 'Create a private game' })
+    expect(within(dialog).getByRole('textbox', { name: 'Game name' })).toHaveFocus()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Create game' }))
 
     expect(api.createGame).toHaveBeenCalledWith({ name: 'New campaign', maxPlayers: 2, mapKey: undefined }, expect.anything())
     expect(await screen.findByText('Lobby page')).toBeInTheDocument()
@@ -77,6 +80,7 @@ describe('DashboardPage', () => {
     })
     renderDashboard(api)
 
+    await userEvent.click(screen.getByRole('button', { name: 'Create a game' }))
     const map = await screen.findByRole('combobox', { name: /^Map/ })
     expect(map).toHaveValue('grand-campaign')
     expect(screen.getByText(/Nations nobody chooses are played by the computer/)).toBeInTheDocument()
@@ -102,6 +106,7 @@ describe('DashboardPage', () => {
     })
     renderDashboard(api)
 
+    await userEvent.click(screen.getByRole('button', { name: 'Join with a code' }))
     await userEvent.type(screen.getByLabelText('Invitation code'), 'abcd-efgh-jklm')
     await userEvent.click(screen.getByRole('button', { name: 'Join game' }))
 
@@ -118,10 +123,32 @@ describe('DashboardPage', () => {
       }),
     )
 
+    await userEvent.click(screen.getByRole('button', { name: 'Join with a code' }))
     await userEvent.type(screen.getByLabelText('Invitation code'), 'ABCD-EFGH-JKLM')
     await userEvent.click(screen.getByRole('button', { name: 'Join game' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('This game is already full.')
+  })
+
+  it('keeps friends and invitations in their own column, without repeating games or Quick Match', async () => {
+    renderDashboard(fakeApi({ getMe: vi.fn().mockResolvedValue(me), listGames: vi.fn().mockResolvedValue([]) }))
+
+    const aside = screen.getByRole('complementary', { name: 'Friends and invitations' })
+    const tabs = within(aside).getAllByRole('tab').map((tab) => tab.textContent)
+    expect(tabs).toEqual(['Friends', 'Invitations'])
+    expect(screen.getAllByRole('region', { name: 'Quick Match' })).toHaveLength(1)
+  })
+
+  it('closes the create dialog with Escape without creating anything', async () => {
+    const api = fakeApi({ getMe: vi.fn().mockResolvedValue(me), listGames: vi.fn().mockResolvedValue([]), createGame: vi.fn() })
+    renderDashboard(api)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Create a game' }))
+    await userEvent.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create a game' })).toHaveFocus()
+    expect(api.createGame).not.toHaveBeenCalled()
   })
 
   it('logs out and returns to the login page', async () => {
