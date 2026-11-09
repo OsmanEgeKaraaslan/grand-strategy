@@ -36,3 +36,12 @@ REVOKE ALL ON ALL TABLES IN SCHEMA game FROM anon, authenticated;
 
 -- Check (should list every game table with rowsecurity = true and owner strategy_migrator):
 -- SELECT tablename, tableowner, rowsecurity FROM pg_tables WHERE schemaname = 'game' ORDER BY 1;
+
+-- ===== STEP 3 — optional: let the backup also copy the accounts (BACKUP_INCLUDE_AUTH=true) ======
+
+-- Read-only access to Supabase Auth's tables, so a lost project does not lose the accounts the game
+-- rows point to. Supabase may refuse grants on its own schemas for your role; if so, keep
+-- BACKUP_INCLUDE_AUTH=false and rely on Supabase's managed backups (Pro plan) for the accounts.
+GRANT USAGE ON SCHEMA auth TO strategy_backup;
+GRANT SELECT ON ALL TABLES IN SCHEMA auth TO strategy_backup;
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA auth TO strategy_backup;

@@ -194,6 +194,18 @@ class TurnIT {
 		assertThat(status(changed)).isEqualTo(200);
 	}
 
+	@Test
+	void aMatchingEtagDoesNotLetOutsidersSeeTheGame() throws Exception {
+		Lobby game = api.startedGame("Polling privacy");
+		String etag = api.state(game.host(), game.gameId()).getResponse().getHeader(HttpHeaders.ETAG);
+
+		// The cheap version check runs before the full read model; it must refuse non-members the same way.
+		MvcResult outsider = mockMvc.perform(get("/api/v1/games/" + game.gameId() + "/state")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer " + ApiDriver.newPlayer())
+			.header(HttpHeaders.IF_NONE_MATCH, etag)).andReturn();
+		assertThat(status(outsider)).isEqualTo(404);
+	}
+
 	private Integer rounds(Lobby game) {
 		return jdbc.queryForObject("SELECT count(*) FROM game.round_resolution WHERE game_id = ?::uuid", Integer.class,
 				game.gameId());

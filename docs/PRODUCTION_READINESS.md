@@ -55,9 +55,9 @@ Profiles: `local` (default), `test`, `prod`. Prod reads everything from the envi
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | yes | — | Supabase Postgres, **direct or session-mode** (not the transaction pooler), `sslmode=require` |
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | yes | — | Supabase Postgres, **direct or session-mode** (not the transaction pooler), `sslmode=require`. Via the session pooler (VPS without IPv6) the user is `<role>.<project-ref>` |
 | `FLYWAY_USER`, `FLYWAY_PASSWORD` | no | DB user | Separate DDL role for migrations |
-| `DB_POOL_SIZE`, `DB_CONNECTION_TIMEOUT_MS` | no | 10, 10000 | Keep pool × instances below the Supabase connection limit |
+| `DB_POOL_SIZE`, `DB_CONNECTION_TIMEOUT_MS` | no | 10, 10000 | Keep pool × instances (+ migrations, backup job) below the Supabase connection limit; 5 per VPS on the free tier |
 | `SUPABASE_URL` | yes | — | Issuer and JWKS location |
 | `SUPABASE_JWT_AUDIENCE`, `SUPABASE_JWT_ALGORITHMS` | no | `authenticated`, `ES256,RS256` | Token checks |
 | `CORS_ALLOWED_ORIGINS` | yes | — | Exact frontend origin(s) |
@@ -155,11 +155,13 @@ the two origins writes none and warns. 🟡 Verify in staging that sign-in, the 
 ## 8. Backup and restore
 
 - **First line**: Supabase's managed backups (daily on paid plans; point-in-time recovery as an
-  add-on; none on the free plan). They also cover Supabase Auth (emails, password hashes), which our
-  own copy does not: without them, losing the Supabase project means players re-register.
+  add-on; none on the free plan). They also cover Supabase Auth (emails, password hashes). Our own
+  copy covers Auth only with `BACKUP_INCLUDE_AUTH=true` (below); without either, losing the Supabase
+  project means players re-register and their new accounts no longer match their games.
 - **Independent copy** (`deploy/backup/`, image `strategy-backup`: pg_dump 17, GnuPG, rclone, curl):
-  - **Nightly at 03:45 UTC** (`systemd/strategy-backup.timer`): `backup.sh` dumps schema `game` with
-    the read-only role `strategy_backup`, checks the dump with `pg_restore --list` and encrypts it to a
+  - **Nightly at 03:45 UTC** (`systemd/strategy-backup.timer`): `backup.sh` dumps schema `game` (and
+    Supabase's `auth` schema into the same file when `BACKUP_INCLUDE_AUTH=true`, which needs step 3 of
+    `deploy/supabase/app-role.sql`) with the read-only role `strategy_backup`, checks the dump with `pg_restore --list` and encrypts it to a
     GnuPG **public** key before it reaches the disk. The plaintext exists only inside the container.
     The private key is never on the server, so neither the server nor the storage provider can read a
     backup.
@@ -177,7 +179,14 @@ the two origins writes none and warns. 🟡 Verify in staging that sign-in, the 
 - **Restore**: download the `.dump.gpg` (B2 web UI or rclone), decrypt it on the machine that holds the
   private key (`gpg --output x.dump --decrypt x.dump.gpg`), then
   `deploy/backup/restore.sh <dump> <expected-database-name>` (refuses encrypted files and a mismatching
-  target, drops and restores schema `game` in one transaction, prints row counts).
+  target, drops and restores schema `game` in one transaction, prints row counts). It restores only
+  `game`, also from dumps that carry `auth`, so it never touches the target's accounts.
+- **Restoring accounts** (only after losing the Supabase project; 🟡 not rehearsed against Supabase):
+  in the new project, before anyone signs up, load the `auth` rows from the same decrypted dump with
+  `pg_restore --schema=auth --data-only --disable-triggers --no-owner --dbname=<new project URL> <dump>`
+  as the project's `postgres` role, then restore `game` with `restore.sh`. Supabase does not officially
+  support moving `auth` between projects, so rehearse this once on a scratch project and record what
+  was needed.
 
 ### 8.1 Setting it up (🛠 at deployment)
 
@@ -221,6 +230,10 @@ the alert; a backup decrypted with the private key restored into a second databa
 row counts and Flyway version 23; `restore.sh` refuses an encrypted file. Earlier (2026-10-22): a
 restore of all 59 tables with identical row counts, and the `prod` jar starting against the restored
 copy.
+
+🧪 **2026-11-09, locally:** with `BACKUP_INCLUDE_AUTH=true` the encrypted file holds both schemas (no
+plaintext in it); `restore.sh` restored `game` (rows and Flyway version) from it and from a game-only
+dump, removed tables left in the old `game` schema, and left the target's `auth` rows untouched.
 
 🟡 **Not verified:** B2 itself (key capabilities, lifecycle rule, checksums through the B2 API), the
 heartbeat service, the systemd units on a real VPS, and backup or restore against Supabase (network,

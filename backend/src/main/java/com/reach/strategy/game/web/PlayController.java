@@ -14,6 +14,7 @@ import com.reach.strategy.platform.web.ApiException;
 import com.reach.strategy.platform.ratelimit.RateLimited;
 
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.context.request.WebRequest;
+
 
 /** A started game: its state, the sequential-turn commands and, once finished, its result. */
 @RateLimited("game-commands")
@@ -43,16 +44,39 @@ class PlayController {
 
 	/**
 	 * Polled by clients. The ETag is the game's state version and {@code no-cache} makes browsers
-	 * revalidate, so unchanged polls are answered with an empty 304.
+	 * revalidate. The version is checked before the read model is built, so unchanged polls are
+	 * answered with an empty 304 after two indexed lookups.
 	 */
 	@GetMapping("/state")
-	ResponseEntity<GameStateService.GameStateView> state(CurrentPlayer me, @PathVariable UUID gameId, WebRequest request) {
-		GameStateService.GameStateView view = gameState.state(me, gameId);
-		String etag = "\"" + view.stateVersion() + "\"";
-		if (request.checkNotModified(etag)) {
-			return null;
+	ResponseEntity<GameStateService.GameStateView> state(CurrentPlayer me, @PathVariable UUID gameId,
+			@RequestHeader(name = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
+		String current = etag(gameState.version(me, gameId));
+		if (matches(ifNoneMatch, current)) {
+			return ResponseEntity.status(HttpStatus.NOT_MODIFIED).eTag(current).cacheControl(POLL_CACHING).build();
 		}
-		return ResponseEntity.ok().eTag(etag).cacheControl(CacheControl.noCache().cachePrivate()).body(view);
+		// The game may have moved on between the two reads; the body and its ETag come from one snapshot.
+		GameStateService.GameStateView view = gameState.state(me, gameId);
+		return ResponseEntity.ok().eTag(etag(view.stateVersion())).cacheControl(POLL_CACHING).body(view);
+	}
+
+	private static final CacheControl POLL_CACHING = CacheControl.noCache().cachePrivate();
+
+	private static String etag(long stateVersion) {
+		return "\"" + stateVersion + "\"";
+	}
+
+	/** RFC 9110 §13.1.2: weak comparison against each listed tag, or any tag for "*". */
+	static boolean matches(String ifNoneMatch, String etag) {
+		if (ifNoneMatch == null || ifNoneMatch.isBlank()) {
+			return false;
+		}
+		for (String candidate : ifNoneMatch.split(",")) {
+			String tag = candidate.trim();
+			if (tag.equals("*") || (tag.startsWith("W/") ? tag.substring(2) : tag).equals(etag)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

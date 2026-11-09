@@ -40,6 +40,21 @@ public class GameStateService {
 		this.world = world;
 	}
 
+	/**
+	 * The state version alone, with exactly the access rules of {@link #state}: two indexed lookups
+	 * instead of the whole world snapshot. Polls compare it with the client's ETag first, so an unchanged
+	 * game costs almost nothing (docs/SCALABILITY_PLAN.md, Phase 3).
+	 */
+	@Transactional(readOnly = true)
+	public long version(CurrentPlayer me, UUID gameId) {
+		Game game = games.findById(gameId).orElseThrow(GameErrors::gameNotFound);
+		if (!memberships.existsByGameIdAndPlayerId(gameId, me.id())) {
+			throw GameErrors.gameNotFound();
+		}
+		requireReadable(game);
+		return game.stateVersion();
+	}
+
 	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 	public GameStateView state(CurrentPlayer me, UUID gameId) {
 		Game game = games.findById(gameId).orElseThrow(GameErrors::gameNotFound);
@@ -48,12 +63,7 @@ public class GameStateService {
 			.filter(member -> member.playerId().equals(me.id()))
 			.findFirst()
 			.orElseThrow(GameErrors::gameNotFound);
-		// An abandoned game stays readable if it had started (a closed lobby has no world).
-		boolean readable = game.status() == GameStatus.IN_PROGRESS || game.status() == GameStatus.FINISHED
-				|| (game.status() == GameStatus.ABANDONED && game.startedAt() != null);
-		if (!readable) {
-			throw game.status() == GameStatus.ABANDONED ? GameErrors.abandoned() : GameErrors.notInProgress();
-		}
+		requireReadable(game);
 
 		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
 		Map<UUID, String> names = playerDirectory.displayNames(members.stream().map(GamePlayer::playerId).toList());
@@ -86,6 +96,15 @@ public class GameStateService {
 				game.status() == GameStatus.IN_PROGRESS && !game.paused() && !mine.eliminated()
 						&& game.activeSeat() == mine.seatOrder(),
 				players, nations, provinces, game.pausedConferenceId(), mine.eliminated());
+	}
+
+	private static void requireReadable(Game game) {
+		// An abandoned game stays readable if it had started (a closed lobby has no world).
+		boolean readable = game.status() == GameStatus.IN_PROGRESS || game.status() == GameStatus.FINISHED
+				|| (game.status() == GameStatus.ABANDONED && game.startedAt() != null);
+		if (!readable) {
+			throw game.status() == GameStatus.ABANDONED ? GameErrors.abandoned() : GameErrors.notInProgress();
+		}
 	}
 
 	/**
