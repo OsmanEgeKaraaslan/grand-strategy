@@ -1,8 +1,14 @@
 # Scalability plan: Supabase database, one VPS today, several VPSs later
 
-Status: **PROPOSED** (2026-11-09). Nothing here is implemented yet; each phase needs the product
-owner's go-ahead, and every new dependency or piece of infrastructure (Redis, a load-test tool, a
+Status: **PROPOSED** (2026-11-09); the product owner started it on 2026-11-09. Each phase needs
+their go-ahead, and every new dependency or piece of infrastructure (Redis, a load-test tool, a
 metrics registry, a paid load balancer) needs written approval first (AGENTS.md §1).
+
+| Phase | State |
+|---|---|
+| 1. Supabase on one VPS | **Code done (2026-11-09):** optional `auth` schema in the backup, game-only restore, session-pooler and pool-size settings documented. 🛠 Supabase project, roles, backup timers and the restore drill are manual steps. |
+| 3. Database load per player | **Done (2026-11-09):** state polls check the version before building the read model. Map caching was already in place (see Phase 3). |
+| 2, 4–7 | Not started |
 
 ## Chosen setup (product owner, 2026-11-09)
 
@@ -86,10 +92,12 @@ not promise it works, and it fixes neither backups nor the size limit.
 - **Backups.**
   - `BACKUP_DATABASE_URL` points at Supabase (session pooler); `pg_dump` 17 or newer (the backup image
     already provides it).
-  - **Also dump the `auth` schema** (accounts and password hashes). Today `backup.sh` dumps only
-    `--schema=game`; if the Supabase project is lost, game data would come back but players could not
-    sign in, and new accounts would get new ids that no longer match their games. Restoring `auth`
-    into a new Supabase project is not officially supported, so rehearse it once.
+  - **Also dump the `auth` schema** (accounts and password hashes), done: `BACKUP_INCLUDE_AUTH=true`
+    adds it to the same encrypted file after step 3 of `deploy/supabase/app-role.sql`; `restore.sh`
+    still restores only `game`. Without it, a lost Supabase project would bring game data back but
+    players could not sign in, and new accounts would get new ids that no longer match their games.
+    Restoring `auth` into a new Supabase project is not officially supported, so rehearse it once
+    (PRODUCTION_READINESS §8).
   - B2 bucket in the same region family, lifecycle rule 30 days, key without `deleteFiles`
     (PRODUCTION_READINESS §8.1).
   - **Restore drill** into a scratch Supabase project before the public launch: backups have not yet
@@ -114,9 +122,12 @@ not promise it works, and it fixes neither backups nor the size limit.
 
 ### Phase 3: Lower database load per player (~1 session, pays off on one VPS and on the free tier)
 
-- **Cheap ETag check**: read only `state_version` (one indexed query) and build the full state view
-  only when it changed. Most 3 s polls are unchanged, so most database work disappears.
-- **Immutable map templates** served with long-lived cache headers so Cloudflare answers repeats.
+- **Cheap ETag check** (done): `GameStateService.version` reads the game row and the caller's
+  membership (two indexed lookups, same access rules as the full read) and the endpoint answers `304`
+  before the world snapshot is built. Most 3 s polls are unchanged, so most database work disappears.
+- **Map templates** (already in place, unchanged): `GET /maps/{id}` is cached privately for one day by
+  the browser. Neither longer nor shared (CDN) caching fits: the request carries the bearer token, and
+  templates are not strictly immutable (V22 renamed factions in place).
 - Optional later: live push (server-sent events fed by PostgreSQL `LISTEN/NOTIFY`, which reaches every
   VPS without a broker; requires the session pooler or direct connection), polling as fallback.
 

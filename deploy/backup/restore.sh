@@ -31,9 +31,12 @@ if [ "$actual" != "$expected" ]; then
 	exit 1
 fi
 
-# The schema is dropped first; pg_restore then runs in one transaction (all objects or none, re-run on failure).
-psql "$RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -qc 'DROP SCHEMA IF EXISTS game CASCADE'
-pg_restore --no-owner --no-privileges --exit-on-error --single-transaction --dbname="$RESTORE_DATABASE_URL" "$dump"
+# Only schema "game" is restored, also from dumps that carry "auth" (BACKUP_INCLUDE_AUTH): the target's
+# accounts are never touched here (see PRODUCTION_READINESS §8 for restoring them). With --schema,
+# pg_restore skips the schema's own entry, so the schema is recreated empty first; pg_restore then runs
+# in one transaction (all objects or none, re-run on failure).
+psql "$RESTORE_DATABASE_URL" -v ON_ERROR_STOP=1 -qc 'DROP SCHEMA IF EXISTS game CASCADE; CREATE SCHEMA game'
+pg_restore --schema=game --no-owner --no-privileges --exit-on-error --single-transaction --dbname="$RESTORE_DATABASE_URL" "$dump"
 
 echo "Restored $dump into $actual. Row counts:"
 psql "$RESTORE_DATABASE_URL" -Atqc "

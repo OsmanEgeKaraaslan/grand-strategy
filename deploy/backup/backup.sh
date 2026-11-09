@@ -11,6 +11,10 @@
 #                           postgresql://strategy_backup:<password>@db.<ref>.supabase.co:5432/postgres?sslmode=require
 #   BACKUP_PUBLIC_KEY_FILE  public key to encrypt to (default /keys/backup-public.asc)
 #   BACKUP_DIR              target directory (default /backups)
+#   BACKUP_INCLUDE_AUTH     "true" also dumps Supabase's "auth" schema (accounts, password hashes) into
+#                           the same file, so losing the Supabase project does not lose the accounts the
+#                           game rows point to. Needs read access to "auth" (deploy/supabase/app-role.sql,
+#                           step 3). Default false.
 set -eu
 
 : "${BACKUP_DATABASE_URL:?set BACKUP_DATABASE_URL}"
@@ -30,9 +34,15 @@ if [ -e "$BACKUP_DIR/$name" ]; then
 	exit 1
 fi
 
-# Custom format (compressed, selectively restorable); schema "game" only, which includes Flyway's
-# history table. Ownership and grants are left out so the dump restores into any role setup.
-pg_dump --format=custom --schema=game --no-owner --no-privileges --file="$work/game.dump" "$BACKUP_DATABASE_URL"
+# Custom format (compressed, selectively restorable); schema "game", which includes Flyway's history
+# table, and optionally "auth". Ownership and grants are left out so the dump restores into any role
+# setup. restore.sh restores only "game"; the auth part is restored by hand (PRODUCTION_READINESS §8).
+schemas="--schema=game"
+if [ "${BACKUP_INCLUDE_AUTH:-false}" = "true" ]; then
+	schemas="$schemas --schema=auth"
+fi
+# shellcheck disable=SC2086 # $schemas is a list of flags
+pg_dump --format=custom $schemas --no-owner --no-privileges --file="$work/game.dump" "$BACKUP_DATABASE_URL"
 
 # A dump that pg_restore cannot list is unusable: fail now rather than at restore time.
 pg_restore --list "$work/game.dump" > /dev/null
