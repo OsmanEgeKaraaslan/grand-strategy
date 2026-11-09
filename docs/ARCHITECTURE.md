@@ -25,7 +25,10 @@ flowchart LR
 
 - **One backend deployable.** A single Spring Boot application, one process, one
   database. Horizontal scaling is possible later (stateless API + DB locks) but
-  not required.
+  not required. The PROPOSED path (Supabase database, one VPS growing to several
+  behind a load balancer, B2 backups) and the single-instance assumptions it
+  removes are in
+  [SCALABILITY_PLAN.md](SCALABILITY_PLAN.md).
 - **Supabase is used for two things only:** Auth (identity, sessions, token
   issuance) and hosting PostgreSQL. No Supabase client writes; no PostgREST access
   to game data.
