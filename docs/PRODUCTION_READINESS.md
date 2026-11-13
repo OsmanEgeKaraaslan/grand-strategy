@@ -269,7 +269,20 @@ progress is stored per action and the sweep resumes after restart. Watch for rep
 ## 12. CI/CD and rollback
 
 Implemented: GitHub Actions `backend-ci.yml` (`./mvnw verify` with Testcontainers, Docker required)
-and `frontend-ci.yml` (lint, tests, build). Not implemented (deployment was not authorized):
+and `frontend-ci.yml` (lint, tests, build).
+
+Security checks (added 2026-11-13, product owner's request):
+
+- `codeql.yml`: CodeQL code scanning, `security-extended` queries, Java and TypeScript from source,
+  on every push and PR to `main` and weekly. Findings: Security → Code scanning.
+- `dependency-review.yml`: a PR that adds a dependency with a known high or critical vulnerability
+  fails.
+- `.github/dependabot.yml`: weekly Maven and npm updates (minor/patch grouped), monthly GitHub Actions
+  and Docker base images.
+- 🛠 Repository settings (free on public repositories): enable Dependabot alerts and security updates,
+  secret scanning with push protection, and require the CI and CodeQL checks on `main`.
+
+Not implemented (deployment was not authorized):
 
 1. On `main`: build the image, tag with the git SHA, push to GHCR.
 2. Take a backup; deploy with `API_IMAGE=<sha> docker compose -f compose.prod.yaml up -d`; wait for
