@@ -2,7 +2,7 @@
 # Build from the backend directory:  docker build -t strategy-backend .
 # Tests are not run here; CI runs `./mvnw verify` before images are built.
 
-FROM eclipse-temurin:21-jdk AS build
+FROM eclipse-temurin:24-jdk AS build
 WORKDIR /workspace
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
@@ -11,7 +11,7 @@ COPY src src
 RUN ./mvnw -B -ntp -DskipTests package \
  && java -Djarmode=tools -jar target/strategy-backend-*.jar extract --layers --launcher --destination target/extracted
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:24-jre
 RUN groupadd --system app && useradd --system --gid app --no-create-home app
 WORKDIR /app
 # Least-changing layers first for better image layer caching.
