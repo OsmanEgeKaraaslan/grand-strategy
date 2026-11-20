@@ -1,5 +1,7 @@
 package com.reach.strategy.military.api;
 
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -15,6 +17,17 @@ public interface MilitaryModifiers {
 	NationModifiers NONE = new NationModifiers(1, List.of(), Map.of(), 0, 0, 0, 0);
 
 	NationModifiers of(UUID gameId, UUID nationId);
+
+	/**
+	 * The modifiers of the given nations at once. Implementations should read them in a few queries
+	 * for the whole game instead of one {@link #of} per nation (the military state needs all of them on
+	 * every request).
+	 */
+	default Map<UUID, NationModifiers> ofGame(UUID gameId, Collection<UUID> nationIds) {
+		Map<UUID, NationModifiers> result = new HashMap<>();
+		nationIds.forEach(id -> result.put(id, of(gameId, id)));
+		return result;
+	}
 
 	/**
 	 * @param damageBonusBps extra damage per unit type name (military technology)

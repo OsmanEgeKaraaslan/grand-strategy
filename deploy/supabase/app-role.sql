@@ -19,6 +19,10 @@ CREATE ROLE strategy_app LOGIN BYPASSRLS PASSWORD 'replace-with-another-long-ran
 -- deploy/backup/backup.sh: read only (pg_dump must see every row, hence BYPASSRLS).
 CREATE ROLE strategy_backup LOGIN BYPASSRLS PASSWORD 'replace-with-a-third-long-random-password';
 
+-- Supabase's "postgres" role is not a superuser: it may set another role's default privileges only
+-- as a member of that role (otherwise: ERROR 42501 permission denied to change default privileges).
+GRANT strategy_migrator TO postgres;
+
 -- Everything the migration role creates from now on is granted automatically.
 ALTER DEFAULT PRIVILEGES FOR ROLE strategy_migrator GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO strategy_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE strategy_migrator GRANT USAGE, SELECT ON SEQUENCES TO strategy_app;

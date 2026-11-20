@@ -1,5 +1,6 @@
 package com.reach.strategy.economy.api;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -14,5 +15,14 @@ public interface EconomyTechnology {
 
 	/** Extra population growth per round in basis points from civilian technology. */
 	int growthBonusBps(UUID gameId, UUID nationId);
+
+	/**
+	 * Both values for every nation of the game in one read, for views that cover many cities.
+	 * Nations without technology are absent (Tier 1, no bonus).
+	 */
+	Map<UUID, Technology> ofGame(UUID gameId);
+
+	record Technology(int highestWorkshopTier, int growthBonusBps) {
+	}
 
 }

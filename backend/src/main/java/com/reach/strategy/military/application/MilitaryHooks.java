@@ -67,10 +67,12 @@ class MilitaryHooks {
 		public Map<UUID, Long> upkeepByNation(UUID gameId, String rulesetVersion) {
 			MilitaryRules rules = rulesets.rules(rulesetVersion);
 			Map<UUID, Long> total = new HashMap<>();
-			Map<UUID, Integer> reduction = new HashMap<>();
-			for (Battalion b : battalions.findByGameIdOrderById(gameId)) {
-				int bps = reduction.computeIfAbsent(b.nationId(), nation -> modifiers.isEmpty() ? 0
-						: modifiers.getFirst().of(gameId, nation).upkeepReductionBps());
+			List<Battalion> all = battalions.findByGameIdOrderById(gameId);
+			// Every owning nation's doctrine reduction in one read, not one per nation.
+			Map<UUID, MilitaryModifiers.NationModifiers> mods = modifiers.isEmpty() ? Map.of()
+					: modifiers.getFirst().ofGame(gameId, all.stream().map(Battalion::nationId).distinct().toList());
+			for (Battalion b : all) {
+				int bps = mods.getOrDefault(b.nationId(), MilitaryModifiers.NONE).upkeepReductionBps();
 				total.merge(b.nationId(), Upkeep.of(b.unitType(), b.manpower(), b.maxManpower(), rules, bps),
 						Math::addExact);
 			}

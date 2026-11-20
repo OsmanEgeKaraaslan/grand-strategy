@@ -86,6 +86,24 @@ class SiegeHooks {
 		}
 
 		@Override
+		@Transactional(readOnly = true)
+		public Set<UUID> besiegedProvinces(UUID gameId) {
+			return sieges.findByGameIdAndStatusOrderById(gameId, Siege.Status.ACTIVE)
+				.stream()
+				.map(Siege::provinceStateId)
+				.collect(java.util.stream.Collectors.toUnmodifiableSet());
+		}
+
+		@Override
+		@Transactional(readOnly = true)
+		public Set<UUID> besiegedCities(UUID gameId) {
+			return sieges.findByGameIdAndStatusOrderById(gameId, Siege.Status.ACTIVE)
+				.stream()
+				.map(Siege::cityId)
+				.collect(java.util.stream.Collectors.toUnmodifiableSet());
+		}
+
+		@Override
 		@Transactional(propagation = Propagation.MANDATORY)
 		public void presenceChanged(UUID gameId, Set<UUID> provinceStateIds, int round, int turnNumber, Instant now) {
 			engine.presenceChanged(gameId, provinceStateIds, round, turnNumber, now);

@@ -110,12 +110,15 @@ public class MilitaryService {
 			.map(b -> view(b, state, nationId, MilitaryService.clock(rules, membership.turnNumber(), membership.round()), rules))
 			.toList();
 		EconomyApi.TreasuryState treasury = economy.treasury(nationId);
+		// One query for the whole game instead of one per own province.
+		Set<UUID> besieged = new java.util.HashSet<>();
+		siegeGates.forEach(gate -> besieged.addAll(gate.besiegedProvinces(gameId)));
 		List<MilitaryViews.CityRecruitment> recruitment = state.snapshot()
 			.provinces()
 			.stream()
 			.filter(p -> p.ownerNationId().equals(nationId))
 			.sorted(Comparator.comparing(WorldApi.ProvinceState::provinceKey))
-			.map(p -> cityRecruitment(p, nationId, membership.yourTurn(), treasury, besieged(gameId, p.provinceStateId()),
+			.map(p -> cityRecruitment(p, nationId, membership.yourTurn(), treasury, besieged.contains(p.provinceStateId()),
 					rules))
 			.toList();
 		List<MilitaryViews.BattleSummary> recent = battleReports.recent(gameId, RECENT_BATTLES)
@@ -860,11 +863,11 @@ public class MilitaryService {
 		/** Also the diplomatic relations (who is at war, who may enter where) as they stand now. */
 		static State load(WorldApi world, List<MilitaryModifiers> sources, List<Hostility> hostility, UUID gameId) {
 			WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
-			Map<UUID, MilitaryModifiers.NationModifiers> mods = new java.util.HashMap<>();
-			for (WorldApi.NationState nation : snapshot.nations()) {
-				mods.put(nation.id(), sources.isEmpty() ? MilitaryModifiers.NONE
-						: sources.getFirst().of(gameId, nation.id()));
-			}
+			List<UUID> nationIds = snapshot.nations().stream().map(WorldApi.NationState::id).toList();
+			// One read for all nations (not one per nation): every military request loads this state.
+			Map<UUID, MilitaryModifiers.NationModifiers> mods = new java.util.HashMap<>(
+					sources.isEmpty() ? Map.of() : sources.getFirst().ofGame(gameId, nationIds));
+			nationIds.forEach(id -> mods.putIfAbsent(id, MilitaryModifiers.NONE));
 			Hostility.Relations relations = hostility.isEmpty() ? Hostility.Relations.TOTAL_WAR
 					: hostility.getFirst().relations(gameId);
 			return new State(snapshot, world.topology(snapshot.mapId()), Map.copyOf(mods), relations);

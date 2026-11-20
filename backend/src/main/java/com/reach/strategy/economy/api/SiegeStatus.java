@@ -1,5 +1,6 @@
 package com.reach.strategy.economy.api;
 
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -10,5 +11,8 @@ import java.util.UUID;
 public interface SiegeStatus {
 
 	boolean cityBesieged(UUID gameId, UUID cityId);
+
+	/** Every city of the game under an active siege, in one query (views that list many cities). */
+	Set<UUID> besiegedCities(UUID gameId);
 
 }

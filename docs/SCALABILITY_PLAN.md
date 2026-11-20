@@ -125,6 +125,11 @@ not promise it works, and it fixes neither backups nor the size limit.
 - **Cheap ETag check** (done): `GameStateService.version` reads the game row and the caller's
   membership (two indexed lookups, same access rules as the full read) and the endpoint answers `304`
   before the world snapshot is built. Most 3 s polls are unchanged, so most database work disappears.
+- **No per-row queries** (done 2026-11-20): on a Grand Campaign game the economy overview took 273
+  SQL statements (siege and technology checks per city and per nation), military 43 and battles 33.
+  Besieged cities/provinces and every nation's research effects are now read once per request:
+  economy 20, military 19, battles 15. `QueryBudgetIT` fails when an endpoint exceeds its statement
+  budget, so an N+1 cannot come back unnoticed.
 - **Map templates** (already in place, unchanged): `GET /maps/{id}` is cached privately for one day by
   the browser. Neither longer nor shared (CDN) caching fits: the request carries the bearer token, and
   templates are not strictly immutable (V22 renamed factions in place).

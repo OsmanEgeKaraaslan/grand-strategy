@@ -9,4 +9,6 @@ public interface NationDoctrineRepository extends JpaRepository<NationDoctrine, 
 
 	List<NationDoctrine> findByGameIdAndNationIdOrderByDoctrineKey(UUID gameId, UUID nationId);
 
+	List<NationDoctrine> findByGameIdOrderByNationIdAscDoctrineKeyAsc(UUID gameId);
+
 }

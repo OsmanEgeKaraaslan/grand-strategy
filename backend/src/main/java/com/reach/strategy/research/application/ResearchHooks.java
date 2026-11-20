@@ -40,12 +40,28 @@ class ResearchHooks {
 
 	@Bean
 	MilitaryModifiers researchMilitaryModifiers(ResearchEffects effects) {
-		return (gameId, nationId) -> {
-			Research.Effects e = effects.of(gameId, nationId);
-			return new MilitaryModifiers.NationModifiers(e.militaryLevel(), e.doctrines(), e.damageBonusBps(),
-					e.riverPenaltyReductionBps(), e.mountainPenaltyReductionBps(), e.siegeArtilleryBonusBps(),
-					e.militaryUpkeepReductionBps());
+		return new MilitaryModifiers() {
+
+			@Override
+			public MilitaryModifiers.NationModifiers of(UUID gameId, UUID nationId) {
+				return modifiers(effects.of(gameId, nationId));
+			}
+
+			@Override
+			public Map<UUID, MilitaryModifiers.NationModifiers> ofGame(UUID gameId, java.util.Collection<UUID> nationIds) {
+				Map<UUID, Research.Effects> all = effects.ofGame(gameId);
+				Map<UUID, MilitaryModifiers.NationModifiers> result = new HashMap<>();
+				nationIds.forEach(id -> result.put(id, modifiers(all.getOrDefault(id, Research.Effects.NONE))));
+				return result;
+			}
+
 		};
+	}
+
+	private static MilitaryModifiers.NationModifiers modifiers(Research.Effects e) {
+		return new MilitaryModifiers.NationModifiers(e.militaryLevel(), e.doctrines(), e.damageBonusBps(),
+				e.riverPenaltyReductionBps(), e.mountainPenaltyReductionBps(), e.siegeArtilleryBonusBps(),
+				e.militaryUpkeepReductionBps());
 	}
 
 	@Bean
@@ -60,6 +76,15 @@ class ResearchHooks {
 			@Override
 			public int growthBonusBps(UUID gameId, UUID nationId) {
 				return effects.of(gameId, nationId).growthBonusBps();
+			}
+
+			@Override
+			public Map<UUID, EconomyTechnology.Technology> ofGame(UUID gameId) {
+				Map<UUID, EconomyTechnology.Technology> result = new HashMap<>();
+				effects.ofGame(gameId)
+					.forEach((nationId, e) -> result.put(nationId,
+							new EconomyTechnology.Technology(e.highestUnlockedWorkshopTier(), e.growthBonusBps())));
+				return result;
 			}
 
 		};
@@ -128,6 +153,26 @@ class ResearchHooks {
 				.toList();
 			return Research.effects(r.level(ResearchRules.Track.MILITARY), r.level(ResearchRules.Track.CIVILIAN), chosen,
 					rules);
+		}
+
+		/**
+		 * The effects of every nation of the game in two queries, for views and commands that need
+		 * all of them (the military state, the economy overview). Nations without research (games
+		 * before ruleset v4) are absent; callers treat them as {@link Research.Effects#NONE}.
+		 */
+		@Transactional(readOnly = true)
+		public Map<UUID, Research.Effects> ofGame(UUID gameId) {
+			Map<UUID, List<String>> chosen = new HashMap<>();
+			for (NationDoctrine d : doctrines.findByGameIdOrderByNationIdAscDoctrineKeyAsc(gameId)) {
+				chosen.computeIfAbsent(d.nationId(), n -> new java.util.ArrayList<>()).add(d.doctrineKey());
+			}
+			Map<UUID, Research.Effects> effects = new HashMap<>();
+			for (NationResearch r : research.findByGameIdOrderByNationId(gameId)) {
+				rulesets.find(r.rulesetVersion())
+					.ifPresent(rules -> effects.put(r.nationId(), Research.effects(r.level(ResearchRules.Track.MILITARY),
+							r.level(ResearchRules.Track.CIVILIAN), chosen.getOrDefault(r.nationId(), List.of()), rules)));
+			}
+			return effects;
 		}
 
 	}

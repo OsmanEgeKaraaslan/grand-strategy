@@ -13,6 +13,9 @@ public interface SiegeGate {
 	/** Whether the city of this province is under an active siege. */
 	boolean besieged(UUID gameId, UUID provinceStateId);
 
+	/** Every province of the game whose city is under an active siege, in one query. */
+	Set<UUID> besiegedProvinces(UUID gameId);
+
 	/**
 	 * A command changed which battalions stand in these provinces (move, battle, retreat). Called in
 	 * the command's transaction after the battalions are written: sieges start when a hostile force

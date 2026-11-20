@@ -2,7 +2,11 @@ package com.reach.strategy.economy.application;
 
 import com.reach.strategy.economy.api.EconomyViews;
 
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.reach.strategy.economy.api.EconomyTechnology;
@@ -77,9 +81,10 @@ public class EconomyService {
 		EconomyState.Snapshot snapshot = state.load(gameId, rules);
 		WorldApi.NationState nation = snapshot.nationOfPlayer(membership.gamePlayerId());
 		NationEconomy treasury = treasuryOf(nation.id());
+		Lookups lookups = new Lookups(gameId);
 		List<EconomyViews.City> cities = snapshot.cities()
 			.stream()
-			.map(city -> cityView(gameId, city, nation.id(), treasury, membership.yourTurn(), membership.round(), rules))
+			.map(city -> cityView(lookups, city, nation.id(), treasury, membership.yourTurn(), membership.round(), rules))
 			.toList();
 		long income = snapshot.collectibleIncomeOf(nation.id());
 		long upkeep = treasuries.upkeepOf(gameId, membership.rulesetVersion(), nation.id());
@@ -100,7 +105,8 @@ public class EconomyService {
 		EconomyState.Snapshot snapshot = state.load(gameId, rules);
 		EconomyState.City city = cityOf(snapshot, cityId);
 		WorldApi.NationState nation = snapshot.nationOfPlayer(membership.gamePlayerId());
-		return cityView(gameId, city, nation.id(), treasuryOf(nation.id()), membership.yourTurn(), membership.round(), rules);
+		return cityView(new Lookups(gameId), city, nation.id(), treasuryOf(nation.id()), membership.yourTurn(),
+				membership.round(), rules);
 	}
 
 	// --- command ------------------------------------------------------------------------------
@@ -156,12 +162,12 @@ public class EconomyService {
 		NationEconomy treasury = treasuryOf(nationId);
 		boolean stillYourTurn = true;
 		return new EconomyViews.BuildResult(workshopView(project), treasury.treasuryMg(),
-				cityView(gameId, cityOf(snapshot, cityId), nationId, treasury, stillYourTurn, context.round(), rules));
+				cityView(new Lookups(gameId), cityOf(snapshot, cityId), nationId, treasury, stillYourTurn, context.round(), rules));
 	}
 
 	// --- views --------------------------------------------------------------------------------
 
-	private EconomyViews.City cityView(UUID gameId, EconomyState.City city, UUID viewerNationId, NationEconomy viewerTreasury,
+	private EconomyViews.City cityView(Lookups lookups, EconomyState.City city, UUID viewerNationId, NationEconomy viewerTreasury,
 			boolean yourTurn, int round, EconomyRules rules) {
 		CityEconomy.Income income = city.income();
 		CityEconomy.Production production = income.production();
@@ -169,7 +175,7 @@ public class EconomyService {
 		List<String> blockers = Construction
 			.blockers(new Construction.Request(viewerNationId, city.province().ownerNationId(),
 					city.province().controllerNationId(), yourTurn, BUILDABLE_TIER, city.buildings().size(),
-					viewerTreasury.treasuryMg(), viewerTreasury.inArrears(), besieged(gameId, city.cityId())), rules)
+					viewerTreasury.treasuryMg(), viewerTreasury.inArrears(), lookups.besieged(city.cityId())), rules)
 			.stream()
 			.map(Enum::name)
 			.toList();
@@ -184,14 +190,14 @@ public class EconomyService {
 				income.collectibleIncomeMg(),
 				city.buildings()
 					.stream()
-					.map(b -> workshopView(b, repairOption(gameId, b, city, viewerNationId, viewerTreasury, yourTurn, round,
-							rules), upgradeOption(gameId, b, city, viewerNationId, viewerTreasury, yourTurn, round, rules)))
+					.map(b -> workshopView(b, repairOption(lookups, b, city, viewerNationId, viewerTreasury, yourTurn, round,
+							rules), upgradeOption(lookups, b, city, viewerNationId, viewerTreasury, yourTurn, round, rules)))
 					.toList(),
 				city.buildings().size(),
 				new EconomyViews.ConstructionOption(BUILDABLE_TIER, buildable.buildCostMg(),
 						buildable.buildDurationRounds(), completes, Construction.operationalFromRound(completes),
 						blockers.isEmpty(), blockers),
-				growthView(gameId, city, rules));
+				growthView(lookups, city, rules));
 	}
 
 	private static EconomyViews.Workshop workshopView(Building building) {
@@ -208,12 +214,12 @@ public class EconomyService {
 	}
 
 	/** Repair quote for a damaged workshop; null for any other status or a ruleset without repairs. */
-	private EconomyViews.RepairOption repairOption(UUID gameId, Building building, EconomyState.City city,
+	private EconomyViews.RepairOption repairOption(Lookups lookups, Building building, EconomyState.City city,
 			UUID viewerNationId, NationEconomy treasury, boolean yourTurn, int round, EconomyRules rules) {
 		if (building.status() != WorkshopStatus.DAMAGED || rules.workshopRepair() == null) {
 			return null;
 		}
-		List<String> blockers = WorkshopRepairs.blockers(repairRequest(gameId, building, city, viewerNationId,
+		List<String> blockers = WorkshopRepairs.blockers(repairRequest(lookups, building, city, viewerNationId,
 				yourTurn, treasury), rules).stream().map(Enum::name).toList();
 		int completes = Construction.completesAfterRound(Math.max(round, 1), rules.workshopRepair().durationRounds());
 		return new EconomyViews.RepairOption(WorkshopRepairs.cost(building.tier(), rules),
@@ -221,10 +227,10 @@ public class EconomyService {
 				blockers.isEmpty(), blockers);
 	}
 
-	private WorkshopRepairs.Request repairRequest(UUID gameId, Building building, EconomyState.City city,
+	private WorkshopRepairs.Request repairRequest(Lookups lookups, Building building, EconomyState.City city,
 			UUID nationId, boolean yourTurn, NationEconomy treasury) {
 		return new WorkshopRepairs.Request(nationId, city.province().ownerNationId(),
-				city.province().controllerNationId(), yourTurn, besieged(gameId, city.cityId()), building.tier(),
+				city.province().controllerNationId(), yourTurn, lookups.besieged(city.cityId()), building.tier(),
 				building.status(), treasury.treasuryMg(), treasury.inArrears());
 	}
 
@@ -232,7 +238,7 @@ public class EconomyService {
 	 * Upgrade quote for an ACTIVE workshop of the upgradable tier; null otherwise or when the ruleset
 	 * has no upgrades. Includes the city's production once it completes, from the same calculator.
 	 */
-	private EconomyViews.UpgradeOption upgradeOption(UUID gameId, Building building, EconomyState.City city,
+	private EconomyViews.UpgradeOption upgradeOption(Lookups lookups, Building building, EconomyState.City city,
 			UUID viewerNationId, NationEconomy treasury, boolean yourTurn, int round, EconomyRules rules) {
 		EconomyRules.WorkshopUpgrade upgrade = rules.workshopUpgrade();
 		if (upgrade == null || building.status() != WorkshopStatus.ACTIVE || building.tier() != upgrade.fromTier()
@@ -240,7 +246,7 @@ public class EconomyService {
 			return null;
 		}
 		List<String> blockers = WorkshopUpgrades
-			.blockers(upgradeRequest(gameId, building, city, viewerNationId, yourTurn, treasury), rules)
+			.blockers(upgradeRequest(lookups, building, city, viewerNationId, yourTurn, treasury), rules)
 			.stream()
 			.map(Enum::name)
 			.toList();
@@ -255,23 +261,23 @@ public class EconomyService {
 				Construction.operationalFromRound(completes), incomeAfter, blockers.isEmpty(), blockers);
 	}
 
-	private WorkshopUpgrades.Request upgradeRequest(UUID gameId, Building building, EconomyState.City city,
+	private WorkshopUpgrades.Request upgradeRequest(Lookups lookups, Building building, EconomyState.City city,
 			UUID nationId, boolean yourTurn, NationEconomy treasury) {
-		int unlocked = technology.stream().mapToInt(t -> t.highestWorkshopTier(gameId, nationId)).max().orElse(1);
+		int unlocked = lookups.highestWorkshopTier(nationId);
 		return new WorkshopUpgrades.Request(nationId, city.province().ownerNationId(),
-				city.province().controllerNationId(), yourTurn, besieged(gameId, city.cityId()), building.tier(),
+				city.province().controllerNationId(), yourTurn, lookups.besieged(city.cityId()), building.tier(),
 				building.status(), building.upgrading(), unlocked, treasury.treasuryMg(), treasury.inArrears());
 	}
 
 	/** Next round's growth of a city (0 and the reasons when it does not grow). */
-	private EconomyViews.Growth growthView(UUID gameId, EconomyState.City city, EconomyRules rules) {
+	private EconomyViews.Growth growthView(Lookups lookups, EconomyState.City city, EconomyRules rules) {
 		if (rules.populationGrowth() == null) {
 			return null;
 		}
 		WorldApi.ProvinceState p = city.province();
 		List<PopulationGrowth.Blocker> blockers = PopulationGrowth.blockers(p.ownerNationId(), p.controllerNationId(),
-				besieged(gameId, city.cityId()), rules);
-		int bonus = technology.stream().mapToInt(t -> t.growthBonusBps(gameId, p.ownerNationId())).max().orElse(0);
+				lookups.besieged(city.cityId()), rules);
+		int bonus = lookups.growthBonusBps(p.ownerNationId());
 		int next = blockers.isEmpty() ? PopulationGrowth.growth(p.population(), bonus, rules) : 0;
 		return new EconomyViews.Growth(blockers.isEmpty(), rules.populationGrowth().baseBps() + bonus, next,
 				blockers.stream().map(Enum::name).toList());
@@ -299,7 +305,7 @@ public class EconomyService {
 				WorldApi.NationState nation = snapshot.nationOfPlayer(context.gamePlayerId());
 				NationEconomy treasury = treasuryOf(nation.id());
 				List<WorkshopUpgrades.Blocker> blockers = WorkshopUpgrades
-					.blockers(upgradeRequest(gameId, building, city, nation.id(), true, treasury), rules);
+					.blockers(upgradeRequest(new Lookups(gameId), building, city, nation.id(), true, treasury), rules);
 				if (!blockers.isEmpty()) {
 					throw upgradeRejection(blockers.getFirst());
 				}
@@ -370,7 +376,7 @@ public class EconomyService {
 				WorldApi.NationState nation = snapshot.nationOfPlayer(context.gamePlayerId());
 				NationEconomy treasury = treasuryOf(nation.id());
 				List<WorkshopRepairs.Blocker> blockers = WorkshopRepairs
-					.blockers(repairRequest(gameId, building, city, nation.id(), true, treasury), rules);
+					.blockers(repairRequest(new Lookups(gameId), building, city, nation.id(), true, treasury), rules);
 				if (!blockers.isEmpty()) {
 					throw repairRejection(blockers.getFirst());
 				}
@@ -399,6 +405,54 @@ public class EconomyService {
 
 	private boolean besieged(UUID gameId, UUID cityId) {
 		return siegeStatus.stream().anyMatch(s -> s.cityBesieged(gameId, cityId));
+	}
+
+	/**
+	 * Per-request answers that every city of a view would otherwise fetch again: the game's besieged
+	 * cities and every nation's technology, each read once for the whole game instead of once per city.
+	 * Created per request and never shared between threads. Without a technology implementation,
+	 * Tier 1 and no growth bonus (as for a nation without research).
+	 */
+	private final class Lookups {
+
+		private final UUID gameId;
+
+		private Set<UUID> besiegedCities;
+
+		private Map<UUID, EconomyTechnology.Technology> technologyByNation;
+
+		Lookups(UUID gameId) {
+			this.gameId = gameId;
+		}
+
+		boolean besieged(UUID cityId) {
+			if (besiegedCities == null) {
+				Set<UUID> all = new HashSet<>();
+				siegeStatus.forEach(s -> all.addAll(s.besiegedCities(gameId)));
+				besiegedCities = all;
+			}
+			return besiegedCities.contains(cityId);
+		}
+
+		int growthBonusBps(UUID nationId) {
+			EconomyTechnology.Technology t = technology().get(nationId);
+			return t == null ? 0 : t.growthBonusBps();
+		}
+
+		int highestWorkshopTier(UUID nationId) {
+			EconomyTechnology.Technology t = technology().get(nationId);
+			return t == null ? 1 : t.highestWorkshopTier();
+		}
+
+		private Map<UUID, EconomyTechnology.Technology> technology() {
+			if (technologyByNation == null) {
+				Map<UUID, EconomyTechnology.Technology> all = new HashMap<>();
+				technology.forEach(t -> all.putAll(t.ofGame(gameId)));
+				technologyByNation = all;
+			}
+			return technologyByNation;
+		}
+
 	}
 
 	private static ApiException repairRejection(WorkshopRepairs.Blocker blocker) {
