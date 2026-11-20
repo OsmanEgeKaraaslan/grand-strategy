@@ -126,6 +126,14 @@ in a writing transaction). Measured: one observation 84 → 42 statements, one r
 ~2,850 → 2,176. `ComputerQueryBudgetIT` guards both. Still to do in S1: the slice loaders and pure
 projections that replace the module views for the computer (target ~15 statements per observation).
 
+**S2a status (2026-11-20, lean military loading, no write path changed):** the military `State`
+reads every nation's modifiers and the diplomatic relations only when a command first needs them
+(recruitment and reinforcement never do), and a plain move hands the snapshot and relations it read
+to the siege module instead of letting it read them again (after a battle the siege module still
+reads fresh state, since a battle can end a war). Measured: recruitment 24 → 18 statements, plain
+move 33 → 24, one computer round 2,176 → 1,989. Budgets tightened in `QueryBudgetIT` and
+`ComputerQueryBudgetIT`. The pure apply functions and diff writes of S2 proper are still to do.
+
 ## 8. Open decisions
 
 | ID | Question | Proposed default |

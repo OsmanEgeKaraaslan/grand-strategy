@@ -67,7 +67,17 @@ class SiegeEngine {
 	/** Mid-turn: start sieges a hostile force has established, lift those it abandoned or lost. */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void presenceChanged(UUID gameId, Set<UUID> provinceStateIds, int round, int turnNumber, Instant now) {
-		Ctx ctx = load(gameId);
+		presenceChanged(provinceStateIds, round, turnNumber, now, load(gameId));
+	}
+
+	/** The same, with the snapshot and relations the calling command already read (see SiegeGate). */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public void presenceChanged(UUID gameId, Set<UUID> provinceStateIds, int round, int turnNumber, Instant now,
+			WorldApi.WorldSnapshot snapshot, Hostility.Relations relations) {
+		presenceChanged(provinceStateIds, round, turnNumber, now, load(gameId, snapshot, relations));
+	}
+
+	private void presenceChanged(Set<UUID> provinceStateIds, int round, int turnNumber, Instant now, Ctx ctx) {
 		ctx.provincesInKeyOrder().filter(p -> provinceStateIds.contains(p.provinceStateId())).forEach(p -> {
 			switch (decide(ctx, p)) {
 				case ControlDecision.StartSiege start -> start(ctx, p, start.besiegerNationId(), round, turnNumber, now);
@@ -183,7 +193,11 @@ class SiegeEngine {
 	}
 
 	private Ctx load(UUID gameId) {
-		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
+		return load(gameId, world.snapshot(gameId),
+				hostility.isEmpty() ? Hostility.Relations.TOTAL_WAR : hostility.getFirst().relations(gameId));
+	}
+
+	private Ctx load(UUID gameId, WorldApi.WorldSnapshot snapshot, Hostility.Relations relations) {
 		Map<UUID, List<MilitaryPresence.Presence>> presence = military.presence(gameId)
 			.stream()
 			.collect(Collectors.groupingBy(MilitaryPresence.Presence::provinceStateId));
@@ -193,8 +207,6 @@ class SiegeEngine {
 		Map<UUID, Siege> active = sieges.findByGameIdAndStatusOrderById(gameId, Siege.Status.ACTIVE)
 			.stream()
 			.collect(Collectors.toMap(Siege::provinceStateId, Function.identity()));
-		Hostility.Relations relations = hostility.isEmpty() ? Hostility.Relations.TOTAL_WAR
-				: hostility.getFirst().relations(gameId);
 		return new Ctx(gameId, snapshot, presence, forts, new java.util.HashMap<>(active), relations);
 	}
 

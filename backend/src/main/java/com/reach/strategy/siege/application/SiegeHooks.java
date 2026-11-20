@@ -12,6 +12,7 @@ import com.reach.strategy.economy.api.SiegeStatus;
 import com.reach.strategy.economy.api.UpkeepSource;
 import com.reach.strategy.game.api.GameStartInitializer;
 import com.reach.strategy.game.api.RoundPhase;
+import com.reach.strategy.military.api.Hostility;
 import com.reach.strategy.military.api.SiegeGate;
 import com.reach.strategy.siege.domain.Fortification;
 import com.reach.strategy.siege.domain.FortificationRepository;
@@ -124,6 +125,13 @@ class SiegeHooks {
 		@Transactional(propagation = Propagation.MANDATORY)
 		public void presenceChanged(UUID gameId, Set<UUID> provinceStateIds, int round, int turnNumber, Instant now) {
 			engine.presenceChanged(gameId, provinceStateIds, round, turnNumber, now);
+		}
+
+		@Override
+		@Transactional(propagation = Propagation.MANDATORY)
+		public void presenceChanged(UUID gameId, Set<UUID> provinceStateIds, int round, int turnNumber, Instant now,
+				WorldApi.WorldSnapshot snapshot, Hostility.Relations relations) {
+			engine.presenceChanged(gameId, provinceStateIds, round, turnNumber, now, snapshot, relations);
 		}
 
 	}

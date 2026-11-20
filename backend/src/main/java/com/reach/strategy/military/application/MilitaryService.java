@@ -305,7 +305,12 @@ public class MilitaryService {
 			moving.forEach(b -> b.moved(destination.provinceStateId(), clock));
 			battalions.saveAllAndFlush(moving);
 			deleteEmptyArmies(gameId, armiesTouched);
-			presenceChanged(gameId, Set.of(origin, destination.provinceStateId()), context);
+			// No battle was fought, so the world and the relations read above still hold: the siege module
+			// reuses them instead of reading them again.
+			battalions.flush();
+			Set<UUID> touched = Set.of(origin, destination.provinceStateId());
+			siegeGates.forEach(gate -> gate.presenceChanged(gameId, touched, context.round(), context.turnNumber(),
+					context.now(), state.snapshot(), state.relations()));
 			List<MilitaryViews.BattalionView> views = moving.stream().map(b -> view(b, state, nationId, clock, rules)).toList();
 			return new GameCommands.Outcome<>(new MilitaryViews.MoveResult("MOVED", toProvinceKey, views, null),
 					moving.getFirst().id());
@@ -852,10 +857,31 @@ public class MilitaryService {
 	}
 
 	/** The world as the military module needs it, indexed by province key and id. */
-	record State(WorldApi.WorldSnapshot snapshot, WorldApi.Topology topology,
-			Map<UUID, MilitaryModifiers.NationModifiers> modifiers, Hostility.Relations relations) {
+	/**
+	 * What a military request reads about the game. The world and the (cached) topology are read at
+	 * once; every nation's technology/doctrine modifiers and the diplomatic relations only when first
+	 * asked for — recruitment, reinforcement and most views never need them (ENGINE_DESIGN.md S2).
+	 * Used within one request and its transaction only.
+	 */
+	static final class State {
 
-		/** World, topology and every nation's current technology/doctrine effects, read once per request. */
+		private final WorldApi.WorldSnapshot snapshot;
+		private final WorldApi.Topology topology;
+		private final java.util.function.Supplier<Map<UUID, MilitaryModifiers.NationModifiers>> loadModifiers;
+		private final java.util.function.Supplier<Hostility.Relations> loadRelations;
+		private Map<UUID, MilitaryModifiers.NationModifiers> modifiers;
+		private Hostility.Relations relations;
+
+		private State(WorldApi.WorldSnapshot snapshot, WorldApi.Topology topology,
+				java.util.function.Supplier<Map<UUID, MilitaryModifiers.NationModifiers>> loadModifiers,
+				java.util.function.Supplier<Hostility.Relations> loadRelations) {
+			this.snapshot = snapshot;
+			this.topology = topology;
+			this.loadModifiers = loadModifiers;
+			this.loadRelations = loadRelations;
+		}
+
+		/** World, topology and every nation's current technology/doctrine effects (read when needed). */
 		static State load(WorldApi world, List<MilitaryModifiers> sources, UUID gameId) {
 			return load(world, sources, List.of(), gameId);
 		}
@@ -863,18 +889,40 @@ public class MilitaryService {
 		/** Also the diplomatic relations (who is at war, who may enter where) as they stand now. */
 		static State load(WorldApi world, List<MilitaryModifiers> sources, List<Hostility> hostility, UUID gameId) {
 			WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
-			List<UUID> nationIds = snapshot.nations().stream().map(WorldApi.NationState::id).toList();
-			// One read for all nations (not one per nation): every military request loads this state.
-			Map<UUID, MilitaryModifiers.NationModifiers> mods = new java.util.HashMap<>(
-					sources.isEmpty() ? Map.of() : sources.getFirst().ofGame(gameId, nationIds));
-			nationIds.forEach(id -> mods.putIfAbsent(id, MilitaryModifiers.NONE));
-			Hostility.Relations relations = hostility.isEmpty() ? Hostility.Relations.TOTAL_WAR
-					: hostility.getFirst().relations(gameId);
-			return new State(snapshot, world.topology(snapshot.mapId()), Map.copyOf(mods), relations);
+			return new State(snapshot, world.topology(snapshot.mapId()), () -> {
+				List<UUID> nationIds = snapshot.nations().stream().map(WorldApi.NationState::id).toList();
+				// One read for all nations (not one per nation).
+				Map<UUID, MilitaryModifiers.NationModifiers> mods = new java.util.HashMap<>(
+						sources.isEmpty() ? Map.of() : sources.getFirst().ofGame(gameId, nationIds));
+				nationIds.forEach(id -> mods.putIfAbsent(id, MilitaryModifiers.NONE));
+				return Map.copyOf(mods);
+			}, () -> hostility.isEmpty() ? Hostility.Relations.TOTAL_WAR : hostility.getFirst().relations(gameId));
+		}
+
+		WorldApi.WorldSnapshot snapshot() {
+			return snapshot;
+		}
+
+		WorldApi.Topology topology() {
+			return topology;
+		}
+
+		Map<UUID, MilitaryModifiers.NationModifiers> modifiers() {
+			if (modifiers == null) {
+				modifiers = loadModifiers.get();
+			}
+			return modifiers;
+		}
+
+		Hostility.Relations relations() {
+			if (relations == null) {
+				relations = loadRelations.get();
+			}
+			return relations;
 		}
 
 		MilitaryModifiers.NationModifiers mods(UUID nationId) {
-			return modifiers.getOrDefault(nationId, MilitaryModifiers.NONE);
+			return modifiers().getOrDefault(nationId, MilitaryModifiers.NONE);
 		}
 
 		/** The battle engine's view of a nation's modifiers. */

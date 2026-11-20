@@ -116,13 +116,13 @@ class QueryBudgetIT {
 		STATEMENTS.set(0);
 		assertThat(api.recruit(token, game.gameId(), cityId, "INFANTRY", UUID.randomUUID()).getResponse().getStatus())
 			.isEqualTo(201);
-		assertThat(STATEMENTS.get()).as("SQL statements for a recruitment").isLessThanOrEqualTo(36);
+		assertThat(STATEMENTS.get()).as("SQL statements for a recruitment").isLessThanOrEqualTo(27);
 
 		String battalion = c.place(game, "castavar", "meseta", "INFANTRY", 500);
 		STATEMENTS.set(0);
 		assertThat(api.move(token, game.gameId(), List.of(battalion), "valcaro", UUID.randomUUID()).getResponse().getStatus())
 			.isEqualTo(200);
-		assertThat(STATEMENTS.get()).as("SQL statements for a move").isLessThanOrEqualTo(50);
+		assertThat(STATEMENTS.get()).as("SQL statements for a move").isLessThanOrEqualTo(36);
 	}
 
 	private int statusOf(String token, String path) throws Exception {
