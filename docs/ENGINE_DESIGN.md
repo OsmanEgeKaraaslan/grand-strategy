@@ -153,6 +153,25 @@ persistence-context cache disagree inside one transaction.
   attach/detach, withdrawal. Each is switched completely and its entity-mutation code deleted.
 - **S2d — remove the mutable classes** once no command uses them.
 
+**S2 status (2026-11-20, done).** S2b shipped on its own (JDBC repositories, behaviour unchanged).
+S2c and S2d then switched every military command at once, since all of them already wrote through
+JDBC: the services load `Forces`, compute the new `Forces` with its pure transitions (`raise`,
+`update`, `reinforce`, `suffer`, `remove`, `form`, `withoutEmptyFormations`, `leavingSplitArmies`;
+`Unit.movedTo`, `relocatedTo`, `inArmy`, `attachedTo`, `detached`) and hand both to
+`MilitaryStore.persist`, which writes only the changed rows. The cohort invariant (a battalion's cohorts
+add up to its manpower) is checked on every transition instead of after each write. Recruitment and
+the starting forces persist against `Forces.empty()`, so they insert without loading the game's
+forces. `Battalion`, `Army`, `BattalionCohort`, their repositories and `CohortLedger` are deleted; no
+JPA entity is left in the military module. Iteration order equals the database's uuid order
+(`Forces.ID_ORDER`), so results match the previous `ORDER BY id` reads.
+
+Measured on the Grand Campaign: recruitment 18 statements (unchanged), plain move 25 (24 before: the
+full load reads three tables), one computer round 1,988 (1,989). The S2 target "human move ≤ 10" is
+not reached by S2 alone: the military part of a move is now four statements (three loads, one batched
+write), and the other 21 are the command pipeline, the world and relation reads and the siege check.
+Those shrink when their modules become pure (S3–S5) and when the computer phase keeps the whole
+`GameState` in memory (S6), which this stage makes possible for the military slice.
+
 ## 8. Open decisions
 
 | ID | Question | Proposed default |

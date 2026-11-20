@@ -11,9 +11,8 @@ import java.util.stream.Collectors;
 import com.reach.strategy.economy.api.UpkeepSource;
 import com.reach.strategy.game.api.GameStartInitializer;
 import com.reach.strategy.military.api.MilitaryModifiers;
-import com.reach.strategy.military.domain.Battalion;
-import com.reach.strategy.military.domain.BattalionRepository;
-import com.reach.strategy.military.domain.CohortLedger;
+import com.reach.strategy.military.domain.MilitaryStore;
+import com.reach.strategy.military.rules.Forces;
 import com.reach.strategy.military.rules.MilitaryRules;
 import com.reach.strategy.military.rules.UnitType;
 import com.reach.strategy.military.rules.Upkeep;
@@ -33,15 +32,14 @@ import org.springframework.transaction.annotation.Transactional;
 class MilitaryHooks {
 
 	@Bean
-	UpkeepSource battalionUpkeep(BattalionRepository battalions, MilitaryRulesets rulesets,
-			List<MilitaryModifiers> modifiers) {
-		return new BattalionUpkeep(battalions, rulesets, modifiers);
+	UpkeepSource battalionUpkeep(MilitaryStore store, MilitaryRulesets rulesets, List<MilitaryModifiers> modifiers) {
+		return new BattalionUpkeep(store, rulesets, modifiers);
 	}
 
 	@Bean
 	GameStartInitializer militaryStartInitializer(MilitaryRulesets rulesets, WorldApi world,
-			BattalionRepository battalions, CohortLedger cohorts, Clock clock) {
-		return new StartingForces(rulesets, world, battalions, cohorts, clock);
+			MilitaryStore store, Clock clock) {
+		return new StartingForces(rulesets, world, store, clock);
 	}
 
 	/**
@@ -52,12 +50,12 @@ class MilitaryHooks {
 	 */
 	static class BattalionUpkeep implements UpkeepSource {
 
-		private final BattalionRepository battalions;
+		private final MilitaryStore store;
 		private final MilitaryRulesets rulesets;
 		private final List<MilitaryModifiers> modifiers;
 
-		BattalionUpkeep(BattalionRepository battalions, MilitaryRulesets rulesets, List<MilitaryModifiers> modifiers) {
-			this.battalions = battalions;
+		BattalionUpkeep(MilitaryStore store, MilitaryRulesets rulesets, List<MilitaryModifiers> modifiers) {
+			this.store = store;
 			this.rulesets = rulesets;
 			this.modifiers = List.copyOf(modifiers);
 		}
@@ -67,11 +65,11 @@ class MilitaryHooks {
 		public Map<UUID, Long> upkeepByNation(UUID gameId, String rulesetVersion) {
 			MilitaryRules rules = rulesets.rules(rulesetVersion);
 			Map<UUID, Long> total = new HashMap<>();
-			List<Battalion> all = battalions.findByGameIdOrderById(gameId);
+			List<Forces.Unit> all = store.units(gameId);
 			// Every owning nation's doctrine reduction in one read, not one per nation.
 			Map<UUID, MilitaryModifiers.NationModifiers> mods = modifiers.isEmpty() ? Map.of()
-					: modifiers.getFirst().ofGame(gameId, all.stream().map(Battalion::nationId).distinct().toList());
-			for (Battalion b : all) {
+					: modifiers.getFirst().ofGame(gameId, all.stream().map(Forces.Unit::nationId).distinct().toList());
+			for (Forces.Unit b : all) {
 				int bps = mods.getOrDefault(b.nationId(), MilitaryModifiers.NONE).upkeepReductionBps();
 				total.merge(b.nationId(), Upkeep.of(b.unitType(), b.manpower(), b.maxManpower(), rules, bps),
 						Math::addExact);
@@ -90,16 +88,13 @@ class MilitaryHooks {
 
 		private final MilitaryRulesets rulesets;
 		private final WorldApi world;
-		private final BattalionRepository battalions;
-		private final CohortLedger cohorts;
+		private final MilitaryStore store;
 		private final Clock clock;
 
-		StartingForces(MilitaryRulesets rulesets, WorldApi world, BattalionRepository battalions, CohortLedger cohorts,
-				Clock clock) {
-			this.cohorts = cohorts;
+		StartingForces(MilitaryRulesets rulesets, WorldApi world, MilitaryStore store, Clock clock) {
 			this.rulesets = rulesets;
 			this.world = world;
-			this.battalions = battalions;
+			this.store = store;
 			this.clock = clock;
 		}
 
@@ -112,23 +107,24 @@ class MilitaryHooks {
 				.nations()
 				.stream()
 				.collect(Collectors.toMap(WorldApi.NationOption::id, n -> n));
+			// A new game has no battalions yet: everything raised here is written in one batch at the end.
+			Forces[] forces = { Forces.empty() };
 			snapshot.nations().stream().sorted(Comparator.comparing(n -> n.id().toString())).forEach(nation -> {
 				WorldApi.NationOption template = templates.get(nation.nationTemplateId());
 				// Ruleset v6: forces per faction tier; earlier rulesets give every nation the same.
-				Map<UnitType, Integer> forces = rules.startingForces(template.tier());
-				if (forces.isEmpty()) {
+				Map<UnitType, Integer> starting = rules.startingForces(template.tier());
+				if (starting.isEmpty()) {
 					return;
 				}
 				WorldApi.ProvinceState capital = snapshot.province(template.capitalProvinceKey()).orElseThrow();
 				int soldiers = 0;
 				for (UnitType type : UnitType.values()) {
-					int count = forces.getOrDefault(type, 0);
+					int count = starting.getOrDefault(type, 0);
 					for (int i = 0; i < count; i++) {
 						// Turn 0: starting forces are ready to move in the first player turn.
-						Battalion battalion = battalions.saveAndFlush(Battalion.recruit(gameId, nation.id(), type,
+						forces[0] = forces[0].raise(Forces.Unit.raised(UUID.randomUUID(), nation.id(), type,
 								rules.battalionManpower(), capital.cityId(), capital.provinceStateId(), 0, 0, 0,
 								clock.instant()));
-						cohorts.raised(battalion);
 						soldiers += rules.battalionManpower();
 					}
 				}
@@ -138,7 +134,7 @@ class MilitaryHooks {
 				}
 				world.changePopulation(gameId, capital.cityId(), -soldiers);
 			});
-			battalions.flush();
+			store.persist(gameId, Forces.empty(), forces[0]);
 		}
 
 	}

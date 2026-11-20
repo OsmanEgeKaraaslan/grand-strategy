@@ -17,11 +17,9 @@ import java.util.stream.Collectors;
 import com.reach.strategy.military.api.ForceWithdrawal;
 import com.reach.strategy.military.api.Hostility;
 import com.reach.strategy.military.api.SiegeGate;
-import com.reach.strategy.military.domain.Battalion;
-import com.reach.strategy.military.domain.ArmyRepository;
-import com.reach.strategy.military.domain.BattalionRepository;
-import com.reach.strategy.military.domain.CohortLedger;
+import com.reach.strategy.military.domain.MilitaryStore;
 import com.reach.strategy.military.rules.Cohorts;
+import com.reach.strategy.military.rules.Forces;
 import com.reach.strategy.world.api.WorldApi;
 
 import org.springframework.stereotype.Service;
@@ -41,18 +39,13 @@ import org.springframework.transaction.annotation.Transactional;
 class WithdrawalService implements ForceWithdrawal {
 
 	private final WorldApi world;
-	private final BattalionRepository battalions;
+	private final MilitaryStore store;
 	private final List<Hostility> hostility;
 	private final List<SiegeGate> siegeGates;
-	private final CohortLedger cohorts;
-	private final ArmyRepository armies;
 
-	WithdrawalService(WorldApi world, BattalionRepository battalions, List<Hostility> hostility,
-			List<SiegeGate> siegeGates, CohortLedger cohorts, ArmyRepository armies) {
-		this.cohorts = cohorts;
-		this.armies = armies;
+	WithdrawalService(WorldApi world, MilitaryStore store, List<Hostility> hostility, List<SiegeGate> siegeGates) {
 		this.world = world;
-		this.battalions = battalions;
+		this.store = store;
 		this.hostility = List.copyOf(hostility);
 		this.siegeGates = List.copyOf(siegeGates);
 	}
@@ -60,20 +53,20 @@ class WithdrawalService implements ForceWithdrawal {
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
 	public List<Withdrawn> withdrawWithoutAccess(UUID gameId, int round, int turnNumber, Instant now) {
-		battalions.flush();
 		MilitaryService.State state = MilitaryService.State.load(world, List.of(), hostility, gameId);
 		Hostility.Relations relations = state.relations();
 		Map<UUID, WorldApi.ProvinceState> byId = state.snapshot()
 			.provinces()
 			.stream()
 			.collect(Collectors.toMap(WorldApi.ProvinceState::provinceStateId, p -> p));
-		List<Battalion> all = battalions.findByGameIdOrderById(gameId);
+		Forces before = store.load(gameId);
+		List<Forces.Unit> all = before.units();
 		Map<UUID, Set<UUID>> nationsByProvince = new HashMap<>();
 		all.forEach(b -> nationsByProvince.computeIfAbsent(b.provinceStateId(), id -> new HashSet<>()).add(b.nationId()));
 
 		List<Withdrawn> withdrawn = new ArrayList<>();
-		List<Battalion> moved = new ArrayList<>();
-		for (Battalion battalion : all) {
+		List<Forces.Unit> moved = new ArrayList<>();
+		for (Forces.Unit battalion : all) {
 			WorldApi.ProvinceState here = byId.get(battalion.provinceStateId());
 			if (relations.mayEnter(battalion.nationId(), here.ownerNationId(), here.controllerNationId())) {
 				continue;
@@ -91,11 +84,11 @@ class WithdrawalService implements ForceWithdrawal {
 				// Unreachable on a connected map while the nation still holds a province: it stays put.
 				continue;
 			}
-			battalion.withdrawTo(target.get().provinceStateId());
-			moved.add(battalion);
+			// The army is kept: its battalions all withdraw to the same province.
+			moved.add(battalion.relocatedTo(target.get().provinceStateId(), battalion.armyId()));
 			withdrawn.add(new Withdrawn(battalion.id(), nation, here.provinceKey(), target.get().provinceKey()));
 		}
-		battalions.saveAllAndFlush(moved);
+		store.persist(gameId, before, before.update(moved));
 		Set<UUID> everywhere = new HashSet<>(byId.keySet());
 		siegeGates.forEach(gate -> gate.presenceChanged(gameId, everywhere, round, turnNumber, now));
 		return withdrawn;
@@ -104,62 +97,64 @@ class WithdrawalService implements ForceWithdrawal {
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
 	public int endInvalidAttachments(UUID gameId) {
-		battalions.flush();
 		Hostility.Relations relations = MilitaryService.State.load(world, List.of(), hostility, gameId).relations();
 		Set<UUID> eliminated = new HashSet<>();
 		world.snapshot(gameId).nations().stream().filter(WorldApi.NationState::eliminated).forEach(n -> eliminated.add(n.id()));
-		List<Battalion> ended = battalions.findByGameIdOrderById(gameId)
+		Forces before = store.load(gameId);
+		List<Forces.Unit> ended = before.units()
 			.stream()
 			.filter(b -> b.commanderNationId() != null)
 			.filter(b -> eliminated.contains(b.commanderNationId())
 					|| !relations.mayCommand(b.nationId(), b.commanderNationId()))
+			.map(Forces.Unit::detached)
 			.toList();
-		ended.forEach(Battalion::detach);
-		battalions.saveAllAndFlush(ended);
+		store.persist(gameId, before, before.update(ended));
 		return ended.size();
 	}
 
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
 	public int endAttachmentsOf(UUID gameId, UUID nationId) {
-		battalions.flush();
-		List<Battalion> ended = battalions.findByGameIdOrderById(gameId)
+		Forces before = store.load(gameId);
+		List<Forces.Unit> ended = before.units()
 			.stream()
 			.filter(b -> b.commanderNationId() != null)
 			.filter(b -> b.nationId().equals(nationId) || b.commanderNationId().equals(nationId))
+			.map(Forces.Unit::detached)
 			.toList();
-		ended.forEach(Battalion::detach);
-		battalions.saveAllAndFlush(ended);
+		store.persist(gameId, before, before.update(ended));
 		return ended.size();
 	}
 
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
 	public int dissolveNation(UUID gameId, UUID nationId) {
-		battalions.flush();
 		int returned = 0;
-		for (Battalion battalion : battalions.findByGameIdOrderById(gameId)) {
+		Forces before = store.load(gameId);
+		Forces after = before;
+		for (Forces.Unit battalion : before.units()) {
 			if (nationId.equals(battalion.commanderNationId())) {
-				battalion.detach();
-				battalions.save(battalion);
+				after = after.update(battalion.detached());
 			}
 			if (!battalion.nationId().equals(nationId)) {
 				continue;
 			}
 			// Soldiers go home to the city they were raised in, in origin city order.
-			for (Cohorts.Cohort cohort : cohorts.of(battalion)
+			for (Cohorts.Cohort cohort : before.cohortsOf(battalion.id())
 				.stream()
 				.sorted(java.util.Comparator.comparing(c -> c.originCityId().toString()))
 				.toList()) {
 				world.changePopulation(gameId, cohort.originCityId(), cohort.soldiers());
 				returned += cohort.soldiers();
 			}
-			cohorts.removed(battalion);
-			battalions.delete(battalion);
+			after = after.remove(battalion.id());
 		}
-		battalions.flush();
-		armies.findByGameIdOrderById(gameId).stream().filter(a -> a.nationId().equals(nationId)).forEach(armies::delete);
-		armies.flush();
+		for (Forces.Formation army : before.formations()) {
+			if (army.nationId().equals(nationId)) {
+				after = after.disband(army.id());
+			}
+		}
+		store.persist(gameId, before, after);
 		return returned;
 	}
 

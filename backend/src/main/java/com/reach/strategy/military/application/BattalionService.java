@@ -15,13 +15,11 @@ import com.reach.strategy.game.api.GameCommands;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.military.api.MilitaryModifiers;
 import com.reach.strategy.military.api.SiegeGate;
-import com.reach.strategy.military.domain.ArmyRepository;
-import com.reach.strategy.military.domain.Battalion;
-import com.reach.strategy.military.domain.BattalionRepository;
-import com.reach.strategy.military.domain.CohortLedger;
 import com.reach.strategy.military.domain.ManpowerTransferRepository;
+import com.reach.strategy.military.domain.MilitaryStore;
 import com.reach.strategy.military.rules.Cohorts;
 import com.reach.strategy.military.rules.Disbanding;
+import com.reach.strategy.military.rules.Forces;
 import com.reach.strategy.military.rules.MilitaryRules;
 import com.reach.strategy.military.rules.Reinforcement;
 import com.reach.strategy.military.rules.Upkeep;
@@ -48,17 +46,14 @@ public class BattalionService {
 	private final MilitaryRulesets rulesets;
 	private final WorldApi world;
 	private final EconomyApi economy;
-	private final BattalionRepository battalions;
-	private final ArmyRepository armies;
-	private final CohortLedger cohorts;
+	private final MilitaryStore store;
 	private final ManpowerTransferRepository transfers;
 	private final JsonMapper jsonMapper;
 	private final List<SiegeGate> siegeGates;
 	private final List<MilitaryModifiers> modifiers;
 
 	BattalionService(GameAccess gameAccess, GameCommands gameCommands, MilitaryRulesets rulesets, WorldApi world,
-			EconomyApi economy, BattalionRepository battalions, ArmyRepository armies, CohortLedger cohorts,
-			ManpowerTransferRepository transfers, JsonMapper jsonMapper, List<SiegeGate> siegeGates,
+			EconomyApi economy, MilitaryStore store, ManpowerTransferRepository transfers, JsonMapper jsonMapper, List<SiegeGate> siegeGates,
 			List<MilitaryModifiers> modifiers) {
 		this.modifiers = List.copyOf(modifiers);
 		this.siegeGates = List.copyOf(siegeGates);
@@ -67,9 +62,7 @@ public class BattalionService {
 		this.rulesets = rulesets;
 		this.world = world;
 		this.economy = economy;
-		this.battalions = battalions;
-		this.armies = armies;
-		this.cohorts = cohorts;
+		this.store = store;
 		this.transfers = transfers;
 		this.jsonMapper = jsonMapper;
 	}
@@ -85,9 +78,9 @@ public class BattalionService {
 		MilitaryRules rules = rulesets.rules(membership.rulesetVersion());
 		MilitaryService.State state = load(gameId);
 		UUID nationId = state.nationOfPlayer(membership.gamePlayerId());
-		Battalion battalion = ownBattalion(gameId, battalionId, nationId);
+		Forces.Unit battalion = ownBattalion(store.unit(gameId, battalionId), gameId, battalionId, nationId);
 		WorldApi.ProvinceState province = provinceOf(battalion, state);
-		List<Cohorts.Cohort> soldiers = cohorts.of(battalion);
+		List<Cohorts.Cohort> soldiers = store.cohorts(gameId, battalionId);
 
 		EconomyApi.TreasuryState treasury = economy.treasury(nationId);
 		Reinforcement.Quote quote = Reinforcement.quote(reinforcementRequest(battalion, province, nationId,
@@ -129,7 +122,8 @@ public class BattalionService {
 				MilitaryRules rules = rulesets.rules(context.rulesetVersion());
 				MilitaryService.State state = load(gameId);
 				UUID nationId = state.nationOfPlayer(context.gamePlayerId());
-				Battalion battalion = ownBattalion(gameId, battalionId, nationId);
+				Forces before = store.load(gameId);
+				Forces.Unit battalion = ownBattalion(before.unit(battalionId), gameId, battalionId, nationId);
 				WorldApi.ProvinceState province = provinceOf(battalion, state);
 				Reinforcement.Request request = reinforcementRequest(battalion, province, nationId, true,
 						context.turnNumber(), economy.treasury(nationId), besieged(gameId, province));
@@ -140,12 +134,13 @@ public class BattalionService {
 				long cost = Reinforcement.cost(battalion.unitType(), soldiers, rules);
 				economy.spend(nationId, cost);
 				int population = world.changePopulation(gameId, province.cityId(), -soldiers);
-				battalion.reinforce(soldiers, MilitaryService.clock(rules, context));
-				battalions.saveAndFlush(battalion);
-				cohorts.reinforced(battalion, province.cityId(), soldiers);
+				Forces after = before.reinforce(battalionId, province.cityId(), soldiers,
+						MilitaryService.clock(rules, context));
+				store.persist(gameId, before, after);
+				Forces.Unit reinforced = after.unit(battalionId).orElseThrow();
 
 				MilitaryViews.ReinforceResult result = new MilitaryViews.ReinforceResult(
-						MilitaryService.view(battalion, state, nationId, MilitaryService.clock(rules, context), rules), soldiers, cost,
+						MilitaryService.view(reinforced, state, nationId, MilitaryService.clock(rules, context), rules), soldiers, cost,
 						economy.treasury(nationId).treasuryMg(), province.cityId(), population);
 				UUID transferId = record(gameId, ManpowerTransferRepository.Kind.REINFORCE, battalion, nationId,
 						soldiers, cost, result, context);
@@ -175,7 +170,8 @@ public class BattalionService {
 				MilitaryRules rules = rulesets.rules(context.rulesetVersion());
 				MilitaryService.State state = load(gameId);
 				UUID nationId = state.nationOfPlayer(context.gamePlayerId());
-				Battalion battalion = ownBattalion(gameId, battalionId, nationId);
+				Forces before = store.load(gameId);
+				Forces.Unit battalion = ownBattalion(before.unit(battalionId), gameId, battalionId, nationId);
 				WorldApi.ProvinceState province = provinceOf(battalion, state);
 				List<Disbanding.Blocker> blockers = Disbanding.blockers(nationId, province.controllerNationId(), true,
 						besieged(gameId, province));
@@ -187,7 +183,7 @@ public class BattalionService {
 					throw new ApiException(HttpStatus.CONFLICT, "PROVINCE_BESIEGED",
 							"Battalions cannot disband inside a province under siege.");
 				}
-				List<MilitaryViews.ReturnView> returns = returns(gameId, cohorts.of(battalion), nationId, province, state);
+				List<MilitaryViews.ReturnView> returns = returns(gameId, before.cohortsOf(battalionId), nationId, province, state);
 				int returned = returns.stream().mapToInt(MilitaryViews.ReturnView::soldiers).sum();
 				if (returned != battalion.manpower()) {
 					throw new IllegalStateException("Cohorts of " + battalion.id() + " do not match its manpower");
@@ -196,14 +192,11 @@ public class BattalionService {
 
 				long upkeepSaved = Upkeep.of(battalion.unitType(), battalion.manpower(), battalion.maxManpower(), rules,
 						state.mods(nationId).upkeepReductionBps());
-				UUID armyId = battalion.armyId();
-				cohorts.removed(battalion);
-				battalions.delete(battalion);
-				battalions.flush();
-				if (armyId != null && battalions.countByGameIdAndArmyId(gameId, armyId) == 0) {
-					armies.findByGameIdAndId(gameId, armyId).ifPresent(armies::delete);
-					armies.flush();
+				Forces after = before.remove(battalionId);
+				if (battalion.armyId() != null) {
+					after = after.withoutEmptyFormations(Set.of(battalion.armyId()));
 				}
+				store.persist(gameId, before, after);
 				MilitaryViews.DisbandResult result = new MilitaryViews.DisbandResult(battalion.id(),
 						battalion.unitType().name(), returned, returns, upkeepSaved);
 				UUID transferId = record(gameId, ManpowerTransferRepository.Kind.DISBAND, battalion, nationId,
@@ -221,8 +214,9 @@ public class BattalionService {
 
 	// --- helpers ------------------------------------------------------------------------------
 
-	private Battalion ownBattalion(UUID gameId, UUID battalionId, UUID nationId) {
-		Battalion battalion = battalions.findById(battalionId).filter(b -> b.gameId().equals(gameId)).orElse(null);
+	private Forces.Unit ownBattalion(java.util.Optional<Forces.Unit> found, UUID gameId, UUID battalionId,
+			UUID nationId) {
+		Forces.Unit battalion = found.orElse(null);
 		if (battalion == null) {
 			if (transfers.disbanded(gameId, battalionId)) {
 				throw new ApiException(HttpStatus.CONFLICT, "BATTALION_DISBANDED", "This battalion has been disbanded.");
@@ -240,11 +234,11 @@ public class BattalionService {
 		return siegeGates.stream().anyMatch(gate -> gate.besieged(gameId, province.provinceStateId()));
 	}
 
-	private static WorldApi.ProvinceState provinceOf(Battalion battalion, MilitaryService.State state) {
+	private static WorldApi.ProvinceState provinceOf(Forces.Unit battalion, MilitaryService.State state) {
 		return state.province(state.keyOf(battalion.provinceStateId()));
 	}
 
-	private static Reinforcement.Request reinforcementRequest(Battalion battalion, WorldApi.ProvinceState province,
+	private static Reinforcement.Request reinforcementRequest(Forces.Unit battalion, WorldApi.ProvinceState province,
 			UUID nationId, boolean yourTurn, int turnNumber, EconomyApi.TreasuryState treasury, boolean besieged) {
 		return new Reinforcement.Request(nationId, province.ownerNationId(), province.controllerNationId(), yourTurn,
 				battalion.unitType(), battalion.manpower(), battalion.maxManpower(), battalion.reinforcedInTurn(turnNumber),
@@ -280,7 +274,7 @@ public class BattalionService {
 		return new MilitaryViews.CohortView(cohort.originCityId(), city.cityName(), city.provinceKey(), cohort.soldiers());
 	}
 
-	private UUID record(UUID gameId, ManpowerTransferRepository.Kind kind, Battalion battalion, UUID nationId,
+	private UUID record(UUID gameId, ManpowerTransferRepository.Kind kind, Forces.Unit battalion, UUID nationId,
 			int soldiers, long costMg, Object result, GameCommands.CommandContext context) {
 		UUID id = UUID.randomUUID();
 		transfers.insert(gameId, new ManpowerTransferRepository.Row(id, kind, battalion.id(), nationId, context.round(),
@@ -295,7 +289,6 @@ public class BattalionService {
 	}
 
 	private MilitaryService.State load(UUID gameId) {
-		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
 		return MilitaryService.State.load(world, modifiers, gameId);
 	}
 
