@@ -171,6 +171,48 @@ describe('Game military', () => {
     expect(await screen.findByText('A selected battalion has already moved this turn.')).toBeInTheDocument()
   })
 
+  it('shows a plain move on the map before the server answers', async () => {
+    let answer: (value: unknown) => void = () => {}
+    const move = vi.fn().mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    renderGame({ move })
+
+    const panel = await openForces('Elmsford')
+    await userEvent.click(await within(panel).findByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
+    const map = screen.getByRole('group', { name: /^Map of/ })
+    within(map).getByRole('button', { name: /^Varnhold.*move target/ }).focus()
+    await userEvent.keyboard('m')
+
+    // Varnhold holds no foreign battalions, so no battle can start: the battalion is drawn there at once.
+    expect(move).toHaveBeenCalledWith('g1', ['b1'], 'varnhold', expect.any(String))
+    expect(await within(map).findByRole('button', { name: /^Varnhold.*1 of your battalions/ })).toBeInTheDocument()
+
+    answer({
+      outcome: 'MOVED',
+      toProvinceKey: 'varnhold',
+      battalions: [battalionFixture({ provinceKey: 'varnhold', eligibility: 'ALREADY_MOVED' })],
+      battle: null,
+    })
+    expect(await within(map).findByRole('button', { name: /^Varnhold.*1 of your battalions/ })).toBeInTheDocument()
+  })
+
+  it('takes a predicted move back when the server refuses it', async () => {
+    let refuse: (error: unknown) => void = () => {}
+    const move = vi.fn().mockReturnValue(new Promise((_resolve, reject) => (refuse = reject)))
+    renderGame({ move })
+
+    const panel = await openForces('Elmsford')
+    await userEvent.click(await within(panel).findByRole('checkbox', { name: 'Select Infantry, 1,000 of 1,000 men' }))
+    const map = screen.getByRole('group', { name: /^Map of/ })
+    within(map).getByRole('button', { name: /^Varnhold.*move target/ }).focus()
+    await userEvent.keyboard('m')
+    expect(await within(map).findByRole('button', { name: /^Varnhold.*1 of your battalions/ })).toBeInTheDocument()
+
+    refuse(new ApiError({ status: 409, code: 'NOT_ACTIVE_PLAYER' }))
+
+    expect(await within(map).findByRole('button', { name: /^Elmsford.*2 of your battalions/ })).toBeInTheDocument()
+    expect(within(map).queryByRole('button', { name: /^Varnhold.*of your battalions/ })).not.toBeInTheDocument()
+  })
+
   it('disables every command while waiting for the other player', async () => {
     renderGame(
       { getMilitary: vi.fn().mockResolvedValue(militaryFixture({ yourTurn: false })) },

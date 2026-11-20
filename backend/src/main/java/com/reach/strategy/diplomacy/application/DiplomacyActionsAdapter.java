@@ -18,19 +18,28 @@ class DiplomacyActionsAdapter implements DiplomacyActions {
 	private final GiftService gifts;
 	private final CallToArmsService calls;
 	private final ConferenceService conferences;
+	private final com.reach.strategy.diplomacy.domain.ConferenceRepository conferenceRows;
 
 	DiplomacyActionsAdapter(DiplomacyQueries queries, DiplomacyService diplomacy, GiftService gifts,
-			CallToArmsService calls, ConferenceService conferences) {
+			CallToArmsService calls, ConferenceService conferences,
+			com.reach.strategy.diplomacy.domain.ConferenceRepository conferenceRows) {
 		this.queries = queries;
 		this.diplomacy = diplomacy;
 		this.gifts = gifts;
 		this.calls = calls;
 		this.conferences = conferences;
+		this.conferenceRows = conferenceRows;
 	}
 
 	@Override
 	public DiplomacyViews.Overview overview(CurrentPlayer me, UUID gameId) {
 		return queries.overview(me, gameId);
+	}
+
+	@Override
+	@org.springframework.transaction.annotation.Transactional(readOnly = true)
+	public boolean anyOpenConference(UUID gameId) {
+		return conferenceRows.anyOpen(gameId);
 	}
 
 	@Override

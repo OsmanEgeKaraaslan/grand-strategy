@@ -13,6 +13,12 @@ public interface DiplomacyActions {
 
 	DiplomacyViews.Overview overview(CurrentPlayer me, UUID gameId);
 
+	/**
+	 * Whether any peace conference of the game is requested or running: computer opponents only
+	 * negotiate inside conferences, so without one there is nothing for them to look at.
+	 */
+	boolean anyOpenConference(UUID gameId);
+
 	void declareWar(CurrentPlayer me, UUID gameId, UUID targetNationId, UUID idempotencyKey);
 
 	/** Declares war and invites normal allies to join the attack (ruleset v8). */

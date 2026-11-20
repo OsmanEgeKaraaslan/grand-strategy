@@ -72,6 +72,13 @@ public class ConferenceRepository {
 				ConferenceRepository::row, gameId, id).stream().findFirst();
 	}
 
+	/** Whether any conference of the game is still requested or running (one indexed query). */
+	public boolean anyOpen(UUID gameId) {
+		return Boolean.TRUE.equals(jdbc.queryForObject(
+				"SELECT EXISTS (SELECT 1 FROM game.peace_conference WHERE game_id = ? AND status IN ('REQUESTED', 'ACTIVE'))",
+				Boolean.class, gameId));
+	}
+
 	public List<ConferenceRow> all(UUID gameId) {
 		return jdbc.query("SELECT " + COLUMNS + " FROM game.peace_conference WHERE game_id = ? ORDER BY created_at DESC, id",
 				ConferenceRepository::row, gameId);

@@ -53,7 +53,9 @@ The planners in `ai.rules` are pure Java (no Spring, no database, no clock, no `
      then end the turn with the normal end-turn command.
 - **Conferences out of turn.** `ConferenceActivity` after every conference command, and a pass
   before every computer turn, run `AiNegotiator`: each computer with conference business (answer,
-  decide, revise) observes and acts, up to `maxConferencePasses`. Decisions are keyed by
+  decide, revise) observes and acts, up to `maxConferencePasses`. Without any requested or active
+  conference in the game the pass ends after one query (D-AI1), instead of reading every computer's
+  diplomacy overview. Decisions are keyed by
   (conference, revision, nation), so a repeated pass never acts twice. A conference between two
   computers that still pauses the game when nothing more can happen is ended by its requester;
   a conference waiting for a human stays open until the human acts (no timeouts, per the rules).

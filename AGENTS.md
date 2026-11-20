@@ -71,7 +71,9 @@ anything. When this file conflicts with a one-off request, ask before deviating.
   hand-write duplicates.
 - Server state via TanStack Query; no client-side "authoritative" game state.
 - Components render server state and submit intents. Optimistic updates only for
-  purely cosmetic UI.
+  purely cosmetic UI, or for commands whose result the client can predict exactly from
+  what it already knows (D-UX1: a plain move). A prediction is always rolled back on a
+  refusal and replaced by the next server state; never predict hidden information.
 - The map is SVG rendered from template geometry; game state is overlaid.
 
 ## 5. Testing requirements

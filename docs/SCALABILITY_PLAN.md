@@ -168,6 +168,24 @@ not promise it works, and it fixes neither backups nor the size limit.
 - Server roles `STRATEGY_ROLE=all|api|worker`: some VPSs serve HTTP only, others play computer turns,
   so each kind scales on its own. Not needed while every VPS runs `all`.
 
+### Phase 8: Pure apply functions and an in-memory computer phase (PROPOSED, not started)
+
+Measured 2026-11-20 on a Grand Campaign game: one round of 8 computer turns (~30 actions) needs
+~2,850 SQL statements and ~130 transactions after D-AI1 (was ~4,500 and ~270). An observation reads
+the overviews of five modules (~84 statements) and every action is a full command (~25–35). At
+20 ms per query that is about a minute per round; at 1–2 ms, a few seconds.
+
+1. One immutable in-memory game model, loaded with a fixed number of queries.
+2. Every command as a pure function `apply(state, command) → (state, events)`, starting with the
+   military (recruit, move, battle), used by the services too so there is a single implementation.
+3. Persist by diffing old and new state in one transaction, with the same command and history rows.
+4. The computer phase runs in memory from one load to one write, stopping at the next human seat
+   or at anything that needs a human (a conference pausing the game).
+5. The same pure functions compiled for the browser (TeaVM) extend D-UX1 to moves that fight.
+
+Expected: a computer round in well under a second; human commands cheaper; tests much faster.
+About 4–6 weeks, module by module; needs a short design note and approval before it starts.
+
 ### Phase 7: Proof and drills (ongoing)
 
 - Metrics (Micrometer) and a load test (k6 or Gatling) against agreed targets, e.g. "N players online,

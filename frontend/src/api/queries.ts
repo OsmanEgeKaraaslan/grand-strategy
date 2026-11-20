@@ -1,6 +1,16 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApi } from './ApiContext'
-import type { AllianceKind, ConferenceKind, InstitutionType, Lobby, PeaceTerm, ResearchTrack, UnitType } from './types'
+import type {
+  AllianceKind,
+  Battalion,
+  ConferenceKind,
+  InstitutionType,
+  Lobby,
+  MilitaryOverview,
+  PeaceTerm,
+  ResearchTrack,
+  UnitType,
+} from './types'
 
 /** How often an open lobby is re-fetched so new participants appear (no WebSockets needed). */
 export const LOBBY_POLL_INTERVAL_MS = 3000
@@ -153,22 +163,79 @@ function useGameCommand<I, R>(gameId: string, action: (input: I) => Promise<R>) 
   })
 }
 
-export function useRecruit(gameId: string) {
-  const api = useApi()
-  return useGameCommand(gameId, ({ cityId, unitType, idempotencyKey }: {
-    cityId: string
-    unitType: UnitType
-    idempotencyKey: string
-  }) => api.recruit(gameId, cityId, unitType, idempotencyKey))
+/** Applies a change to every cached military overview of this game (whatever state version it is keyed by). */
+function patchMilitary(
+  queryClient: ReturnType<typeof useQueryClient>,
+  gameId: string,
+  update: (military: MilitaryOverview) => MilitaryOverview,
+) {
+  queryClient.setQueriesData<MilitaryOverview>({ queryKey: ['games', gameId, 'military'] }, (old) =>
+    old ? update(old) : old,
+  )
 }
 
+/** Replaces battalions by id with the server's version; adds the ones not yet cached. */
+function withBattalions(military: MilitaryOverview, changed: Battalion[]): MilitaryOverview {
+  const byId = new Map(changed.map((b) => [b.id, b]))
+  const kept = military.battalions.map((b) => byId.get(b.id) ?? b)
+  const added = changed.filter((b) => !military.battalions.some((existing) => existing.id === b.id))
+  return { ...military, battalions: [...kept, ...added] }
+}
+
+/**
+ * Recruiting shows the new battalion as soon as the command answers, without waiting for the
+ * state, economy and military refetches that follow (docs/OPEN_QUESTIONS.md D-UX1).
+ */
+export function useRecruit(gameId: string) {
+  const api = useApi()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ cityId, unitType, idempotencyKey }: { cityId: string; unitType: UnitType; idempotencyKey: string }) =>
+      api.recruit(gameId, cityId, unitType, idempotencyKey),
+    onSuccess: (result) => patchMilitary(queryClient, gameId, (military) => withBattalions(military, [result.battalion])),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['games', gameId, 'state'] }),
+  })
+}
+
+/**
+ * Moves are shown at once (D-UX1). A plain move — into a province without foreign battalions, where
+ * the rules cannot start a battle — is drawn at its target before the server answers, and rolled back
+ * if the server refuses it. A move that may fight waits for the server, whose result (the battle
+ * included) is applied as soon as the command answers. The server stays the only authority: the
+ * state refetch that follows always replaces the prediction.
+ */
 export function useMove(gameId: string) {
   const api = useApi()
-  return useGameCommand(gameId, ({ battalionIds, toProvinceKey, idempotencyKey }: {
-    battalionIds: string[]
-    toProvinceKey: string
-    idempotencyKey: string
-  }) => api.move(gameId, battalionIds, toProvinceKey, idempotencyKey))
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ battalionIds, toProvinceKey, idempotencyKey }: {
+      battalionIds: string[]
+      toProvinceKey: string
+      idempotencyKey: string
+    }) => api.move(gameId, battalionIds, toProvinceKey, idempotencyKey),
+    onMutate: async ({ battalionIds, toProvinceKey }) => {
+      await queryClient.cancelQueries({ queryKey: ['games', gameId, 'military'] })
+      const snapshots = queryClient.getQueriesData<MilitaryOverview>({ queryKey: ['games', gameId, 'military'] })
+      patchMilitary(queryClient, gameId, (military) => {
+        const foreignInTarget = military.battalions.some(
+          (b) => b.provinceKey === toProvinceKey && b.nationId !== military.nationId && b.commanderNationId !== military.nationId,
+        )
+        if (foreignInTarget) {
+          return military
+        }
+        return {
+          ...military,
+          battalions: military.battalions.map((b) =>
+            battalionIds.includes(b.id) ? { ...b, provinceKey: toProvinceKey, eligibility: 'ALREADY_MOVED' } : b,
+          ),
+        }
+      })
+      return { snapshots }
+    },
+    onSuccess: (result) => patchMilitary(queryClient, gameId, (military) => withBattalions(military, result.battalions)),
+    onError: (_error, _input, context) => context?.snapshots.forEach(([key, data]) => queryClient.setQueryData(key, data)),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['games', gameId, 'state'] }),
+  })
 }
 
 /** The caller's research; refetched with the state version, so round-end points appear without polling it. */

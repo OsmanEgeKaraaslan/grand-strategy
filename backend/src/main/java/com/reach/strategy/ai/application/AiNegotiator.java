@@ -84,6 +84,11 @@ class AiNegotiator {
 		if (seats.isEmpty()) {
 			return;
 		}
+		// Computers only negotiate inside peace conferences. Without an open one there is nothing to do,
+		// and checking costs one query instead of a diplomacy overview per computer nation.
+		if (!read(() -> diplomacy.anyOpenConference(gameId))) {
+			return;
+		}
 		CurrentPlayer probe = computers.actor(seats.getFirst().playerId());
 		GameAccess.Membership membership = read(() -> gameAccess.membership(probe, gameId));
 		if (!membership.inProgress()) {
