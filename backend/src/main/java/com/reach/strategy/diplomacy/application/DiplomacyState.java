@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import com.reach.strategy.platform.read.ReadScope;
 import com.reach.strategy.diplomacy.domain.RelationsRepository;
 import com.reach.strategy.diplomacy.rules.Diplomacy;
 import com.reach.strategy.diplomacy.rules.DiplomacyRules;
@@ -31,6 +32,11 @@ class DiplomacyState {
 	/** Empty for games without diplomacy (rulesets before v5). */
 	@Transactional(readOnly = true)
 	Optional<Picture> load(UUID gameId) {
+		// The diplomacy view and the military relations of one read scope share one picture.
+		return ReadScope.remember(List.of("diplomacy.picture", gameId), () -> loadPicture(gameId));
+	}
+
+	private Optional<Picture> loadPicture(UUID gameId) {
 		return relations.rulesetVersion(gameId)
 			.map(version -> new Picture(gameId, rulesets.rules(version), relations.alliances(gameId),
 					relations.wars(gameId), relations.participants(gameId), relations.activeFronts(gameId),

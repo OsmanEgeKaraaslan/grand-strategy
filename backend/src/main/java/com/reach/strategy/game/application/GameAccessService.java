@@ -1,5 +1,6 @@
 package com.reach.strategy.game.application;
 
+import java.util.List;
 import java.util.UUID;
 
 import com.reach.strategy.game.api.GameAccess;
@@ -9,6 +10,7 @@ import com.reach.strategy.game.domain.GamePlayerRepository;
 import com.reach.strategy.game.domain.GameRepository;
 import com.reach.strategy.game.domain.GameStatus;
 import com.reach.strategy.identity.api.CurrentPlayer;
+import com.reach.strategy.platform.read.ReadScope;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +29,11 @@ class GameAccessService implements GameAccess {
 	@Override
 	@Transactional(readOnly = true)
 	public Membership membership(CurrentPlayer me, UUID gameId) {
+		// Several views built in one read scope (a computer observation) share one membership.
+		return ReadScope.remember(List.of("game.membership", me.id(), gameId), () -> loadMembership(me, gameId));
+	}
+
+	private Membership loadMembership(CurrentPlayer me, UUID gameId) {
 		Game game = games.findById(gameId).orElseThrow(GameErrors::gameNotFound);
 		GamePlayer mine = memberships.findByGameIdOrderBySeatOrder(gameId)
 			.stream()

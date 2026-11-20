@@ -20,6 +20,7 @@ import com.reach.strategy.siege.domain.SiegeRepository;
 import com.reach.strategy.siege.rules.FortressWorks;
 import com.reach.strategy.siege.rules.SiegeRules;
 import com.reach.strategy.world.api.WorldApi;
+import com.reach.strategy.platform.read.ReadScope;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -75,6 +76,9 @@ class SiegeHooks {
 		@Override
 		@Transactional(readOnly = true)
 		public boolean besieged(UUID gameId, UUID provinceStateId) {
+			if (ReadScope.active()) {
+				return besiegedProvinces(gameId).contains(provinceStateId);
+			}
 			return sieges.findByGameIdAndProvinceStateIdAndStatus(gameId, provinceStateId, Siege.Status.ACTIVE)
 				.isPresent();
 		}
@@ -82,25 +86,38 @@ class SiegeHooks {
 		@Override
 		@Transactional(readOnly = true)
 		public boolean cityBesieged(UUID gameId, UUID cityId) {
+			if (ReadScope.active()) {
+				return besiegedCities(gameId).contains(cityId);
+			}
 			return sieges.existsByGameIdAndCityIdAndStatus(gameId, cityId, Siege.Status.ACTIVE);
 		}
 
 		@Override
 		@Transactional(readOnly = true)
 		public Set<UUID> besiegedProvinces(UUID gameId) {
-			return sieges.findByGameIdAndStatusOrderById(gameId, Siege.Status.ACTIVE)
-				.stream()
-				.map(Siege::provinceStateId)
+			return activeSieges(gameId).stream()
+				.map(ActiveSiege::provinceStateId)
 				.collect(java.util.stream.Collectors.toUnmodifiableSet());
 		}
 
 		@Override
 		@Transactional(readOnly = true)
 		public Set<UUID> besiegedCities(UUID gameId) {
-			return sieges.findByGameIdAndStatusOrderById(gameId, Siege.Status.ACTIVE)
-				.stream()
-				.map(Siege::cityId)
+			return activeSieges(gameId).stream()
+				.map(ActiveSiege::cityId)
 				.collect(java.util.stream.Collectors.toUnmodifiableSet());
+		}
+
+		/** The game's active sieges, read once per read scope. */
+		private java.util.List<ActiveSiege> activeSieges(UUID gameId) {
+			return ReadScope.remember(java.util.List.of("siege.active", gameId),
+					() -> sieges.findByGameIdAndStatusOrderById(gameId, Siege.Status.ACTIVE)
+						.stream()
+						.map(s -> new ActiveSiege(s.provinceStateId(), s.cityId()))
+						.toList());
+		}
+
+		private record ActiveSiege(UUID provinceStateId, UUID cityId) {
 		}
 
 		@Override

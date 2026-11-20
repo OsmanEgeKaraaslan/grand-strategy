@@ -11,6 +11,7 @@ import com.reach.strategy.economy.api.UpkeepSource;
 import com.reach.strategy.game.api.GameStartInitializer;
 import com.reach.strategy.game.api.RoundPhase;
 import com.reach.strategy.military.api.MilitaryModifiers;
+import com.reach.strategy.platform.read.ReadScope;
 import com.reach.strategy.research.domain.Institution;
 import com.reach.strategy.research.domain.InstitutionRepository;
 import com.reach.strategy.research.domain.NationDoctrine;
@@ -139,6 +140,10 @@ class ResearchHooks {
 
 		@Transactional(readOnly = true)
 		public Research.Effects of(UUID gameId, UUID nationId) {
+			if (ReadScope.active()) {
+				// Same result as below, from the game-wide read shared by the scope.
+				return ofGame(gameId).getOrDefault(nationId, Research.Effects.NONE);
+			}
 			NationResearch r = research.findById(nationId).filter(x -> x.gameId().equals(gameId)).orElse(null);
 			if (r == null) {
 				return Research.Effects.NONE;
@@ -162,6 +167,10 @@ class ResearchHooks {
 		 */
 		@Transactional(readOnly = true)
 		public Map<UUID, Research.Effects> ofGame(UUID gameId) {
+			return ReadScope.remember(List.of("research.effects", gameId), () -> loadGame(gameId));
+		}
+
+		private Map<UUID, Research.Effects> loadGame(UUID gameId) {
 			Map<UUID, List<String>> chosen = new HashMap<>();
 			for (NationDoctrine d : doctrines.findByGameIdOrderByNationIdAscDoctrineKeyAsc(gameId)) {
 				chosen.computeIfAbsent(d.nationId(), n -> new java.util.ArrayList<>()).add(d.doctrineKey());
@@ -172,7 +181,7 @@ class ResearchHooks {
 					.ifPresent(rules -> effects.put(r.nationId(), Research.effects(r.level(ResearchRules.Track.MILITARY),
 							r.level(ResearchRules.Track.CIVILIAN), chosen.getOrDefault(r.nationId(), List.of()), rules)));
 			}
-			return effects;
+			return Map.copyOf(effects);
 		}
 
 	}

@@ -170,6 +170,8 @@ not promise it works, and it fixes neither backups nor the size limit.
 
 ### Phase 8: Pure apply functions and an in-memory computer phase (PROPOSED, not started)
 
+Design note: [ENGINE_DESIGN.md](ENGINE_DESIGN.md) (stages S1–S7, open decisions D1–D4).
+
 Measured 2026-11-20 on a Grand Campaign game: one round of 8 computer turns (~30 actions) needs
 ~2,850 SQL statements and ~130 transactions after D-AI1 (was ~4,500 and ~270). An observation reads
 the overviews of five modules (~84 statements) and every action is a full command (~25–35). At

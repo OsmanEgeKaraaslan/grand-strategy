@@ -22,6 +22,7 @@ import com.reach.strategy.military.api.MilitaryActions;
 import com.reach.strategy.military.api.MilitaryViews;
 import com.reach.strategy.platform.web.ApiException;
 import com.reach.strategy.research.api.ResearchActions;
+import com.reach.strategy.platform.read.ReadScope;
 import com.reach.strategy.research.api.ResearchViews;
 import com.reach.strategy.siege.api.SiegeActions;
 import com.reach.strategy.siege.api.SiegeViews;
@@ -61,7 +62,16 @@ class AiObserver {
 			Map<String, Set<String>> rivers, Map<UUID, String> nationKeys, Map<UUID, String> capitals) {
 	}
 
+	/**
+	 * The board as the computer sees it. Runs in one read scope (ENGINE_DESIGN.md S1): the five module
+	 * views share the world snapshot, membership, research effects and sieges instead of each reading
+	 * them again. Must be called inside a read-only transaction.
+	 */
 	AiState observe(CurrentPlayer actor, UUID gameId, int round, int turnNumber) {
+		return ReadScope.run(() -> observeInScope(actor, gameId, round, turnNumber));
+	}
+
+	private AiState observeInScope(CurrentPlayer actor, UUID gameId, int round, int turnNumber) {
 		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
 		MapData map = maps.computeIfAbsent(snapshot.mapId(), this::load);
 		DiplomacyViews.Overview d = diplomacy.overview(actor, gameId);

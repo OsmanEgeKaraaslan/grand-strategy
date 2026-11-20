@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.reach.strategy.platform.read.ReadScope;
 import com.reach.strategy.platform.web.ApiException;
 import com.reach.strategy.world.api.WorldApi;
 import com.reach.strategy.world.domain.MapTemplate;
@@ -146,17 +147,20 @@ public class WorldService implements WorldApi {
 	@Override
 	@Transactional(readOnly = true)
 	public WorldSnapshot snapshot(UUID gameId) {
-		List<NationState> nations = worldState.nations(gameId)
-			.stream()
-			.map(row -> new NationState(row.id(), row.nationTemplateId(), row.name(), row.color(), row.gamePlayerId(),
-					row.control(), row.eliminatedRound()))
-			.toList();
-		List<ProvinceState> provinces = worldState.provinces(gameId)
-			.stream()
-			.map(row -> new ProvinceState(row.provinceKey(), row.provinceStateId(), row.ownerNationId(),
-					row.controllerNationId(), row.cityId(), row.cityName(), row.population()))
-			.toList();
-		return new WorldSnapshot(worldState.mapIdOf(gameId).orElse(null), nations, provinces);
+		// Several views built in one read scope (a computer observation) share one snapshot.
+		return ReadScope.remember(List.of("world.snapshot", gameId), () -> {
+			List<NationState> nations = worldState.nations(gameId)
+				.stream()
+				.map(row -> new NationState(row.id(), row.nationTemplateId(), row.name(), row.color(), row.gamePlayerId(),
+						row.control(), row.eliminatedRound()))
+				.toList();
+			List<ProvinceState> provinces = worldState.provinces(gameId)
+				.stream()
+				.map(row -> new ProvinceState(row.provinceKey(), row.provinceStateId(), row.ownerNationId(),
+						row.controllerNationId(), row.cityId(), row.cityName(), row.population()))
+				.toList();
+			return new WorldSnapshot(worldState.mapIdOf(gameId).orElse(null), nations, provinces);
+		});
 	}
 
 	@Override
