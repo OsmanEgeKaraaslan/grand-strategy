@@ -8,8 +8,8 @@ import java.util.UUID;
 import com.reach.strategy.economy.api.EconomyApi;
 import com.reach.strategy.economy.api.UpkeepSource;
 import com.reach.strategy.economy.domain.EconomyReportRepository;
-import com.reach.strategy.economy.domain.NationEconomy;
-import com.reach.strategy.economy.domain.NationEconomyRepository;
+import com.reach.strategy.economy.domain.EconomyStore;
+import com.reach.strategy.economy.rules.Ledger;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -19,30 +19,29 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 class TreasuryService implements EconomyApi {
 
-	private final NationEconomyRepository economies;
+	private final EconomyStore store;
 	private final List<UpkeepSource> upkeepSources;
 	private final EconomyReportRepository reports;
 
-	TreasuryService(NationEconomyRepository economies, List<UpkeepSource> upkeepSources,
+	TreasuryService(EconomyStore store, List<UpkeepSource> upkeepSources,
 			EconomyReportRepository reports) {
 		this.reports = reports;
-		this.economies = economies;
+		this.store = store;
 		this.upkeepSources = List.copyOf(upkeepSources);
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public TreasuryState treasury(UUID nationId) {
-		NationEconomy economy = load(nationId);
-		return new TreasuryState(economy.treasuryMg(), economy.inArrears());
+		Ledger.Purse purse = load(nationId);
+		return new TreasuryState(purse.treasuryMg(), purse.inArrears());
 	}
 
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void spend(UUID nationId, long amountMg) {
-		NationEconomy economy = load(nationId);
-		economy.spend(amountMg);
-		economies.saveAndFlush(economy);
+		Ledger before = Ledger.of(List.of(load(nationId)), List.of());
+		store.persist(null, before, before.spend(nationId, amountMg));
 	}
 
 	@Override
@@ -51,14 +50,12 @@ class TreasuryService implements EconomyApi {
 		if (amountMg < 0 || fromNationId.equals(toNationId)) {
 			throw new IllegalArgumentException("Invalid transfer of " + amountMg + " mg");
 		}
-		NationEconomy from = load(fromNationId);
-		NationEconomy to = load(toNationId);
-		if (!from.gameId().equals(to.gameId())) {
+		UUID fromGame = store.gameOfNation(fromNationId);
+		if (fromGame == null || !fromGame.equals(store.gameOfNation(toNationId))) {
 			throw new IllegalArgumentException("Treasuries of different games");
 		}
-		from.spend(amountMg);
-		to.receive(amountMg);
-		economies.saveAllAndFlush(java.util.List.of(from, to));
+		Ledger before = Ledger.of(List.of(load(fromNationId), load(toNationId)), List.of());
+		store.persist(fromGame, before, before.transfer(fromNationId, toNationId, amountMg));
 	}
 
 	@Override
@@ -77,8 +74,8 @@ class TreasuryService implements EconomyApi {
 		return total;
 	}
 
-	private NationEconomy load(UUID nationId) {
-		return economies.findById(nationId)
+	private Ledger.Purse load(UUID nationId) {
+		return store.purse(nationId)
 			.orElseThrow(() -> new IllegalStateException("Nation " + nationId + " has no treasury"));
 	}
 

@@ -5,11 +5,9 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import com.reach.strategy.economy.domain.Building;
-import com.reach.strategy.economy.domain.BuildingRepository;
-import com.reach.strategy.economy.domain.NationEconomy;
-import com.reach.strategy.economy.domain.NationEconomyRepository;
+import com.reach.strategy.economy.domain.EconomyStore;
 import com.reach.strategy.economy.rules.EconomyRules;
+import com.reach.strategy.economy.rules.Ledger;
 import com.reach.strategy.game.api.GameStartInitializer;
 import com.reach.strategy.world.api.WorldApi;
 
@@ -26,16 +24,13 @@ class EconomyStartInitializer implements GameStartInitializer {
 
 	private final EconomyRulesets rulesets;
 	private final WorldApi world;
-	private final NationEconomyRepository economies;
-	private final BuildingRepository buildings;
+	private final EconomyStore store;
 	private final Clock clock;
 
-	EconomyStartInitializer(EconomyRulesets rulesets, WorldApi world, NationEconomyRepository economies,
-			BuildingRepository buildings, Clock clock) {
+	EconomyStartInitializer(EconomyRulesets rulesets, WorldApi world, EconomyStore store, Clock clock) {
 		this.rulesets = rulesets;
 		this.world = world;
-		this.economies = economies;
-		this.buildings = buildings;
+		this.store = store;
 		this.clock = clock;
 	}
 
@@ -52,15 +47,19 @@ class EconomyStartInitializer implements GameStartInitializer {
 			.stream()
 			.collect(Collectors.toMap(WorldApi.ProvinceState::provinceKey, WorldApi.ProvinceState::cityId));
 
+		// A new game has no economy yet: everything opened here is written in one batch per table.
+		Ledger[] ledger = { Ledger.empty() };
 		snapshot.nations().stream().sorted((a, b) -> a.id().compareTo(b.id())).forEach(nation -> {
 			// Ruleset v6: values per faction tier (major realms start richer, small states poorer).
 			WorldApi.NationOption template = templates.get(nation.nationTemplateId());
-			economies.save(NationEconomy.opening(gameId, nation.id(), rules.startingTreasuryMg(template.tier())));
+			ledger[0] = ledger[0].open(Ledger.Purse.opening(nation.id(), rules.startingTreasuryMg(template.tier())));
 			UUID capitalCity = cityByProvince.get(template.capitalProvinceKey());
 			for (int i = 0; i < rules.startingCapitalWorkshops(template.tier()); i++) {
-				buildings.save(Building.startingWorkshop(gameId, capitalCity, 1, clock.instant()));
+				ledger[0] = ledger[0]
+					.build(Ledger.Building.startingWorkshop(UUID.randomUUID(), capitalCity, 1, clock.instant()));
 			}
 		});
+		store.persist(gameId, Ledger.empty(), ledger[0]);
 	}
 
 }

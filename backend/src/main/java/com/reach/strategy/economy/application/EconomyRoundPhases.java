@@ -8,12 +8,10 @@ import java.util.stream.Collectors;
 
 import com.reach.strategy.economy.api.EconomyTechnology;
 import com.reach.strategy.economy.api.SiegeStatus;
-import com.reach.strategy.economy.domain.Building;
-import com.reach.strategy.economy.domain.BuildingRepository;
 import com.reach.strategy.economy.domain.EconomyReportRepository;
-import com.reach.strategy.economy.domain.NationEconomy;
-import com.reach.strategy.economy.domain.NationEconomyRepository;
+import com.reach.strategy.economy.domain.EconomyStore;
 import com.reach.strategy.economy.rules.EconomyRules;
+import com.reach.strategy.economy.rules.Ledger;
 import com.reach.strategy.economy.rules.PopulationGrowth;
 import com.reach.strategy.economy.rules.Treasury;
 import com.reach.strategy.economy.rules.WorkshopStatus;
@@ -33,14 +31,14 @@ import org.springframework.transaction.annotation.Transactional;
 class EconomyRoundPhases {
 
 	@Bean
-	RoundPhase incomePhase(EconomyRulesets rulesets, EconomyState state, NationEconomyRepository economies,
+	RoundPhase incomePhase(EconomyRulesets rulesets, EconomyState state, EconomyStore store,
 			EconomyReportRepository reports, TreasuryService treasuryService) {
-		return new IncomePhase(rulesets, state, economies, reports, treasuryService);
+		return new IncomePhase(rulesets, state, store, reports, treasuryService);
 	}
 
 	@Bean
-	RoundPhase constructionPhase(BuildingRepository buildings) {
-		return new ConstructionPhase(buildings);
+	RoundPhase constructionPhase(EconomyStore store) {
+		return new ConstructionPhase(store);
 	}
 
 	@Bean
@@ -58,15 +56,15 @@ class EconomyRoundPhases {
 
 		private final EconomyRulesets rulesets;
 		private final EconomyState state;
-		private final NationEconomyRepository economies;
+		private final EconomyStore store;
 		private final EconomyReportRepository reports;
 		private final TreasuryService treasuryService;
 
-		IncomePhase(EconomyRulesets rulesets, EconomyState state, NationEconomyRepository economies,
+		IncomePhase(EconomyRulesets rulesets, EconomyState state, EconomyStore store,
 				EconomyReportRepository reports, TreasuryService treasuryService) {
 			this.rulesets = rulesets;
 			this.state = state;
-			this.economies = economies;
+			this.store = store;
 			this.reports = reports;
 			this.treasuryService = treasuryService;
 		}
@@ -81,16 +79,18 @@ class EconomyRoundPhases {
 		public void apply(RoundContext context) {
 			EconomyRules rules = rulesets.rules(context.rulesetVersion());
 			EconomyState.Snapshot snapshot = state.load(context.gameId(), rules);
-			Map<UUID, NationEconomy> treasuries = economies.findByGameIdOrderByNationId(context.gameId())
+			Ledger before = Ledger.of(store.purses(context.gameId()), List.of());
+			Map<UUID, Ledger.Purse> treasuries = before.purses()
 				.stream()
-				.collect(Collectors.toMap(NationEconomy::nationId, Function.identity()));
+				.collect(Collectors.toMap(Ledger.Purse::nationId, Function.identity()));
+			Ledger[] after = { before };
 			snapshot.world()
 				.nations()
 				.stream()
 				.map(WorldApi.NationState::id)
 				.sorted()
 				.forEach(nationId -> {
-					NationEconomy treasury = treasuries.get(nationId);
+					Ledger.Purse treasury = treasuries.get(nationId);
 					if (treasury == null) {
 						throw new IllegalStateException("Nation " + nationId + " has no treasury");
 					}
@@ -99,9 +99,10 @@ class EconomyRoundPhases {
 					// units destroyed earlier in this round cost nothing.
 					long upkeep = treasuryService.upkeepOf(context.gameId(), context.rulesetVersion(), nationId);
 					Treasury.Settlement settlement = Treasury.settle(treasury.treasuryMg(), income, upkeep);
-					treasury.apply(settlement);
+					after[0] = after[0].settle(nationId, settlement);
 					reports.insert(context.gameId(), context.round(), nationId, settlement, context.now());
 				});
+			store.persist(context.gameId(), before, after[0]);
 		}
 
 	}
@@ -112,10 +113,10 @@ class EconomyRoundPhases {
 	 */
 	static class ConstructionPhase implements RoundPhase {
 
-		private final BuildingRepository buildings;
+		private final EconomyStore store;
 
-		ConstructionPhase(BuildingRepository buildings) {
-			this.buildings = buildings;
+		ConstructionPhase(EconomyStore store) {
+			this.store = store;
 		}
 
 		@Override
@@ -126,16 +127,27 @@ class EconomyRoundPhases {
 		@Override
 		@Transactional(propagation = Propagation.MANDATORY)
 		public void apply(RoundContext context) {
-			buildings
-				.findByGameIdAndStatusAndCompletesAfterRoundLessThanEqualOrderById(context.gameId(),
-						WorkshopStatus.UNDER_CONSTRUCTION, context.round())
-				.forEach(Building::complete);
-			buildings
-				.findByGameIdAndStatusAndRepairCompletesAfterRoundLessThanEqualOrderById(context.gameId(),
-						WorkshopStatus.UNDER_REPAIR, context.round())
-				.forEach(Building::completeRepair);
-			buildings.findByGameIdAndUpgradeCompletesAfterRoundLessThanEqualOrderById(context.gameId(), context.round())
-				.forEach(Building::completeUpgrade);
+			int round = context.round();
+			Ledger before = Ledger.of(List.of(), store.buildings(context.gameId()));
+			Ledger after = before;
+			for (Ledger.Building b : before.buildings()) {
+				Ledger.Building done = b;
+				if (done.status() == WorkshopStatus.UNDER_CONSTRUCTION && done.completesAfterRound() != null
+						&& done.completesAfterRound() <= round) {
+					done = done.completed();
+				}
+				if (done.status() == WorkshopStatus.UNDER_REPAIR && done.repairCompletesAfterRound() != null
+						&& done.repairCompletesAfterRound() <= round) {
+					done = done.repairCompleted();
+				}
+				if (done.upgradeCompletesAfterRound() != null && done.upgradeCompletesAfterRound() <= round) {
+					done = done.upgradeCompleted();
+				}
+				if (done != b) {
+					after = after.update(done);
+				}
+			}
+			store.persist(context.gameId(), before, after);
 		}
 
 	}

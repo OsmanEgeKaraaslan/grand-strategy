@@ -11,14 +11,12 @@ import java.util.UUID;
 
 import com.reach.strategy.economy.api.EconomyTechnology;
 import com.reach.strategy.economy.api.SiegeStatus;
-import com.reach.strategy.economy.domain.Building;
-import com.reach.strategy.economy.domain.BuildingRepository;
 import com.reach.strategy.economy.domain.EconomyReportRepository;
-import com.reach.strategy.economy.domain.NationEconomy;
-import com.reach.strategy.economy.domain.NationEconomyRepository;
+import com.reach.strategy.economy.domain.EconomyStore;
 import com.reach.strategy.economy.rules.CityEconomy;
 import com.reach.strategy.economy.rules.Construction;
 import com.reach.strategy.economy.rules.EconomyRules;
+import com.reach.strategy.economy.rules.Ledger;
 import com.reach.strategy.economy.rules.PopulationGrowth;
 import com.reach.strategy.economy.rules.WorkshopRepairs;
 import com.reach.strategy.economy.rules.WorkshopUpgrades;
@@ -50,15 +48,14 @@ public class EconomyService {
 	private final GameCommands gameCommands;
 	private final EconomyRulesets rulesets;
 	private final EconomyState state;
-	private final NationEconomyRepository economies;
-	private final BuildingRepository buildings;
+	private final EconomyStore store;
 	private final EconomyReportRepository reports;
 	private final TreasuryService treasuries;
 	private final List<SiegeStatus> siegeStatus;
 	private final List<EconomyTechnology> technology;
 
 	EconomyService(GameAccess gameAccess, GameCommands gameCommands, EconomyRulesets rulesets, EconomyState state,
-			NationEconomyRepository economies, BuildingRepository buildings, EconomyReportRepository reports,
+			EconomyStore store, EconomyReportRepository reports,
 			TreasuryService treasuries, List<SiegeStatus> siegeStatus, List<EconomyTechnology> technology) {
 		this.technology = List.copyOf(technology);
 		this.treasuries = treasuries;
@@ -67,8 +64,7 @@ public class EconomyService {
 		this.gameCommands = gameCommands;
 		this.rulesets = rulesets;
 		this.state = state;
-		this.economies = economies;
-		this.buildings = buildings;
+		this.store = store;
 		this.reports = reports;
 	}
 
@@ -80,7 +76,7 @@ public class EconomyService {
 		EconomyRules rules = rulesets.rules(membership.rulesetVersion());
 		EconomyState.Snapshot snapshot = state.load(gameId, rules);
 		WorldApi.NationState nation = snapshot.nationOfPlayer(membership.gamePlayerId());
-		NationEconomy treasury = treasuryOf(nation.id());
+		Ledger.Purse treasury = treasuryOf(nation.id());
 		Lookups lookups = new Lookups(gameId);
 		List<EconomyViews.City> cities = snapshot.cities()
 			.stream()
@@ -125,7 +121,7 @@ public class EconomyService {
 				EconomyState.Snapshot snapshot = state.load(gameId, rules);
 				EconomyState.City city = cityOf(snapshot, cityId);
 				WorldApi.NationState nation = snapshot.nationOfPlayer(context.gamePlayerId());
-				NationEconomy treasury = treasuryOf(nation.id());
+				Ledger.Purse treasury = treasuryOf(nation.id());
 
 				List<Construction.Blocker> blockers = Construction.blockers(new Construction.Request(nation.id(),
 						city.province().ownerNationId(), city.province().controllerNationId(), true, tier,
@@ -135,11 +131,11 @@ public class EconomyService {
 				}
 
 				EconomyRules.WorkshopTier tierRules = rules.tier(tier);
-				treasury.spend(tierRules.buildCostMg());
-				Building project = buildings.save(Building.workshopProject(gameId, cityId, tier, context.round(),
-						Construction.completesAfterRound(context.round(), tierRules.buildDurationRounds()),
-						tierRules.buildCostMg(), context.now()));
-				economies.saveAndFlush(treasury);
+				Ledger.Building project = Ledger.Building.workshopProject(UUID.randomUUID(), cityId, tier,
+						context.round(), Construction.completesAfterRound(context.round(), tierRules.buildDurationRounds()),
+						tierRules.buildCostMg(), context.now());
+				Ledger before = Ledger.of(List.of(treasury), List.of());
+				store.persist(gameId, before, before.spend(nation.id(), tierRules.buildCostMg()).build(project));
 				return new GameCommands.Outcome<>(result(gameId, cityId, project, nation.id(), context, rules),
 						project.id());
 			}
@@ -147,7 +143,7 @@ public class EconomyService {
 			@Override
 			public EconomyViews.BuildResult replay(GameCommands.CommandContext context, UUID resultRef) {
 				EconomyRules rules = rulesets.rules(context.rulesetVersion());
-				Building project = buildings.findByGameIdAndId(gameId, resultRef)
+				Ledger.Building project = store.building(gameId, resultRef)
 					.orElseThrow(() -> new IllegalStateException("Replayed workshop " + resultRef + " is missing"));
 				WorldApi.NationState nation = state.load(gameId, rules).nationOfPlayer(context.gamePlayerId());
 				return result(gameId, project.cityId(), project, nation.id(), context, rules);
@@ -156,10 +152,10 @@ public class EconomyService {
 		});
 	}
 
-	private EconomyViews.BuildResult result(UUID gameId, UUID cityId, Building project, UUID nationId,
+	private EconomyViews.BuildResult result(UUID gameId, UUID cityId, Ledger.Building project, UUID nationId,
 			GameCommands.CommandContext context, EconomyRules rules) {
 		EconomyState.Snapshot snapshot = state.load(gameId, rules);
-		NationEconomy treasury = treasuryOf(nationId);
+		Ledger.Purse treasury = treasuryOf(nationId);
 		boolean stillYourTurn = true;
 		return new EconomyViews.BuildResult(workshopView(project), treasury.treasuryMg(),
 				cityView(new Lookups(gameId), cityOf(snapshot, cityId), nationId, treasury, stillYourTurn, context.round(), rules));
@@ -167,7 +163,7 @@ public class EconomyService {
 
 	// --- views --------------------------------------------------------------------------------
 
-	private EconomyViews.City cityView(Lookups lookups, EconomyState.City city, UUID viewerNationId, NationEconomy viewerTreasury,
+	private EconomyViews.City cityView(Lookups lookups, EconomyState.City city, UUID viewerNationId, Ledger.Purse viewerTreasury,
 			boolean yourTurn, int round, EconomyRules rules) {
 		CityEconomy.Income income = city.income();
 		CityEconomy.Production production = income.production();
@@ -200,11 +196,11 @@ public class EconomyService {
 				growthView(lookups, city, rules));
 	}
 
-	private static EconomyViews.Workshop workshopView(Building building) {
+	private static EconomyViews.Workshop workshopView(Ledger.Building building) {
 		return workshopView(building, null, null);
 	}
 
-	private static EconomyViews.Workshop workshopView(Building building, EconomyViews.RepairOption repair,
+	private static EconomyViews.Workshop workshopView(Ledger.Building building, EconomyViews.RepairOption repair,
 			EconomyViews.UpgradeOption upgrade) {
 		Integer completes = building.completesAfterRound();
 		return new EconomyViews.Workshop(building.id(), building.tier(), building.status().name(),
@@ -214,8 +210,8 @@ public class EconomyService {
 	}
 
 	/** Repair quote for a damaged workshop; null for any other status or a ruleset without repairs. */
-	private EconomyViews.RepairOption repairOption(Lookups lookups, Building building, EconomyState.City city,
-			UUID viewerNationId, NationEconomy treasury, boolean yourTurn, int round, EconomyRules rules) {
+	private EconomyViews.RepairOption repairOption(Lookups lookups, Ledger.Building building, EconomyState.City city,
+			UUID viewerNationId, Ledger.Purse treasury, boolean yourTurn, int round, EconomyRules rules) {
 		if (building.status() != WorkshopStatus.DAMAGED || rules.workshopRepair() == null) {
 			return null;
 		}
@@ -227,8 +223,8 @@ public class EconomyService {
 				blockers.isEmpty(), blockers);
 	}
 
-	private WorkshopRepairs.Request repairRequest(Lookups lookups, Building building, EconomyState.City city,
-			UUID nationId, boolean yourTurn, NationEconomy treasury) {
+	private WorkshopRepairs.Request repairRequest(Lookups lookups, Ledger.Building building, EconomyState.City city,
+			UUID nationId, boolean yourTurn, Ledger.Purse treasury) {
 		return new WorkshopRepairs.Request(nationId, city.province().ownerNationId(),
 				city.province().controllerNationId(), yourTurn, lookups.besieged(city.cityId()), building.tier(),
 				building.status(), treasury.treasuryMg(), treasury.inArrears());
@@ -238,8 +234,8 @@ public class EconomyService {
 	 * Upgrade quote for an ACTIVE workshop of the upgradable tier; null otherwise or when the ruleset
 	 * has no upgrades. Includes the city's production once it completes, from the same calculator.
 	 */
-	private EconomyViews.UpgradeOption upgradeOption(Lookups lookups, Building building, EconomyState.City city,
-			UUID viewerNationId, NationEconomy treasury, boolean yourTurn, int round, EconomyRules rules) {
+	private EconomyViews.UpgradeOption upgradeOption(Lookups lookups, Ledger.Building building, EconomyState.City city,
+			UUID viewerNationId, Ledger.Purse treasury, boolean yourTurn, int round, EconomyRules rules) {
 		EconomyRules.WorkshopUpgrade upgrade = rules.workshopUpgrade();
 		if (upgrade == null || building.status() != WorkshopStatus.ACTIVE || building.tier() != upgrade.fromTier()
 				|| building.upgrading()) {
@@ -261,8 +257,8 @@ public class EconomyService {
 				Construction.operationalFromRound(completes), incomeAfter, blockers.isEmpty(), blockers);
 	}
 
-	private WorkshopUpgrades.Request upgradeRequest(Lookups lookups, Building building, EconomyState.City city,
-			UUID nationId, boolean yourTurn, NationEconomy treasury) {
+	private WorkshopUpgrades.Request upgradeRequest(Lookups lookups, Ledger.Building building, EconomyState.City city,
+			UUID nationId, boolean yourTurn, Ledger.Purse treasury) {
 		int unlocked = lookups.highestWorkshopTier(nationId);
 		return new WorkshopUpgrades.Request(nationId, city.province().ownerNationId(),
 				city.province().controllerNationId(), yourTurn, lookups.besieged(city.cityId()), building.tier(),
@@ -298,31 +294,31 @@ public class EconomyService {
 				EconomyRules rules = rulesets.rules(context.rulesetVersion());
 				EconomyState.Snapshot snapshot = state.load(gameId, rules);
 				EconomyState.City city = cityOf(snapshot, cityId);
-				Building building = buildings.findByGameIdAndId(gameId, buildingId)
+				Ledger.Building building = store.building(gameId, buildingId)
 					.filter(b -> b.cityId().equals(cityId))
 					.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "BUILDING_NOT_FOUND",
 							"Building not found in this city."));
 				WorldApi.NationState nation = snapshot.nationOfPlayer(context.gamePlayerId());
-				NationEconomy treasury = treasuryOf(nation.id());
+				Ledger.Purse treasury = treasuryOf(nation.id());
 				List<WorkshopUpgrades.Blocker> blockers = WorkshopUpgrades
 					.blockers(upgradeRequest(new Lookups(gameId), building, city, nation.id(), true, treasury), rules);
 				if (!blockers.isEmpty()) {
 					throw upgradeRejection(blockers.getFirst());
 				}
 				EconomyRules.WorkshopUpgrade upgrade = rules.workshopUpgrade();
-				treasury.spend(upgrade.costMg());
-				building.startUpgrade(upgrade.toTier(), context.round(),
+				Ledger.Building upgrading = building.upgradeStarted(upgrade.toTier(), context.round(),
 						Construction.completesAfterRound(context.round(), upgrade.durationRounds()), upgrade.costMg());
-				buildings.saveAndFlush(building);
-				economies.saveAndFlush(treasury);
-				return new GameCommands.Outcome<>(new EconomyViews.UpgradeResult(workshopView(building), upgrade.costMg(),
-						treasury.treasuryMg()), building.id());
+				Ledger before = Ledger.of(List.of(treasury), List.of(building));
+				Ledger after = before.spend(nation.id(), upgrade.costMg()).update(upgrading);
+				store.persist(gameId, before, after);
+				return new GameCommands.Outcome<>(new EconomyViews.UpgradeResult(workshopView(upgrading), upgrade.costMg(),
+						after.purse(nation.id()).treasuryMg()), building.id());
 			}
 
 			@Override
 			public EconomyViews.UpgradeResult replay(GameCommands.CommandContext context, UUID resultRef) {
 				EconomyRules rules = rulesets.rules(context.rulesetVersion());
-				Building building = buildings.findByGameIdAndId(gameId, resultRef)
+				Ledger.Building building = store.building(gameId, resultRef)
 					.orElseThrow(() -> new IllegalStateException("Replayed upgrade " + resultRef + " is missing"));
 				WorldApi.NationState nation = state.load(gameId, rules).nationOfPlayer(context.gamePlayerId());
 				return new EconomyViews.UpgradeResult(workshopView(building), building.upgradeCostPaidMg(),
@@ -369,31 +365,31 @@ public class EconomyService {
 				EconomyRules rules = rulesets.rules(context.rulesetVersion());
 				EconomyState.Snapshot snapshot = state.load(gameId, rules);
 				EconomyState.City city = cityOf(snapshot, cityId);
-				Building building = buildings.findByGameIdAndId(gameId, buildingId)
+				Ledger.Building building = store.building(gameId, buildingId)
 					.filter(b -> b.cityId().equals(cityId))
 					.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "BUILDING_NOT_FOUND",
 							"Building not found in this city."));
 				WorldApi.NationState nation = snapshot.nationOfPlayer(context.gamePlayerId());
-				NationEconomy treasury = treasuryOf(nation.id());
+				Ledger.Purse treasury = treasuryOf(nation.id());
 				List<WorkshopRepairs.Blocker> blockers = WorkshopRepairs
 					.blockers(repairRequest(new Lookups(gameId), building, city, nation.id(), true, treasury), rules);
 				if (!blockers.isEmpty()) {
 					throw repairRejection(blockers.getFirst());
 				}
 				long cost = WorkshopRepairs.cost(building.tier(), rules);
-				treasury.spend(cost);
-				building.startRepair(context.round(),
+				Ledger.Building repairing = building.repairStarted(context.round(),
 						Construction.completesAfterRound(context.round(), rules.workshopRepair().durationRounds()), cost);
-				buildings.saveAndFlush(building);
-				economies.saveAndFlush(treasury);
-				return new GameCommands.Outcome<>(new EconomyViews.RepairResult(workshopView(building), cost,
-						treasury.treasuryMg()), building.id());
+				Ledger before = Ledger.of(List.of(treasury), List.of(building));
+				Ledger after = before.spend(nation.id(), cost).update(repairing);
+				store.persist(gameId, before, after);
+				return new GameCommands.Outcome<>(new EconomyViews.RepairResult(workshopView(repairing), cost,
+						after.purse(nation.id()).treasuryMg()), building.id());
 			}
 
 			@Override
 			public EconomyViews.RepairResult replay(GameCommands.CommandContext context, UUID resultRef) {
 				EconomyRules rules = rulesets.rules(context.rulesetVersion());
-				Building building = buildings.findByGameIdAndId(gameId, resultRef)
+				Ledger.Building building = store.building(gameId, resultRef)
 					.orElseThrow(() -> new IllegalStateException("Replayed repair " + resultRef + " is missing"));
 				WorldApi.NationState nation = state.load(gameId, rules).nationOfPlayer(context.gamePlayerId());
 				return new EconomyViews.RepairResult(workshopView(building), building.repairCostPaidMg(),
@@ -498,8 +494,8 @@ public class EconomyService {
 		return membership;
 	}
 
-	private NationEconomy treasuryOf(UUID nationId) {
-		return economies.findById(nationId)
+	private Ledger.Purse treasuryOf(UUID nationId) {
+		return store.purse(nationId)
 			.orElseThrow(() -> new IllegalStateException("Nation " + nationId + " has no treasury"));
 	}
 

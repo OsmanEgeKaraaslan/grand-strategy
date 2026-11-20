@@ -4,8 +4,8 @@ import java.util.List;
 import java.util.UUID;
 
 import com.reach.strategy.economy.api.WorkshopsApi;
-import com.reach.strategy.economy.domain.Building;
-import com.reach.strategy.economy.domain.BuildingRepository;
+import com.reach.strategy.economy.domain.EconomyStore;
+import com.reach.strategy.economy.rules.Ledger;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -15,16 +15,16 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 class WorkshopAccess implements WorkshopsApi {
 
-	private final BuildingRepository buildings;
+	private final EconomyStore store;
 
-	WorkshopAccess(BuildingRepository buildings) {
-		this.buildings = buildings;
+	WorkshopAccess(EconomyStore store) {
+		this.store = store;
 	}
 
 	@Override
 	@Transactional(readOnly = true)
 	public List<WorkshopInfo> workshops(UUID gameId, UUID cityId) {
-		return buildings.findByGameIdAndCityIdOrderById(gameId, cityId)
+		return store.buildingsOfCity(gameId, cityId)
 			.stream()
 			.map(b -> new WorkshopInfo(b.id(), b.tier(), b.status().name()))
 			.toList();
@@ -33,10 +33,10 @@ class WorkshopAccess implements WorkshopsApi {
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void damage(UUID gameId, UUID buildingId) {
-		Building building = buildings.findByGameIdAndId(gameId, buildingId)
+		Ledger.Building building = store.building(gameId, buildingId)
 			.orElseThrow(() -> new IllegalStateException("Building " + buildingId + " is not in game " + gameId));
-		building.damage();
-		buildings.saveAndFlush(building);
+		Ledger before = Ledger.of(List.of(), List.of(building));
+		store.persist(gameId, before, before.update(building.damaged()));
 	}
 
 }
