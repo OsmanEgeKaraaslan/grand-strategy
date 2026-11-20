@@ -33,7 +33,7 @@ public class CohortLedger {
 	/** A newly raised battalion: all its soldiers come from one city. */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void raised(Battalion battalion) {
-		cohorts.save(BattalionCohort.of(battalion.gameId(), battalion.id(), battalion.originCityId(),
+		cohorts.insert(BattalionCohort.of(battalion.gameId(), battalion.id(), battalion.originCityId(),
 				battalion.manpower()));
 	}
 
@@ -54,8 +54,7 @@ public class CohortLedger {
 	/** The battalion is about to be deleted: its cohorts go with it. */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void removed(Battalion battalion) {
-		cohorts.deleteAll(rows(battalion));
-		cohorts.flush();
+		cohorts.deleteByBattalion(battalion.gameId(), battalion.id());
 	}
 
 	private List<BattalionCohort> rows(Battalion battalion) {
@@ -74,14 +73,13 @@ public class CohortLedger {
 			if (soldiers == null) {
 				cohorts.delete(row);
 			}
-			else {
+			else if (soldiers != row.soldiers()) {
 				row.setSoldiers(soldiers);
-				cohorts.save(row);
+				cohorts.updateSoldiers(row);
 			}
 		}
-		wanted.forEach((city, soldiers) -> cohorts.save(BattalionCohort.of(battalion.gameId(), battalion.id(), city,
+		wanted.forEach((city, soldiers) -> cohorts.insert(BattalionCohort.of(battalion.gameId(), battalion.id(), city,
 				soldiers)));
-		cohorts.flush();
 	}
 
 }

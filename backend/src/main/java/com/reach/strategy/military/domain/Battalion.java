@@ -3,99 +3,76 @@ package com.reach.strategy.military.domain;
 import java.time.Instant;
 import java.util.UUID;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
-import jakarta.persistence.PostLoad;
-import jakarta.persistence.PostPersist;
-import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
-
 import com.reach.strategy.military.rules.Movement;
 import com.reach.strategy.military.rules.UnitType;
-
-import org.springframework.data.domain.Persistable;
 
 /**
  * The basic military unit. Location and movement eligibility belong to the battalion itself
  * (Q-M1), never to its army, so regrouping cannot reset them. A battalion with zero manpower is
  * destroyed: the row is deleted, and its dead never return to the civilian population.
  */
-@Entity
-@Table(name = "battalion")
-public class Battalion implements Persistable<UUID> {
+public class Battalion {
 
-	@Id
 	private UUID id;
-
-	@Column(name = "game_id", nullable = false, updatable = false)
 	private UUID gameId;
-
-	@Column(name = "nation_id", nullable = false, updatable = false)
 	private UUID nationId;
-
-	@Enumerated(EnumType.STRING)
-	@Column(name = "unit_type", nullable = false, updatable = false)
 	private UnitType unitType;
-
-	@Column(nullable = false)
 	private int manpower;
 
 	/** Reinforcement refills a battalion up to this (Phase 6). */
-	@Column(name = "max_manpower", nullable = false, updatable = false)
 	private int maxManpower;
 
 	/** Where it was first raised; the per-origin breakdown of its soldiers is in {@link BattalionCohort}. */
-	@Column(name = "origin_city_id", nullable = false, updatable = false)
 	private UUID originCityId;
-
-	@Column(name = "province_state_id", nullable = false)
 	private UUID provinceStateId;
-
-	@Column(name = "army_id")
 	private UUID armyId;
-
-	@Column(name = "equipment_level", nullable = false)
 	private int equipmentLevel;
-
-	@Column(name = "recruitment_cost_mg", nullable = false, updatable = false)
 	private long recruitmentCostMg;
-
-	@Column(name = "recruited_round", nullable = false, updatable = false)
 	private int recruitedRound;
-
-	@Column(name = "recruited_turn_number", nullable = false, updatable = false)
 	private int recruitedTurnNumber;
-
-	@Column(name = "last_moved_turn_number")
 	private Integer lastMovedTurnNumber;
-
-	@Column(name = "last_reinforced_turn_number")
 	private Integer lastReinforcedTurnNumber;
-
-	@Column(name = "last_moved_round")
 	private Integer lastMovedRound;
-
-	@Column(name = "last_reinforced_round")
 	private Integer lastReinforcedRound;
 
 	/** An ally commanding this battalion (attached forces, Phase 10), or null for its owner. */
-	@Column(name = "commander_nation_id")
 	private UUID commanderNationId;
 
 	/** Replacements received during {@code lastReinforcedTurnNumber}; counts toward the per-turn limit. */
-	@Column(name = "reinforced_this_turn", nullable = false)
 	private int reinforcedThisTurn;
-
-	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
-	@Transient
-	private boolean isNew = true;
+	private Battalion() {
+	}
 
-	protected Battalion() {
+	/** A battalion as stored (see {@link BattalionRepository}). */
+	static Battalion restore(UUID id, UUID gameId, UUID nationId, UnitType unitType, int manpower, int maxManpower,
+			UUID originCityId, UUID provinceStateId, UUID armyId, int equipmentLevel, long recruitmentCostMg,
+			int recruitedRound, int recruitedTurnNumber, Integer lastMovedTurnNumber, Integer lastReinforcedTurnNumber,
+			Integer lastMovedRound, Integer lastReinforcedRound, UUID commanderNationId, int reinforcedThisTurn,
+			Instant createdAt) {
+		Battalion b = new Battalion();
+		b.id = id;
+		b.gameId = gameId;
+		b.nationId = nationId;
+		b.unitType = unitType;
+		b.manpower = manpower;
+		b.maxManpower = maxManpower;
+		b.originCityId = originCityId;
+		b.provinceStateId = provinceStateId;
+		b.armyId = armyId;
+		b.equipmentLevel = equipmentLevel;
+		b.recruitmentCostMg = recruitmentCostMg;
+		b.recruitedRound = recruitedRound;
+		b.recruitedTurnNumber = recruitedTurnNumber;
+		b.lastMovedTurnNumber = lastMovedTurnNumber;
+		b.lastReinforcedTurnNumber = lastReinforcedTurnNumber;
+		b.lastMovedRound = lastMovedRound;
+		b.lastReinforcedRound = lastReinforcedRound;
+		b.commanderNationId = commanderNationId;
+		b.reinforcedThisTurn = reinforcedThisTurn;
+		b.createdAt = createdAt;
+		return b;
 	}
 
 	/**
@@ -221,22 +198,6 @@ public class Battalion implements Persistable<UUID> {
 		this.armyId = armyId;
 	}
 
-	@Override
-	public UUID getId() {
-		return id;
-	}
-
-	@Override
-	public boolean isNew() {
-		return isNew;
-	}
-
-	@PostLoad
-	@PostPersist
-	void markNotNew() {
-		isNew = false;
-	}
-
 	public UUID id() {
 		return id;
 	}
@@ -291,6 +252,22 @@ public class Battalion implements Persistable<UUID> {
 
 	public Integer lastMovedTurnNumber() {
 		return lastMovedTurnNumber;
+	}
+
+	Integer lastReinforcedTurnNumber() {
+		return lastReinforcedTurnNumber;
+	}
+
+	Integer lastReinforcedRound() {
+		return lastReinforcedRound;
+	}
+
+	int reinforcedThisTurn() {
+		return reinforcedThisTurn;
+	}
+
+	Instant createdAt() {
+		return createdAt;
 	}
 
 }

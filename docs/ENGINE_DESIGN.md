@@ -134,6 +134,25 @@ reads fresh state, since a battle can end a war). Measured: recruitment 24 → 1
 move 33 → 24, one computer round 2,176 → 1,989. Budgets tightened in `QueryBudgetIT` and
 `ComputerQueryBudgetIT`. The pure apply functions and diff writes of S2 proper are still to do.
 
+**S2 proper — implementation plan (2026-11-20).** The military tables (`battalion`, `army`,
+`battalion_cohort`; `manpower_transfer` and `battle_report` are already JDBC) are only used inside the
+military module: `MilitaryService`, `BattalionService`, `AttachmentService`, `WithdrawalService`,
+`MilitaryHooks`, `PresenceService` and `domain.CohortLedger` (~90 touchpoints, all with explicit
+saves). A table must leave JPA completely in one step, otherwise JDBC writes and JPA's
+persistence-context cache disagree inside one transaction.
+
+- **S2b — off JPA, behaviour unchanged.** `Battalion`, `Army`, `BattalionCohort` become plain classes;
+  `BattalionRepository`, `ArmyRepository`, `BattalionCohortRepository` become JDBC repositories with
+  the same method names (`save` = insert or update by id, `delete`, `flush` = no-op). Any mutation
+  that relied on dirty checking without an explicit save shows up as a failing test and gets an
+  explicit save. Done when every test passes and no `@Entity` remains in `military.domain`.
+- **S2c — pure model.** `military.rules.Forces` (immutable maps of units, formations and cohorts by
+  id) with transition methods; `military.domain.MilitaryStore` loads `Forces` in three queries and
+  persists `(before, after)` by diff in JDBC batches. Commands move one by one onto
+  `apply(Forces, …) → (Forces, events)`: plain move, recruit, reinforce, disband, regroup, battle,
+  attach/detach, withdrawal. Each is switched completely and its entity-mutation code deleted.
+- **S2d — remove the mutable classes** once no command uses them.
+
 ## 8. Open decisions
 
 | ID | Question | Proposed default |
