@@ -12,6 +12,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
+import com.reach.strategy.platform.read.ReadScope;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
@@ -26,6 +28,9 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Repository
 public class DiplomacyStore {
+
+	/** The read-scope name of a game's relations. */
+	private static final String RELATIONS = "diplomacy.relations";
 
 	private final JdbcTemplate jdbc;
 	private final RelationsRepository relations;
@@ -44,6 +49,10 @@ public class DiplomacyStore {
 
 	@Transactional(propagation = Propagation.MANDATORY)
 	public Relations load(UUID gameId) {
+		return ReadScope.remember(List.of(RELATIONS, gameId), () -> loadFromDatabase(gameId));
+	}
+
+	private Relations loadFromDatabase(UUID gameId) {
 		return new Relations(relations.alliances(gameId), relations.wars(gameId), relations.participants(gameId),
 				relations.activeFronts(gameId), relations.truces(gameId), treaties.tributes(gameId),
 				jdbc.query("SELECT " + TreatyRepository.PROPOSAL_COLUMNS
@@ -58,6 +67,9 @@ public class DiplomacyStore {
 		if (before == after) {
 			return;
 		}
+		// Keep a turn scope exact (ENGINE_DESIGN S6).
+		ReadScope.replace(List.of(RELATIONS, gameId), before, after);
+		ReadScope.forget("diplomacy.picture");
 		Timestamp at = Timestamp.from(now);
 		alliances(gameId, before, after, at);
 		wars(gameId, before, after, at);

@@ -16,6 +16,8 @@ import com.reach.strategy.game.domain.GameStatus;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.platform.web.ApiException;
 
+import com.reach.strategy.platform.read.ReadScope;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -93,6 +95,8 @@ class GameCommandService implements GameCommands {
 		commands.save(new GameCommand(game.id(), mine.id(), idempotencyKey, commandType, game.turnNumber(), now)
 			.withResultRef(outcome.resultRef()));
 		game.touch(now);
+		// A command may change the turn, the pause or the state version: a turn scope reads the membership again.
+		ReadScope.forget(GameAccessService.MEMBERSHIP);
 		return outcome.result();
 	}
 

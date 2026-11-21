@@ -131,7 +131,7 @@ class ComputerQueryBudgetIT {
 		assertThat(round).as("SQL statements for one round of 8 computer turns").isLessThanOrEqualTo(ROUND_BUDGET);
 	}
 
-	/** Measured 1,989 after S2a (2,176 after S1; ~4,500 before D-AI1 and S1). */
-	private static final int ROUND_BUDGET = 2_600;
+	/** Measured 1,182 after S6 (1,751 after S5, 1,989 after S2a, ~4,500 before D-AI1 and S1). */
+	private static final int ROUND_BUDGET = 1_800;
 
 }

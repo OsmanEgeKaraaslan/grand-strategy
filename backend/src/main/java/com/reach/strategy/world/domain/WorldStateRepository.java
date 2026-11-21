@@ -3,6 +3,8 @@ package com.reach.strategy.world.domain;
 import java.util.List;
 import java.util.UUID;
 
+import com.reach.strategy.platform.read.ReadScope;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -13,6 +15,9 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public class WorldStateRepository {
+
+	/** The read-scope name of the world snapshot: every write here forgets it (ENGINE_DESIGN S6). */
+	public static final String SNAPSHOT = "world.snapshot";
 
 	private final JdbcTemplate jdbc;
 
@@ -50,6 +55,7 @@ public class WorldStateRepository {
 	}
 
 	public void insertNations(List<NationRow> nations) {
+		ReadScope.forget(SNAPSHOT);
 		jdbc.batchUpdate("""
 				INSERT INTO game.nation (id, game_id, nation_template_id, game_player_id, name, color, control)
 				VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -65,6 +71,7 @@ public class WorldStateRepository {
 	}
 
 	public void insertProvinces(List<ProvinceRow> provinces) {
+		ReadScope.forget(SNAPSHOT);
 		jdbc.batchUpdate("""
 				INSERT INTO game.province_state (id, game_id, province_template_id, owner_nation_id, controller_nation_id)
 				VALUES (?, ?, ?, ?, ?)
@@ -78,6 +85,7 @@ public class WorldStateRepository {
 	}
 
 	public void insertCities(List<CityRow> cities) {
+		ReadScope.forget(SNAPSHOT);
 		jdbc.batchUpdate("""
 				INSERT INTO game.city (id, game_id, province_state_id, name, population)
 				VALUES (?, ?, ?, ?, ?)
@@ -101,6 +109,7 @@ public class WorldStateRepository {
 	}
 
 	public void handOverToComputer(UUID gameId, UUID gamePlayerId) {
+		ReadScope.forget(SNAPSHOT);
 		int updated = jdbc.update(
 				"UPDATE game.nation SET control = 'AI' WHERE game_id = ? AND game_player_id = ? AND control = 'HUMAN'",
 				gameId, gamePlayerId);
@@ -110,6 +119,7 @@ public class WorldStateRepository {
 	}
 
 	public void markEliminated(UUID gameId, UUID nationId, int round) {
+		ReadScope.forget(SNAPSHOT);
 		int updated = jdbc.update(
 				"UPDATE game.nation SET eliminated_round = ? WHERE game_id = ? AND id = ? AND eliminated_round IS NULL", round,
 				gameId, nationId);
@@ -129,6 +139,7 @@ public class WorldStateRepository {
 
 	/** Adds delta to a city's population; the CHECK constraint rejects a negative result. */
 	public int changePopulation(UUID gameId, UUID cityId, int delta) {
+		ReadScope.forget(SNAPSHOT);
 		List<Integer> updated = jdbc.queryForList("""
 				UPDATE game.city SET population = population + ?
 				WHERE game_id = ? AND id = ? AND population + ? >= 0
@@ -142,6 +153,7 @@ public class WorldStateRepository {
 
 	/** One batched statement; a city that is missing or would go negative fails the whole batch. */
 	public void changePopulations(UUID gameId, java.util.Map<UUID, Integer> deltaByCity) {
+		ReadScope.forget(SNAPSHOT);
 		if (deltaByCity.isEmpty()) {
 			return;
 		}
@@ -168,6 +180,7 @@ public class WorldStateRepository {
 	}
 
 	public void setController(UUID gameId, String provinceKey, UUID controllerNationId) {
+		ReadScope.forget(SNAPSHOT);
 		int updated = jdbc.update("""
 				UPDATE game.province_state ps SET controller_nation_id = ?
 				FROM game.province_template pt
@@ -180,6 +193,7 @@ public class WorldStateRepository {
 
 	/** Legal transfer by peace treaty: the new owner also takes control. Only from the expected owner. */
 	public void transferOwnership(UUID gameId, String provinceKey, UUID fromNationId, UUID toNationId) {
+		ReadScope.forget(SNAPSHOT);
 		int updated = jdbc.update("""
 				UPDATE game.province_state ps SET owner_nation_id = ?, controller_nation_id = ?
 				FROM game.province_template pt

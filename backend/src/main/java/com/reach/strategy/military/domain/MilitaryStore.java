@@ -17,6 +17,8 @@ import com.reach.strategy.military.rules.Cohorts;
 import com.reach.strategy.military.rules.Forces;
 import com.reach.strategy.military.rules.UnitType;
 
+import com.reach.strategy.platform.read.ReadScope;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
@@ -46,6 +48,9 @@ public class MilitaryStore {
 			    commander_nation_id = excluded.commander_nation_id, reinforced_this_turn = excluded.reinforced_this_turn
 			""";
 
+	/** The read-scope name of a game's forces. */
+	private static final String FORCES = "military.forces";
+
 	private final JdbcTemplate jdbc;
 
 	MilitaryStore(JdbcTemplate jdbc) {
@@ -55,8 +60,13 @@ public class MilitaryStore {
 	/** The whole military state of a game, for a command that changes it. */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public Forces load(UUID gameId) {
-		List<Forces.Unit> units = units(gameId);
-		List<Forces.Formation> formations = formations(gameId);
+		// Inside a turn scope (ENGINE_DESIGN S6) one load serves the whole computer turn; persist keeps it exact.
+		return ReadScope.remember(List.of(FORCES, gameId), () -> loadFromDatabase(gameId));
+	}
+
+	private Forces loadFromDatabase(UUID gameId) {
+		List<Forces.Unit> units = queryUnits(gameId);
+		List<Forces.Formation> formations = queryFormations(gameId);
 		Map<UUID, List<Cohorts.Cohort>> cohorts = new HashMap<>();
 		jdbc.query("""
 				SELECT battalion_id, origin_city_id, soldiers FROM game.battalion_cohort
@@ -71,6 +81,11 @@ public class MilitaryStore {
 	/** Every battalion of the game in id order (for views and other modules: no cohorts, no armies). */
 	@Transactional(readOnly = true)
 	public List<Forces.Unit> units(UUID gameId) {
+		Forces remembered = ReadScope.peek(List.of(FORCES, gameId));
+		return remembered != null ? remembered.units() : queryUnits(gameId);
+	}
+
+	private List<Forces.Unit> queryUnits(UUID gameId) {
 		return jdbc.query("SELECT " + UNIT_COLUMNS + " FROM game.battalion WHERE game_id = ? ORDER BY id",
 				MilitaryStore::unit, gameId);
 	}
@@ -86,6 +101,11 @@ public class MilitaryStore {
 	/** Every army of the game in id order. */
 	@Transactional(readOnly = true)
 	public List<Forces.Formation> formations(UUID gameId) {
+		Forces remembered = ReadScope.peek(List.of(FORCES, gameId));
+		return remembered != null ? remembered.formations() : queryFormations(gameId);
+	}
+
+	private List<Forces.Formation> queryFormations(UUID gameId) {
 		return jdbc.query("SELECT id, nation_id, name, created_at FROM game.army WHERE game_id = ? ORDER BY id",
 				MilitaryStore::formation, gameId);
 	}
@@ -107,6 +127,7 @@ public class MilitaryStore {
 	 */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void persist(UUID gameId, Forces before, Forces after) {
+		ReadScope.replace(List.of(FORCES, gameId), before, after);
 		List<Forces.Formation> newFormations = after.formations()
 			.stream()
 			.filter(f -> before.formation(f.id()).isEmpty())

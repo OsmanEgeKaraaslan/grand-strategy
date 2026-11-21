@@ -15,6 +15,8 @@ import com.reach.strategy.game.domain.GameStatus;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.platform.web.ApiException;
 
+import com.reach.strategy.platform.read.ReadScope;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,6 +77,8 @@ public class TurnService {
 		int endedTurn = game.turnNumber();
 		TurnAdvancer.Advanced advanced = advancer.advance(game, now);
 		commands.save(new GameCommand(game.id(), mine.id(), idempotencyKey, GameCommand.END_TURN, endedTurn, now));
+		// The turn, round and state version changed: a turn scope must not answer from the old membership.
+		ReadScope.forget(GameAccessService.MEMBERSHIP);
 		return TurnResult.of(game, advanced.advance().roundCompleted(), false);
 	}
 

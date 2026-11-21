@@ -1,7 +1,8 @@
 # In-memory game engine (Phase 8) — design note
 
 Status: **PROPOSED** (2026-11-20). Approved to start by the product owner on 2026-11-20 ("design
-first"); the open decisions in §8 need answers before the stages that depend on them.
+first"); the open decisions in §8 need answers before the stages that depend on them. Stages S1–S6
+are done (2026-11-21, status paragraphs in §7); S7 waits for decision D3 (a new build dependency).
 
 ## 1. Problem
 
@@ -238,6 +239,41 @@ its start and writes through a store; the remaining per-row work was removed:
 The phases still run inside `RoundProcessor` in `RoundPhase.Step` order, in the end-turn transaction,
 behind the `round_resolution` guard. Measured: one computer round of 8 turns 1,965 → 1,751 statements.
 Each phase still reads the world snapshot on its own; S6 shares those reads.
+
+**S6 status (2026-11-21, done).** A computer turn is played in one transaction (decision D2) with one
+memory of the game's state.
+
+- **One transaction per computer turn.** `AiTurnRunner` runs the turn's observations, actions and
+  end of turn in a single transaction. Each action, and the end of turn, runs in a JDBC savepoint
+  (`platform.read.Savepoints`; the JPA dialect offers none): a refused action is rolled back to its
+  savepoint, the persistence context is cleared and the turn goes on. Participating `@Transactional`
+  methods that throw no longer mark the whole transaction rollback-only
+  (`globalRollbackOnParticipationFailure = false`); a transaction still rolls back whenever an
+  exception reaches its owner, so human requests behave as before. A crash loses at most the
+  uncommitted turn; idempotency keys stay derived from (game, turn, counter). The game row lock is
+  held for the whole computer turn; humans can only act out of turn (conferences) and wait for it. A
+  conference opened mid-turn ends the turn's transaction, and the runner negotiates before the next
+  turn (negotiating inside would wait for its own lock).
+- **One memory per turn.** `ReadScope.runTurn` opens the read scope of S1 in a writing transaction.
+  Every writer keeps it exact:
+  - `MilitaryStore` replaces the remembered `Forces` with the value it wrote, when the write started
+    from it, and serves battalion and army reads from it.
+  - `DiplomacyStore` does the same for `Relations`.
+  - The economy, research and siege stores remember their reads and forget them on every write.
+  - The world repository forgets the snapshot on every write.
+  - A membership (turn, pause, state version) is forgotten at every command boundary.
+  - A rolled-back action makes the scope forget everything.
+  - Remembered lists are immutable.
+
+  Outside a turn scope (every human request) nothing is remembered, as before.
+
+Measured on the Grand Campaign: one computer round of 8 turns 1,751 → 1,182 statements (about 4,500
+before S1); `ComputerQueryBudgetIT` now allows 1,800. A single observation outside a turn is 39.
+
+The design's in-memory computer phase (§6) is reached in its effect rather than in its literal form.
+Every command still runs through the same services and the command pipeline, so there is still one
+implementation of every rule. The values are kept in memory for the turn by the stores, instead of a
+separate `GameState` that the computer would apply commands to.
 
 ## 8. Open decisions
 

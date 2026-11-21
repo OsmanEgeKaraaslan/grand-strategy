@@ -12,6 +12,8 @@ import java.util.UUID;
 import com.reach.strategy.economy.rules.Ledger;
 import com.reach.strategy.economy.rules.WorkshopStatus;
 
+import com.reach.strategy.platform.read.ReadScope;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
@@ -59,9 +61,9 @@ public class EconomyStore {
 	/** Every treasury of the game in nation id order. */
 	@Transactional(readOnly = true)
 	public List<Ledger.Purse> purses(UUID gameId) {
-		return jdbc.query(
+		return ReadScope.remember(List.of("economy.purses", gameId), () -> List.copyOf(jdbc.query(
 				"SELECT nation_id, treasury_mg, in_arrears FROM game.nation_economy WHERE game_id = ? ORDER BY nation_id",
-				EconomyStore::purse, gameId);
+				EconomyStore::purse, gameId)));
 	}
 
 	/** One nation's treasury (nation ids are unique across games). */
@@ -86,8 +88,9 @@ public class EconomyStore {
 	/** Every building of the game in id order. */
 	@Transactional(readOnly = true)
 	public List<Ledger.Building> buildings(UUID gameId) {
-		return jdbc.query("SELECT " + BUILDING_COLUMNS + " FROM game.building WHERE game_id = ? ORDER BY id",
-				EconomyStore::building, gameId);
+		return ReadScope.remember(List.of("economy.buildings", gameId),
+				() -> List.copyOf(jdbc.query("SELECT " + BUILDING_COLUMNS + " FROM game.building WHERE game_id = ? ORDER BY id",
+						EconomyStore::building, gameId)));
 	}
 
 	@Transactional(readOnly = true)
@@ -111,6 +114,10 @@ public class EconomyStore {
 	 */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void persist(UUID gameId, Ledger before, Ledger after) {
+		// Keep a turn scope exact (ENGINE_DESIGN S6): whatever this write may change is read again.
+		ReadScope.forget("economy.purse");
+		ReadScope.forget("economy.purses");
+		ReadScope.forget("economy.buildings");
 		java.util.Map<UUID, Ledger.Purse> old = new java.util.HashMap<>();
 		before.purses().forEach(p -> old.put(p.nationId(), p));
 		List<Ledger.Purse> opened = after.purses().stream().filter(p -> !old.containsKey(p.nationId())).toList();

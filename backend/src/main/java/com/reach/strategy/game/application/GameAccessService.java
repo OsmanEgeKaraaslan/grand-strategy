@@ -18,6 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 class GameAccessService implements GameAccess {
 
+	/** The read-scope name of a membership; forgotten at every command boundary (ENGINE_DESIGN S6). */
+	static final String MEMBERSHIP = "game.membership";
+
 	private final GameRepository games;
 	private final GamePlayerRepository memberships;
 
@@ -30,7 +33,7 @@ class GameAccessService implements GameAccess {
 	@Transactional(readOnly = true)
 	public Membership membership(CurrentPlayer me, UUID gameId) {
 		// Several views built in one read scope (a computer observation) share one membership.
-		return ReadScope.remember(List.of("game.membership", me.id(), gameId), () -> loadMembership(me, gameId));
+		return ReadScope.remember(List.of(MEMBERSHIP, me.id(), gameId), () -> loadMembership(me, gameId));
 	}
 
 	private Membership loadMembership(CurrentPlayer me, UUID gameId) {

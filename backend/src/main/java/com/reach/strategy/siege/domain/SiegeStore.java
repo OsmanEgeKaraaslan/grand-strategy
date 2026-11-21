@@ -11,6 +11,8 @@ import java.util.UUID;
 import com.reach.strategy.siege.rules.FortressWorks;
 import com.reach.strategy.siege.rules.Strongholds;
 
+import com.reach.strategy.platform.read.ReadScope;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
@@ -45,7 +47,8 @@ public class SiegeStore {
 
 	@Transactional(readOnly = true)
 	public List<Strongholds.Fortress> fortresses(UUID gameId) {
-		return jdbc.query(FORTRESSES + "WHERE game_id = ? ORDER BY id", SiegeStore::fortress, gameId);
+		return ReadScope.remember(List.of("siege.fortresses", gameId),
+				() -> List.copyOf(jdbc.query(FORTRESSES + "WHERE game_id = ? ORDER BY id", SiegeStore::fortress, gameId)));
 	}
 
 	@Transactional(readOnly = true)
@@ -65,7 +68,8 @@ public class SiegeStore {
 	/** The game's active sieges in id order. */
 	@Transactional(readOnly = true)
 	public List<Strongholds.Siege> activeSieges(UUID gameId) {
-		return jdbc.query(SIEGES + "WHERE game_id = ? AND status = 'ACTIVE' ORDER BY id", SiegeStore::siege, gameId);
+		return ReadScope.remember(List.of("siege.sieges", gameId), () -> List.copyOf(jdbc
+			.query(SIEGES + "WHERE game_id = ? AND status = 'ACTIVE' ORDER BY id", SiegeStore::siege, gameId)));
 	}
 
 	/** The most recently ended sieges, newest first. */
@@ -83,6 +87,10 @@ public class SiegeStore {
 	/** Writes the fortresses and sieges that are new or different in {@code after}. */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void persist(UUID gameId, Strongholds before, Strongholds after) {
+		// Keep a turn scope exact (ENGINE_DESIGN S6): whatever this write may change is read again.
+		for (String name : List.of("siege.fortresses", "siege.sieges", "siege.active")) {
+			ReadScope.forget(name);
+		}
 		List<Strongholds.Fortress> fortresses = after.fortresses()
 			.stream()
 			.filter(f -> !f.equals(before.fortress(f.id()).orElse(null)))

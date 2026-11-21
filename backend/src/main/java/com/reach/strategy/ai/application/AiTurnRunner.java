@@ -24,6 +24,8 @@ import com.reach.strategy.game.api.GameAccess;
 import com.reach.strategy.game.api.TurnControl;
 import com.reach.strategy.identity.api.ComputerPlayers;
 import com.reach.strategy.identity.api.CurrentPlayer;
+import com.reach.strategy.platform.read.ReadScope;
+import com.reach.strategy.platform.read.Savepoints;
 import com.reach.strategy.platform.web.ApiException;
 import com.reach.strategy.world.api.WorldApi;
 import tools.jackson.core.type.TypeReference;
@@ -43,9 +45,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * asks the pure {@link AiBrain} for a plan and issues the actions one by one through the normal
  * command pipeline, then ends the turn — all with the seat's own computer account.
  * <p>
- * Reliability: every action runs in its own transaction together with the increment of the turn's
- * action counter ({@code ai_turn}); its idempotency key is derived from (game, turn, counter). A crash
- * at any point therefore loses at most an uncommitted action, and a restarted runner continues from
+ * Reliability (ENGINE_DESIGN S6, decision D2): a computer turn is played in one transaction — its
+ * observations, actions and end of turn — inside a turn read scope, so state shared by its steps is
+ * read once. Each action runs in a savepoint together with the increment of the turn's action counter
+ * ({@code ai_turn}); a refused action is rolled back to its savepoint and the turn goes on. The
+ * idempotency key of an action is derived from (game, turn, counter). A crash at any point therefore
+ * loses at most the uncommitted turn, and a restarted runner continues from
  * the committed counter. A refused action is recorded and never planned again in the same turn.
  * Budgets bound actions, observations and failures, so a turn always ends. Within one JVM a game is
  * played by at most one thread; across JVMs the game row lock, the counter check and the turn number
@@ -76,13 +81,15 @@ class AiTurnRunner {
 	private final Clock clock;
 	private final TransactionTemplate writes;
 	private final TransactionTemplate reads;
+	private final Savepoints savepoints;
 	private final Set<UUID> running = ConcurrentHashMap.newKeySet();
 	private final Set<UUID> dirty = ConcurrentHashMap.newKeySet();
 
 	AiTurnRunner(ComputerSeats seats, ComputerPlayers computers, TurnControl turns, GameAccess gameAccess,
 			WorldApi world, AiRulesets rulesets, AiObserver observer, AiExecutor executor, AiNegotiator negotiator,
 			AiTurnRepository progress, AiDecisionLog decisions, JsonMapper jsonMapper, Clock clock,
-			PlatformTransactionManager transactions) {
+			PlatformTransactionManager transactions, Savepoints savepoints) {
+		this.savepoints = savepoints;
 		this.seats = seats;
 		this.computers = computers;
 		this.turns = turns;
@@ -150,16 +157,17 @@ class AiTurnRunner {
 			.orElseThrow()
 			.id());
 		Instant started = clock.instant();
-		AiTurnRepository.TurnRow row = write(() -> progress.begin(gameId, turn.turnNumber(), turn.round(),
-				turn.seat().gamePlayerId(), nationId, started));
 		MDC.put("gameId", gameId.toString());
 		try {
-			if (rules.isPresent()) {
-				if (!act(turn, actor, nationId, rules.get(), row)) {
+			// One transaction and one read scope for the whole turn (ENGINE_DESIGN S6).
+			return write(() -> ReadScope.runTurn(() -> {
+				AiTurnRepository.TurnRow row = progress.begin(gameId, turn.turnNumber(), turn.round(),
+						turn.seat().gamePlayerId(), nationId, started);
+				if (rules.isPresent() && !act(turn, actor, nationId, rules.get(), row)) {
 					return false;
 				}
-			}
-			return endTurn(turn, actor);
+				return endTurn(turn, actor);
+			}));
 		}
 		finally {
 			MDC.remove("gameId");
@@ -179,20 +187,16 @@ class AiTurnRunner {
 		while (actions < budget.maxActionsPerTurn() && failures < budget.maxFailuresPerTurn()
 				&& observations < budget.maxObservationsPerTurn()) {
 			if (paused(actor, gameId)) {
-				negotiator.negotiate(gameId, read(() -> seats.seats(gameId)));
-				if (paused(actor, gameId)) {
-					return false;
-				}
+				// The conference is negotiated after this turn's transaction commits (run() negotiates before
+				// every turn): negotiating here would wait for the game lock this turn holds.
+				return false;
 			}
 			long t0 = System.nanoTime();
-			AiState state = read(() -> observer.observe(actor, gameId, turn.round(), turn.turnNumber()));
+			AiState state = observer.observe(actor, gameId, turn.round(), turn.turnNumber());
 			AiBrain.TurnPlan plan = AiBrain.planTurn(state, rules, failed);
 			observations++;
 			String goal = plan.goal();
-			write(() -> {
-				progress.recordObservation(gameId, turn.turnNumber(), goal);
-				return null;
-			});
+			progress.recordObservation(gameId, turn.turnNumber(), goal);
 			log.debug("Computer {} plans {} actions (goal {}) in {} µs", state.meKey(), plan.actions().size(), goal,
 					(System.nanoTime() - t0) / 1000);
 			boolean progressed = false;
@@ -206,7 +210,7 @@ class AiTurnRunner {
 				int sequence = actions;
 				UUID key = key(gameId + ":" + turn.turnNumber() + ":" + sequence);
 				try {
-					write(() -> {
+					savepoints.run(() -> {
 						executor.execute(actor, gameId, action, key);
 						if (!progress.recordAction(gameId, turn.turnNumber(), sequence)) {
 							throw new ConcurrentTurnException();
@@ -229,20 +233,14 @@ class AiTurnRunner {
 					failed.add(action.signature());
 					failures++;
 					String error = refused.code() + ": " + refused.getMessage();
-					write(() -> {
-						progress.recordFailure(gameId, turn.turnNumber(), action.signature(), error);
-						return null;
-					});
+					progress.recordFailure(gameId, turn.turnNumber(), action.signature(), error);
 					log.info("Computer {} round {}: {} refused ({})", state.meKey(), turn.round(), action.signature(), error);
 				}
 				catch (RuntimeException bug) {
 					failed.add(action.signature());
 					failures++;
-					write(() -> {
-						progress.recordFailure(gameId, turn.turnNumber(), action.signature(),
-								"INTERNAL: " + bug.getClass().getSimpleName());
-						return null;
-					});
+					progress.recordFailure(gameId, turn.turnNumber(), action.signature(),
+							"INTERNAL: " + bug.getClass().getSimpleName());
 					log.warn("Computer {} action {} failed", state.meKey(), action.signature(), bug);
 				}
 				if (action.reobserve()) {
@@ -259,7 +257,7 @@ class AiTurnRunner {
 	private boolean endTurn(ComputerSeats.Turn turn, CurrentPlayer actor) {
 		UUID gameId = turn.gameId();
 		try {
-			write(() -> {
+			savepoints.run(() -> {
 				turns.endTurn(actor, gameId, key(gameId + ":" + turn.turnNumber() + ":end"), turn.turnNumber());
 				progress.finish(gameId, turn.turnNumber(), clock.instant());
 				return null;
@@ -274,7 +272,7 @@ class AiTurnRunner {
 	}
 
 	private boolean paused(CurrentPlayer actor, UUID gameId) {
-		return read(() -> gameAccess.membership(actor, gameId).paused());
+		return gameAccess.membership(actor, gameId).paused();
 	}
 
 	static UUID key(String seed) {

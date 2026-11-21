@@ -10,6 +10,8 @@ import java.util.UUID;
 import com.reach.strategy.research.rules.InstitutionType;
 import com.reach.strategy.research.rules.Studies;
 
+import com.reach.strategy.platform.read.ReadScope;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
@@ -46,7 +48,8 @@ public class ResearchStore {
 
 	@Transactional(readOnly = true)
 	public List<Studies.Progress> progress(UUID gameId) {
-		return jdbc.query(PROGRESS + "WHERE game_id = ? ORDER BY nation_id", ResearchStore::progress, gameId);
+		return ReadScope.remember(List.of("research.progress", gameId),
+				() -> List.copyOf(jdbc.query(PROGRESS + "WHERE game_id = ? ORDER BY nation_id", ResearchStore::progress, gameId)));
 	}
 
 	@Transactional(readOnly = true)
@@ -58,7 +61,8 @@ public class ResearchStore {
 
 	@Transactional(readOnly = true)
 	public List<Studies.Institution> institutions(UUID gameId) {
-		return jdbc.query(INSTITUTIONS + "WHERE game_id = ? ORDER BY id", ResearchStore::institution, gameId);
+		return ReadScope.remember(List.of("research.institutions", gameId),
+				() -> List.copyOf(jdbc.query(INSTITUTIONS + "WHERE game_id = ? ORDER BY id", ResearchStore::institution, gameId)));
 	}
 
 	@Transactional(readOnly = true)
@@ -77,8 +81,8 @@ public class ResearchStore {
 	/** Every chosen doctrine of the game, by nation id and then doctrine key. */
 	@Transactional(readOnly = true)
 	public List<Studies.Doctrine> doctrines(UUID gameId) {
-		return jdbc.query(DOCTRINES + "WHERE game_id = ? ORDER BY nation_id, doctrine_key", ResearchStore::doctrine,
-				gameId);
+		return ReadScope.remember(List.of("research.doctrines", gameId), () -> List.copyOf(jdbc
+			.query(DOCTRINES + "WHERE game_id = ? ORDER BY nation_id, doctrine_key", ResearchStore::doctrine, gameId)));
 	}
 
 	/** A nation's chosen doctrines by doctrine key. */
@@ -91,6 +95,11 @@ public class ResearchStore {
 	/** Writes the rows that are new or different in {@code after}; nothing is ever removed. */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void persist(UUID gameId, Studies before, Studies after) {
+		// Keep a turn scope exact (ENGINE_DESIGN S6): whatever this write may change is read again.
+		for (String name : List.of("research.progress", "research.institutions", "research.doctrines",
+				"research.effects")) {
+			ReadScope.forget(name);
+		}
 		List<Studies.Progress> begun = after.progress()
 			.stream()
 			.filter(p -> before.progressOf(p.nationId()).isEmpty())
