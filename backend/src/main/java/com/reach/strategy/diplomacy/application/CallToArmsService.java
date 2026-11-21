@@ -33,9 +33,12 @@ public class CallToArmsService {
 	private final DiplomacyService diplomacy;
 	private final DiplomacyQueries queries;
 	private final WorldApi world;
+	private final DiplomacyDraft.Factory drafts;
 
 	CallToArmsService(GameCommands gameCommands, DiplomacyState state, RelationsRepository relations,
-			CallToArmsRepository calls, DiplomacyService diplomacy, DiplomacyQueries queries, WorldApi world) {
+			CallToArmsRepository calls, DiplomacyService diplomacy, DiplomacyQueries queries, WorldApi world,
+			DiplomacyDraft.Factory drafts) {
+		this.drafts = drafts;
 		this.gameCommands = gameCommands;
 		this.state = state;
 		this.relations = relations;
@@ -78,8 +81,10 @@ public class CallToArmsService {
 					throw DiplomacyErrors.conflict("CALL_ALREADY_PENDING", "That ally has already been called to this war.");
 				}
 				UUID id = UUID.randomUUID();
-				calls.insert(gameId, new CallToArmsRepository.CallRow(id, warId, caller, allyNationId, alliance.id(),
-						"PENDING", context.round(), null, context.now()));
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				draft.insertCall(new CallToArmsRepository.CallRow(id, warId, caller, allyNationId, alliance.id(), "PENDING",
+						context.round(), null, context.now()));
+				draft.write();
 				diplomacy.event(gameId, context, "CALL_TO_ARMS", caller, allyNationId, warId, Map.of("callId", id));
 				return new GameCommands.Outcome<>(result(gameId, id, caller), id);
 			}
@@ -118,12 +123,14 @@ public class CallToArmsService {
 				if (!war.active()) {
 					throw DiplomacyErrors.conflict("WAR_NOT_ACTIVE", "This war has already ended.");
 				}
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
 				if (honor) {
-					honor(gameId, context, picture, call, war);
+					honor(draft, gameId, context, picture, call, war);
 				}
 				else {
-					decline(gameId, context, picture, call);
+					decline(draft, gameId, context, picture, call);
 				}
+				draft.write();
 				return new GameCommands.Outcome<>(result(gameId, callId, nation), callId);
 			}
 
@@ -141,7 +148,8 @@ public class CallToArmsService {
 	 * (the truce gives way to the war). Alliances, other wars and fighting together still forbid it, and
 	 * an invitation to attack requires the normal alliance to still be in force.
 	 */
-	private void honor(UUID gameId, GameCommands.CommandContext context, DiplomacyState.Picture picture,
+	private void honor(DiplomacyDraft draft, UUID gameId, GameCommands.CommandContext context,
+			DiplomacyState.Picture picture,
 			CallToArmsRepository.CallRow call, RelationsRepository.WarRow war) {
 		Diplomacy.Standing standing = picture.standing();
 		String side = call.side();
@@ -178,29 +186,29 @@ public class CallToArmsService {
 						"You fight on the same side as a nation of " + enemyWords + " in another war.");
 			}
 		}
-		if (!calls.close(gameId, call.id(), "HONORED", context.round(), context.now())) {
+		if (!draft.closeCall(call.id(), "HONORED", context.round())) {
 			throw DiplomacyErrors.conflict("CALL_NOT_PENDING", "This call to arms has already been answered.");
 		}
-		relations.insertParticipant(gameId, new RelationsRepository.ParticipantRow(war.id(), call.ally(), side,
-				context.round(), "CALL_TO_ARMS"));
+		draft.insertParticipant(new RelationsRepository.ParticipantRow(war.id(), call.ally(), side, context.round(),
+				"CALL_TO_ARMS"));
 		for (UUID enemy : attackers) {
 			// Fronts are stored attacker first.
 			if ("DEFENDER".equals(side)) {
-				relations.insertFront(gameId, war.id(), enemy, call.ally());
+				draft.insertFront(war.id(), enemy, call.ally());
 			}
 			else {
-				relations.insertFront(gameId, war.id(), call.ally(), enemy);
+				draft.insertFront(war.id(), call.ally(), enemy);
 			}
-			diplomacy.endPeacefulTies(gameId, context, enemy, call.ally(), war.id());
+			diplomacy.endPeacefulTies(draft, gameId, context, enemy, call.ally(), war.id());
 		}
 		diplomacy.event(gameId, context, "CALL_HONORED", call.ally(), call.caller(), war.id(), Map.of("callId", call.id()));
 		diplomacy.event(gameId, context, "JOINED_WAR", call.ally(), "DEFENDER".equals(side) ? war.attackerLeader()
 				: war.defenderLeader(), war.id(), Map.of("DEFENDER".equals(side) ? "defending" : "attackingWith", call.caller()));
 	}
 
-	private void decline(UUID gameId, GameCommands.CommandContext context, DiplomacyState.Picture picture,
-			CallToArmsRepository.CallRow call) {
-		if (!calls.close(gameId, call.id(), "DECLINED", context.round(), context.now())) {
+	private void decline(DiplomacyDraft draft, UUID gameId, GameCommands.CommandContext context,
+			DiplomacyState.Picture picture, CallToArmsRepository.CallRow call) {
+		if (!draft.closeCall(call.id(), "DECLINED", context.round())) {
 			throw DiplomacyErrors.conflict("CALL_NOT_PENDING", "This call to arms has already been answered.");
 		}
 		diplomacy.event(gameId, context, "CALL_DECLINED", call.ally(), call.caller(), call.warId(),
@@ -210,8 +218,7 @@ public class CallToArmsService {
 			return;
 		}
 		// Declining a defensive call breaks the alliance (no other consequence yet).
-		if (relations.closeAlliance(gameId, call.allianceId(), "ACTIVE", "ENDED", "CALL_DECLINED", context.round(),
-				context.now())) {
+		if (draft.closeAlliance(call.allianceId(), "ACTIVE", "ENDED", "CALL_DECLINED", context.round())) {
 			RelationsRepository.AllianceRow alliance = picture.alliances()
 				.stream()
 				.filter(a -> a.id().equals(call.allianceId()))
@@ -219,6 +226,7 @@ public class CallToArmsService {
 				.orElseThrow();
 			diplomacy.event(gameId, context, "ALLIANCE_ENDED", call.ally(), call.caller(), null,
 					Map.of("allianceId", call.allianceId(), "kind", alliance.kind(), "reason", "CALL_DECLINED"));
+			draft.write();
 			diplomacy.withdraw(gameId, context, call.ally(), null);
 		}
 	}

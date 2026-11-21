@@ -58,15 +58,6 @@ public class ConferenceRepository {
 			opened_at, closed_at, created_at
 			""";
 
-	public void insert(UUID gameId, ConferenceRow c) {
-		jdbc.update("""
-				INSERT INTO game.peace_conference (id, game_id, war_id, kind, requester_nation_id, counterpart_nation_id,
-				    status, requested_round, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, 'REQUESTED', ?, ?, ?)
-				""", c.id(), gameId, c.warId(), c.kind(), c.requester(), c.counterpart(), c.requestedRound(),
-				Timestamp.from(c.createdAt()), Timestamp.from(c.createdAt()));
-	}
-
 	public Optional<ConferenceRow> find(UUID gameId, UUID id) {
 		return jdbc.query("SELECT " + COLUMNS + " FROM game.peace_conference WHERE game_id = ? AND id = ?",
 				ConferenceRepository::row, gameId, id).stream().findFirst();
@@ -84,41 +75,14 @@ public class ConferenceRepository {
 				ConferenceRepository::row, gameId);
 	}
 
-	/** REQUESTED → ACTIVE; false if it was not requested any more. */
-	public boolean open(UUID gameId, UUID id, Instant now) {
-		return jdbc.update("""
-				UPDATE game.peace_conference SET status = 'ACTIVE', opened_at = ?, updated_at = ?
-				WHERE game_id = ? AND id = ? AND status = 'REQUESTED'
-				""", Timestamp.from(now), Timestamp.from(now), gameId, id) == 1;
-	}
-
-	/** An open conference ends (REJECTED, CANCELLED, CONCLUDED); false if it was not in {@code fromStatus}. */
-	public boolean close(UUID gameId, UUID id, String fromStatus, String toStatus, Instant now) {
-		return jdbc.update("""
-				UPDATE game.peace_conference SET status = ?, closed_at = ?, updated_at = ?
-				WHERE game_id = ? AND id = ? AND status = ?
-				""", toStatus, Timestamp.from(now), Timestamp.from(now), gameId, id, fromStatus) == 1;
-	}
-
-	/**
-	 * Stores the next revision; only succeeds while the conference is active and still at
-	 * {@code expectedRevision}, so two simultaneous edits cannot both become "the next" revision.
-	 */
-	public boolean addRevision(UUID gameId, UUID conferenceId, int expectedRevision, RevisionRow revision) {
-		int updated = jdbc.update("""
-				UPDATE game.peace_conference SET current_revision = current_revision + 1, updated_at = ?
-				WHERE game_id = ? AND id = ? AND status = 'ACTIVE' AND current_revision = ?
-				""", Timestamp.from(revision.createdAt()), gameId, conferenceId, expectedRevision);
-		if (updated != 1) {
-			return false;
-		}
+	/** The record of a revision whose conference row was already advanced (see {@code Relations#revise}). */
+	public void insertRevision(UUID gameId, UUID conferenceId, RevisionRow revision) {
 		jdbc.update("""
 				INSERT INTO game.conference_revision (game_id, conference_id, revision, author_nation_id, terms, required,
 				    created_at)
 				VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?)
 				""", gameId, conferenceId, revision.revision(), revision.author(), revision.termsJson(), revision.requiredJson(),
 				Timestamp.from(revision.createdAt()));
-		return true;
 	}
 
 	public List<RevisionRow> revisions(UUID conferenceId) {

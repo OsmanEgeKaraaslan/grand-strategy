@@ -62,13 +62,13 @@ class DiplomacyHooks {
 
 	@Bean
 	RoundPhase tributePhase(DiplomacyState state, TreatyRepository treaties, EconomyApi economy,
-			DiplomacyEventLog events, JsonMapper jsonMapper) {
-		return new TributePhase(state, treaties, economy, events, jsonMapper);
+			DiplomacyEventLog events, JsonMapper jsonMapper, DiplomacyDraft.Factory drafts) {
+		return new TributePhase(state, treaties, economy, events, jsonMapper, drafts);
 	}
 
 	@Bean
-	RoundPhase diplomacyExpiryPhase(DiplomacyState state, RelationsRepository relations, TreatyRepository treaties) {
-		return new ExpiryPhase(state, relations, treaties);
+	RoundPhase diplomacyExpiryPhase(DiplomacyState state, TreatyRepository treaties, DiplomacyDraft.Factory drafts) {
+		return new ExpiryPhase(state, treaties, drafts);
 	}
 
 	@Bean
@@ -138,8 +138,11 @@ class DiplomacyHooks {
 		private final DiplomacyEventLog events;
 		private final JsonMapper jsonMapper;
 
+		private final DiplomacyDraft.Factory drafts;
+
 		TributePhase(DiplomacyState state, TreatyRepository treaties, EconomyApi economy, DiplomacyEventLog events,
-				JsonMapper jsonMapper) {
+				JsonMapper jsonMapper, DiplomacyDraft.Factory drafts) {
+			this.drafts = drafts;
 			this.state = state;
 			this.treaties = treaties;
 			this.economy = economy;
@@ -159,28 +162,32 @@ class DiplomacyHooks {
 			if (picture.isEmpty()) {
 				return;
 			}
-			treaties.tributes(context.gameId())
+			List<TreatyRepository.TributeRow> due = treaties.tributes(context.gameId())
 				.stream()
 				.filter(TreatyRepository.TributeRow::active)
 				.filter(t -> t.firstRound() <= context.round())
 				.sorted(Comparator.comparing(TreatyRepository.TributeRow::id))
-				.forEach(t -> {
+				.toList();
+			if (due.isEmpty()) {
+				return;
+			}
+			DiplomacyDraft draft = drafts.begin(context.gameId(), context.now());
+			due.forEach(t -> {
 					long gross = economy.grossIncome(context.gameId(), t.payer(), context.round()).orElse(0);
 					// The rate stored with the tribute applies, so a later ruleset file never changes a running one.
-					long due = PeaceTerms.tributeDue(gross, new DiplomacyRules.TributeRules(t.rateBps(), t.roundsTotal()));
-					long paid = PeaceTerms.tributePaid(due, economy.treasury(t.payer()).treasuryMg());
+					long owed = PeaceTerms.tributeDue(gross, new DiplomacyRules.TributeRules(t.rateBps(), t.roundsTotal()));
+					long paid = PeaceTerms.tributePaid(owed, economy.treasury(t.payer()).treasuryMg());
 					if (paid > 0) {
 						economy.transfer(t.payer(), t.receiver(), paid);
 					}
 					boolean last = t.roundsCharged() + 1 == t.roundsTotal();
-					treaties.recordPayment(context.gameId(),
-							new TreatyRepository.PaymentRow(t.id(), context.round(), gross, due, paid), last, context.now());
+					draft.recordPayment(new TreatyRepository.PaymentRow(t.id(), context.round(), gross, owed, paid), last);
 					Map<String, Object> details = new LinkedHashMap<>();
 					details.put("tributeId", t.id());
 					details.put("round", t.roundsCharged() + 1);
 					details.put("rounds", t.roundsTotal());
 					details.put("grossIncomeMg", gross);
-					details.put("dueMg", due);
+					details.put("dueMg", owed);
 					details.put("paidMg", paid);
 					events.record(context.gameId(), context.round(), 0, "TRIBUTE_PAID", t.payer(), t.receiver(), null,
 							jsonMapper.writeValueAsString(details), context.now());
@@ -190,6 +197,7 @@ class DiplomacyHooks {
 										"totalPaidMg", t.totalPaidMg() + paid)), context.now());
 					}
 				});
+			draft.write();
 		}
 
 	}
@@ -198,13 +206,13 @@ class DiplomacyHooks {
 	static class ExpiryPhase implements RoundPhase {
 
 		private final DiplomacyState state;
-		private final RelationsRepository relations;
 		private final TreatyRepository treaties;
+		private final DiplomacyDraft.Factory drafts;
 
-		ExpiryPhase(DiplomacyState state, RelationsRepository relations, TreatyRepository treaties) {
+		ExpiryPhase(DiplomacyState state, TreatyRepository treaties, DiplomacyDraft.Factory drafts) {
 			this.state = state;
-			this.relations = relations;
 			this.treaties = treaties;
+			this.drafts = drafts;
 		}
 
 		@Override
@@ -220,17 +228,23 @@ class DiplomacyHooks {
 				return;
 			}
 			DiplomacyRules rules = picture.get().rules();
-			picture.get()
+			List<RelationsRepository.AllianceRow> alliances = picture.get()
 				.alliances()
 				.stream()
 				.filter(a -> "PROPOSED".equals(a.status()))
 				.filter(a -> Diplomacy.expires(a.proposedRound(), context.round(), rules))
-				.forEach(a -> relations.closeAlliance(context.gameId(), a.id(), "PROPOSED", "EXPIRED", "EXPIRED",
-						context.round(), context.now()));
-			treaties.pendingProposals(context.gameId())
+				.toList();
+			List<TreatyRepository.ProposalRow> proposals = treaties.pendingProposals(context.gameId())
 				.stream()
 				.filter(p -> Diplomacy.expires(p.createdRound(), context.round(), rules))
-				.forEach(p -> treaties.closeProposal(context.gameId(), p.id(), "EXPIRED", context.round(), context.now()));
+				.toList();
+			if (alliances.isEmpty() && proposals.isEmpty()) {
+				return;
+			}
+			DiplomacyDraft draft = drafts.begin(context.gameId(), context.now());
+			alliances.forEach(a -> draft.closeAlliance(a.id(), "PROPOSED", "EXPIRED", "EXPIRED", context.round()));
+			proposals.forEach(p -> draft.closeProposal(p.id(), "EXPIRED", context.round()));
+			draft.write();
 		}
 
 	}

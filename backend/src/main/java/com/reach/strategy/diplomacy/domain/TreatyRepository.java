@@ -41,19 +41,10 @@ public class TreatyRepository {
 
 	}
 
-	private static final String PROPOSAL_COLUMNS = """
+	static final String PROPOSAL_COLUMNS = """
 			id, war_id, proposer_nation_id, recipient_nation_id, status, terms::text AS terms, created_round, created_turn,
 			created_state_version, responded_round, counter_of_id, created_at
 			""";
-
-	public void insertProposal(UUID gameId, ProposalRow p, Instant now) {
-		jdbc.update("""
-				INSERT INTO game.peace_proposal (id, game_id, war_id, proposer_nation_id, recipient_nation_id, status, terms,
-				    created_round, created_turn, created_state_version, counter_of_id, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, 'PENDING', ?::jsonb, ?, ?, ?, ?, ?, ?)
-				""", p.id(), gameId, p.warId(), p.proposer(), p.recipient(), p.termsJson(), p.createdRound(),
-				p.createdTurn(), p.createdStateVersion(), p.counterOfId(), Timestamp.from(now), Timestamp.from(now));
-	}
 
 	public Optional<ProposalRow> proposal(UUID gameId, UUID proposalId) {
 		return jdbc.query("SELECT " + PROPOSAL_COLUMNS + " FROM game.peace_proposal WHERE game_id = ? AND id = ?",
@@ -75,15 +66,7 @@ public class TreatyRepository {
 				TreatyRepository::proposal, gameId);
 	}
 
-	/** PENDING → {@code status}; false if it was no longer pending. */
-	public boolean closeProposal(UUID gameId, UUID proposalId, String status, int round, Instant now) {
-		return jdbc.update("""
-				UPDATE game.peace_proposal SET status = ?, responded_round = ?, updated_at = ?
-				WHERE game_id = ? AND id = ? AND status = 'PENDING'
-				""", status, round, Timestamp.from(now), gameId, proposalId) == 1;
-	}
-
-	private static ProposalRow proposal(ResultSet rs, int row) throws SQLException {
+	static ProposalRow proposal(ResultSet rs, int row) throws SQLException {
 		return new ProposalRow(rs.getObject("id", UUID.class), rs.getObject("war_id", UUID.class),
 				rs.getObject("proposer_nation_id", UUID.class), rs.getObject("recipient_nation_id", UUID.class),
 				rs.getString("status"), rs.getString("terms"), rs.getInt("created_round"), rs.getInt("created_turn"),
@@ -140,15 +123,6 @@ public class TreatyRepository {
 	public record PaymentRow(UUID tributeId, int round, long grossIncomeMg, long dueMg, long paidMg) {
 	}
 
-	public void insertTribute(UUID gameId, TributeRow t, Instant now) {
-		jdbc.update("""
-				INSERT INTO game.tribute (id, game_id, treaty_id, payer_nation_id, receiver_nation_id, rate_bps,
-				    rounds_total, first_round, status, created_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
-				""", t.id(), gameId, t.treatyId(), t.payer(), t.receiver(), t.rateBps(), t.roundsTotal(), t.firstRound(),
-				Timestamp.from(now));
-	}
-
 	public List<TributeRow> tributes(UUID gameId) {
 		return jdbc.query("""
 				SELECT id, treaty_id, payer_nation_id, receiver_nation_id, rate_bps, rounds_total, rounds_charged,
@@ -161,34 +135,13 @@ public class TreatyRepository {
 				(Integer) rs.getObject("ended_round")), gameId);
 	}
 
-	/**
-	 * Charges one round: the payment row's primary key (tribute, round) forbids a second charge; the
-	 * tribute completes with its last round.
-	 */
-	public void recordPayment(UUID gameId, PaymentRow p, boolean last, Instant now) {
+	/** The payment record of one charged round; its primary key (tribute, round) forbids a second charge. */
+	public void insertPayment(UUID gameId, PaymentRow p, Instant now) {
 		jdbc.update("""
 				INSERT INTO game.tribute_payment (game_id, tribute_id, round_number, gross_income_mg, due_mg, paid_mg,
 				    created_at)
 				VALUES (?, ?, ?, ?, ?, ?, ?)
 				""", gameId, p.tributeId(), p.round(), p.grossIncomeMg(), p.dueMg(), p.paidMg(), Timestamp.from(now));
-		int updated = jdbc.update("""
-				UPDATE game.tribute SET rounds_charged = rounds_charged + 1, total_paid_mg = total_paid_mg + ?,
-				    status = CASE WHEN ? THEN 'COMPLETED' ELSE status END,
-				    end_reason = CASE WHEN ? THEN 'COMPLETED' ELSE end_reason END,
-				    ended_round = CASE WHEN ? THEN ? ELSE ended_round END
-				WHERE game_id = ? AND id = ? AND status = 'ACTIVE'
-				""", p.paidMg(), last, last, last, p.round(), gameId, p.tributeId());
-		if (updated != 1) {
-			throw new IllegalStateException("Tribute " + p.tributeId() + " is not active");
-		}
-	}
-
-	/** ACTIVE → CANCELLED (e.g. the two nations are at war again); false if it was not active. */
-	public boolean cancelTribute(UUID gameId, UUID tributeId, String reason, int round) {
-		return jdbc.update("""
-				UPDATE game.tribute SET status = 'CANCELLED', end_reason = ?, ended_round = ?
-				WHERE game_id = ? AND id = ? AND status = 'ACTIVE'
-				""", reason, round, gameId, tributeId) == 1;
 	}
 
 	public List<PaymentRow> payments(UUID gameId) {

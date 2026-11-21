@@ -46,10 +46,12 @@ class EliminationService {
 	private final WorldApi world;
 	private final ForceWithdrawal withdrawal;
 	private final GameControl gameControl;
+	private final DiplomacyDraft.Factory drafts;
 
 	EliminationService(DiplomacyState state, RelationsRepository relations, TreatyRepository treaties,
 			CallToArmsRepository calls, ConferenceRepository conferences, DiplomacyService diplomacy, WorldApi world,
-			ForceWithdrawal withdrawal, GameControl gameControl) {
+			ForceWithdrawal withdrawal, GameControl gameControl, DiplomacyDraft.Factory drafts) {
+		this.drafts = drafts;
 		this.state = state;
 		this.relations = relations;
 		this.treaties = treaties;
@@ -90,31 +92,33 @@ class EliminationService {
 		int soldiers = withdrawal.dissolveNation(gameId, id);
 
 		DiplomacyState.Picture picture = state.load(gameId).orElseThrow();
+		DiplomacyDraft draft = drafts.begin(gameId, context.now());
 		for (RelationsRepository.AllianceRow a : picture.alliances()) {
 			if (!a.involves(id)) {
 				continue;
 			}
 			if ("ACTIVE".equals(a.status())) {
-				relations.closeAlliance(gameId, a.id(), "ACTIVE", "ENDED", "ELIMINATED", context.round(), context.now());
+				draft.closeAlliance(a.id(), "ACTIVE", "ENDED", "ELIMINATED", context.round());
 				diplomacy.event(gameId, context, "ALLIANCE_ENDED", id, a.other(id), null,
 						Map.of("allianceId", a.id(), "kind", a.kind(), "reason", "ELIMINATED"));
 			}
 			else if ("PROPOSED".equals(a.status())) {
-				relations.closeAlliance(gameId, a.id(), "PROPOSED", "CANCELLED", "ELIMINATED", context.round(),
-						context.now());
+				draft.closeAlliance(a.id(), "PROPOSED", "CANCELLED", "ELIMINATED", context.round());
 			}
 		}
-		calls.all(gameId)
+		draft.current()
+			.calls()
 			.stream()
 			.filter(c -> c.pending() && (c.ally().equals(id) || c.caller().equals(id)))
-			.forEach(c -> calls.close(gameId, c.id(), "CANCELLED", context.round(), context.now()));
-		conferences.all(gameId)
+			.forEach(c -> draft.closeCall(c.id(), "CANCELLED", context.round()));
+		draft.current()
+			.conferences()
 			.stream()
 			.filter(c -> "REQUESTED".equals(c.status()) && c.principal(id))
-			.forEach(c -> conferences.close(gameId, c.id(), "REQUESTED", "CANCELLED", context.now()));
-		for (TreatyRepository.TributeRow t : treaties.tributes(gameId)) {
+			.forEach(c -> draft.closeConference(c.id(), "REQUESTED", "CANCELLED"));
+		for (TreatyRepository.TributeRow t : draft.current().tributes()) {
 			if (t.active() && (t.payer().equals(id) || t.receiver().equals(id))
-					&& treaties.cancelTribute(gameId, t.id(), "ELIMINATED", context.round())) {
+					&& draft.cancelTribute(t.id(), "ELIMINATED", context.round())) {
 				diplomacy.event(gameId, context, "TRIBUTE_CANCELLED", t.payer(), t.receiver(), null,
 						Map.of("tributeId", t.id(), "reason", "ELIMINATED"));
 			}
@@ -124,7 +128,7 @@ class EliminationService {
 				continue;
 			}
 			String side = picture.sideOf(war.id(), id).orElseThrow();
-			relations.leaveWar(gameId, war.id(), id, context.round(), "ELIMINATED");
+			draft.leaveWar(war.id(), id, context.round(), "ELIMINATED");
 			boolean leader = war.attackerLeader().equals(id) || war.defenderLeader().equals(id);
 			List<UUID> remaining = picture.participantsOf(war.id())
 				.stream()
@@ -133,11 +137,12 @@ class EliminationService {
 				.sorted()
 				.toList();
 			if (remaining.isEmpty()) {
-				relations.endWar(gameId, war.id(), context.round(), context.turnNumber(), "ELIMINATION");
-				calls.all(gameId)
+				draft.endWar(war.id(), context.round(), context.turnNumber(), "ELIMINATION");
+				draft.current()
+					.calls()
 					.stream()
 					.filter(c -> c.pending() && c.warId().equals(war.id()))
-					.forEach(c -> calls.close(gameId, c.id(), "CANCELLED", context.round(), context.now()));
+					.forEach(c -> draft.closeCall(c.id(), "CANCELLED", context.round()));
 			}
 			else if (leader) {
 				UUID successor = remaining.getFirst();
@@ -146,10 +151,11 @@ class EliminationService {
 						successor = candidate;
 					}
 				}
-				relations.setLeader(gameId, war.id(), side, successor);
+				draft.setLeader(war.id(), side, successor);
 				diplomacy.event(gameId, context, "WAR_LEADER_CHANGED", successor, id, war.id(), Map.of("side", side));
 			}
 		}
+		draft.write();
 		if (nation.gamePlayerId() != null) {
 			gameControl.eliminatePlayer(gameId, nation.gamePlayerId(), context.round());
 		}

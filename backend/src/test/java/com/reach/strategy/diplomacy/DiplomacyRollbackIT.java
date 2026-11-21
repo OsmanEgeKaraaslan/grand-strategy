@@ -5,17 +5,15 @@ import static com.reach.strategy.diplomacy.DiplomacyScenario.terms;
 import static com.reach.strategy.support.ApiDriver.status;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 
 import java.util.UUID;
 
 import com.reach.strategy.PostgresIntegrationTest;
-import com.reach.strategy.diplomacy.domain.RelationsRepository;
+import com.reach.strategy.diplomacy.domain.DiplomacyStore;
+import com.reach.strategy.diplomacy.domain.Relations;
 import com.reach.strategy.diplomacy.domain.TreatyRepository;
 import com.reach.strategy.game.domain.GameResultRepository;
 import com.reach.strategy.military.MilitaryScenario;
@@ -45,7 +43,7 @@ class DiplomacyRollbackIT {
 	JdbcTemplate jdbc;
 
 	@MockitoSpyBean
-	RelationsRepository relations;
+	DiplomacyStore store;
 
 	@MockitoSpyBean
 	TreatyRepository treaties;
@@ -68,7 +66,7 @@ class DiplomacyRollbackIT {
 
 	@AfterEach
 	void restore() {
-		reset(spyBehind(relations), spyBehind(treaties), spyBehind(results));
+		reset(spyBehind(store), spyBehind(treaties), spyBehind(results));
 	}
 
 	@Test
@@ -89,11 +87,15 @@ class DiplomacyRollbackIT {
 		long ostraGold = world.treasury(game, "ostra");
 		int salt = world.population(game, "saltreach");
 		String marrowBattalion = world.battalions(game, "varn", "marrowfield").getFirst();
-		// Fails after the war was ended — i.e. after every term had been applied.
+		// Fails once the ended war is written — i.e. after every term had been applied.
 		doAnswer(invocation -> {
 			invocation.callRealMethod();
-			throw new IllegalStateException("simulated failure at the end of the settlement");
-		}).when(spyBehind(relations)).endWar(any(), any(), anyInt(), anyInt(), anyString());
+			Relations after = invocation.getArgument(2);
+			if (after.wars().stream().anyMatch(w -> !w.active())) {
+				throw new IllegalStateException("simulated failure at the end of the settlement");
+			}
+			return null;
+		}).when(spyBehind(store)).persist(any(), any(), any(), any());
 		UUID key = UUID.randomUUID();
 
 		assertThat(status(api.peace(game.guest(), game.gameId(), proposal, "accept", key))).isEqualTo(500);
@@ -111,7 +113,7 @@ class DiplomacyRollbackIT {
 		assertThat(d.events(game, "PROVINCE_CEDED") + d.events(game, "REPARATIONS_PAID")).isZero();
 		assertThat(world.commands(game, "ACCEPT_PEACE")).isZero();
 
-		reset(spyBehind(relations));
+		reset(spyBehind(store));
 		assertThat(status(api.peace(game.guest(), game.gameId(), proposal, "accept", key))).isEqualTo(200);
 		assertThat(world.ownerAndController(game, "marrowfield")).containsExactly("varn", "varn");
 		assertThat(world.treasury(game, "ostra")).isEqualTo(ostraGold - 20_000);
@@ -129,7 +131,7 @@ class DiplomacyRollbackIT {
 		doAnswer(invocation -> {
 			invocation.callRealMethod();
 			throw new IllegalStateException("simulated failure after the tribute was paid");
-		}).when(spyBehind(treaties)).recordPayment(any(), any(), anyBoolean(), any());
+		}).when(spyBehind(treaties)).insertPayment(any(), any(), any());
 		UUID key = UUID.randomUUID();
 
 		assertThat(status(api.endTurn(game.guest(), game.gameId(), 2, key))).isEqualTo(500);

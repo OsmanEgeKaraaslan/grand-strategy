@@ -40,10 +40,12 @@ public class PeaceService {
 	private final DiplomacyService diplomacy;
 	private final WorldApi world;
 	private final EconomyApi economy;
+	private final DiplomacyDraft.Factory drafts;
 
 	PeaceService(GameCommands gameCommands, GameAccess gameAccess, DiplomacyState state, RelationsRepository relations,
 			TreatyRepository treaties, DiplomacyQueries queries, DiplomacyService diplomacy, WorldApi world,
-			EconomyApi economy) {
+			EconomyApi economy, DiplomacyDraft.Factory drafts) {
+		this.drafts = drafts;
 		this.gameCommands = gameCommands;
 		this.gameAccess = gameAccess;
 		this.state = state;
@@ -90,9 +92,11 @@ public class PeaceService {
 			public GameCommands.Outcome<DiplomacyViews.ProposalResult> execute(GameCommands.CommandContext context) {
 				UUID nation = nationOf(gameId, context);
 				TreatyRepository.ProposalRow original = incoming(gameId, proposalId, nation);
-				if (!treaties.closeProposal(gameId, original.id(), "SUPERSEDED", context.round(), context.now())) {
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				if (!draft.closeProposal(original.id(), "SUPERSEDED", context.round())) {
 					throw notPending();
 				}
+				draft.write();
 				UUID id = create(me, gameId, context, original.warId(), parsed, original.id());
 				return new GameCommands.Outcome<>(proposalResult(gameId, context, id), id);
 			}
@@ -111,9 +115,11 @@ public class PeaceService {
 			@Override
 			public GameCommands.Outcome<DiplomacyViews.ProposalResult> execute(GameCommands.CommandContext context) {
 				TreatyRepository.ProposalRow p = incoming(gameId, proposalId, nationOf(gameId, context));
-				if (!treaties.closeProposal(gameId, p.id(), "REJECTED", context.round(), context.now())) {
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				if (!draft.closeProposal(p.id(), "REJECTED", context.round())) {
 					throw notPending();
 				}
+				draft.write();
 				return new GameCommands.Outcome<>(proposalResult(gameId, context, p.id()), p.id());
 			}
 
@@ -137,9 +143,11 @@ public class PeaceService {
 					throw DiplomacyErrors.forbidden("NOT_PROPOSAL_PROPOSER",
 							"Only the proposing nation can cancel this proposal; reject it instead.");
 				}
-				if (!treaties.closeProposal(gameId, p.id(), "CANCELLED", context.round(), context.now())) {
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				if (!draft.closeProposal(p.id(), "CANCELLED", context.round())) {
 					throw notPending();
 				}
+				draft.write();
 				return new GameCommands.Outcome<>(proposalResult(gameId, context, p.id()), p.id());
 			}
 
@@ -164,16 +172,18 @@ public class PeaceService {
 		if (!violations.isEmpty()) {
 			throw DiplomacyErrors.termsInvalid(violations, false);
 		}
-		for (TreatyRepository.ProposalRow previous : treaties.pendingProposals(gameId)) {
-			if (previous.warId().equals(warId) && previous.proposer().equals(proposer)) {
-				treaties.closeProposal(gameId, previous.id(), "SUPERSEDED", context.round(), context.now());
+		DiplomacyDraft draft = drafts.begin(gameId, context.now());
+		for (TreatyRepository.ProposalRow previous : draft.current().proposals()) {
+			if (previous.pending() && previous.warId().equals(warId) && previous.proposer().equals(proposer)) {
+				draft.closeProposal(previous.id(), "SUPERSEDED", context.round());
 			}
 		}
 		UUID id = UUID.randomUUID();
 		long stateVersion = gameAccess.membership(me, gameId).stateVersion();
-		treaties.insertProposal(gameId, new TreatyRepository.ProposalRow(id, warId, proposer, recipient, "PENDING",
+		draft.insertProposal(new TreatyRepository.ProposalRow(id, warId, proposer, recipient, "PENDING",
 				queries.writeTerms(DiplomacyQueries.canonical(terms)), context.round(), context.turnNumber(), stateVersion,
-				null, counterOf, context.now()), context.now());
+				null, counterOf, context.now()));
+		draft.write();
 		return id;
 	}
 
@@ -225,36 +235,38 @@ public class PeaceService {
 		if (!violations.isEmpty()) {
 			throw DiplomacyErrors.termsInvalid(violations, true);
 		}
-		if (!treaties.closeProposal(gameId, proposal.id(), "ACCEPTED", context.round(), context.now())) {
+		DiplomacyDraft draft = drafts.begin(gameId, context.now());
+		if (!draft.closeProposal(proposal.id(), "ACCEPTED", context.round())) {
 			throw notPending();
 		}
-		for (TreatyRepository.ProposalRow other : treaties.pendingProposals(gameId)) {
-			if (other.warId().equals(war.id())) {
-				treaties.closeProposal(gameId, other.id(), "SUPERSEDED", context.round(), context.now());
+		for (TreatyRepository.ProposalRow other : draft.current().proposals()) {
+			if (other.pending() && other.warId().equals(war.id())) {
+				draft.closeProposal(other.id(), "SUPERSEDED", context.round());
 			}
 		}
+		draft.write();
 
 		UUID treatyId = UUID.randomUUID();
 		int truceUntil = context.round() + picture.rules().truceRounds();
 		treaties.insertTreaty(gameId, new TreatyRepository.TreatyRow(treatyId, war.id(), proposal.id(), context.round(),
 				context.turnNumber(), proposal.termsJson(), truceUntil, context.now()));
 		for (PeaceTerms.Term term : PeaceTerms.settlementOrder(terms)) {
-			apply(gameId, context, war, treatyId, term, snapshot, picture);
+			apply(draft, gameId, context, war, treatyId, term, snapshot, picture);
 		}
-		if (!relations.endWar(gameId, war.id(), context.round(), context.turnNumber(), "PEACE_TREATY")) {
+		if (!draft.endWar(war.id(), context.round(), context.turnNumber(), "PEACE_TREATY")) {
 			throw DiplomacyErrors.conflict("WAR_NOT_ACTIVE", "This war has already ended.");
 		}
 		List<RelationsRepository.ParticipantRow> participants = picture.participantsOf(war.id());
 		for (RelationsRepository.ParticipantRow x : participants) {
 			for (RelationsRepository.ParticipantRow y : participants) {
 				if ("ATTACKER".equals(x.side()) && "DEFENDER".equals(y.side())) {
-					relations.insertTruce(gameId,
-							new RelationsRepository.TruceRow(treatyId, x.nationId(), y.nationId(), truceUntil));
+					draft.insertTruce(new RelationsRepository.TruceRow(treatyId, x.nationId(), y.nationId(), truceUntil));
 				}
 			}
 		}
 		diplomacy.event(gameId, context, "PEACE_SIGNED", proposal.proposer(), proposal.recipient(), war.id(),
 				Map.of("treatyId", treatyId, "terms", stored.size(), "truceUntilRound", truceUntil));
+		draft.write();
 
 		List<String> returned = returnControl(gameId, context, war.id());
 		List<DiplomacyViews.Withdrawal> withdrawals = diplomacy.withdraw(gameId, context, nation, war.id());
@@ -270,8 +282,9 @@ public class PeaceService {
 				queries.warView(ctx, after.war(war.id()).orElseThrow()), withdrawals, returned), treatyId);
 	}
 
-	void apply(UUID gameId, GameCommands.CommandContext context, RelationsRepository.WarRow war, UUID treatyId,
-			PeaceTerms.Term term, WorldApi.WorldSnapshot before, DiplomacyState.Picture picture) {
+	/** One term of a treaty; a tribute changes the draft, the other terms change other modules at once. */
+	void apply(DiplomacyDraft draft, UUID gameId, GameCommands.CommandContext context, RelationsRepository.WarRow war,
+			UUID treatyId, PeaceTerms.Term term, WorldApi.WorldSnapshot before, DiplomacyState.Picture picture) {
 		switch (term) {
 			case PeaceTerms.Reparations r -> {
 				economy.transfer(r.from(), r.to(), r.amountMg());
@@ -293,17 +306,16 @@ public class PeaceService {
 								"sourcePopulationAfter", source, "destinationPopulationAfter", destination,
 								"treatyId", treatyId));
 			}
-			case PeaceTerms.Tribute t -> treaties.insertTribute(gameId,
-					new TreatyRepository.TributeRow(UUID.randomUUID(), treatyId, t.from(), t.to(),
-							picture.rules().tribute().rateBps(), picture.rules().tribute().rounds(), 0, context.round(), 0,
-							"ACTIVE", null, null),
-					context.now());
+			case PeaceTerms.Tribute t -> draft.insertTribute(new TreatyRepository.TributeRow(UUID.randomUUID(), treatyId,
+					t.from(), t.to(), picture.rules().tribute().rateBps(), picture.rules().tribute().rounds(), 0,
+					context.round(), 0, "ACTIVE", null, null));
 		}
 	}
 
 	/**
 	 * Provinces controlled by a nation that is no longer at war with their legal owner return to the
-	 * owner's control (occupation ends with the war; only ceded provinces change hands).
+	 * owner's control (occupation ends with the war; only ceded provinces change hands). The caller has
+	 * written its draft: the relations are read from the database.
 	 */
 	List<String> returnControl(UUID gameId, GameCommands.CommandContext context, UUID warId) {
 		Hostility.Relations now = state.load(gameId).orElseThrow().hostility();

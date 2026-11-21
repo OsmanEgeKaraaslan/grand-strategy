@@ -59,12 +59,14 @@ public class ConferenceService {
 	private final ForceWithdrawal withdrawal;
 	private final JsonMapper jsonMapper;
 	private final ApplicationEventPublisher events;
+	private final DiplomacyDraft.Factory drafts;
 
 	ConferenceService(GameCommands gameCommands, GameControl gameControl, DiplomacyState state,
 			RelationsRepository relations, TreatyRepository treaties, ConferenceRepository conferences,
 			CallToArmsRepository calls, DiplomacyService diplomacy, PeaceService peace, EliminationService elimination,
 			DiplomacyQueries queries, WorldApi world, ForceWithdrawal withdrawal,
-			JsonMapper jsonMapper, ApplicationEventPublisher events) {
+			JsonMapper jsonMapper, ApplicationEventPublisher events, DiplomacyDraft.Factory drafts) {
+		this.drafts = drafts;
 		this.events = events;
 		this.gameCommands = gameCommands;
 		this.gameControl = gameControl;
@@ -112,7 +114,8 @@ public class ConferenceService {
 								"A war leader cannot leave its coalition by separate peace; negotiate the general peace.");
 					}
 				}
-				List<ConferenceRepository.ConferenceRow> all = conferences.all(gameId);
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				List<ConferenceRepository.ConferenceRow> all = draft.current().conferences();
 				if (all.stream().anyMatch(ConferenceRepository.ConferenceRow::active)) {
 					throw DiplomacyErrors.conflict("CONFERENCE_IN_PROGRESS",
 							"Another peace conference is in progress; wait until it ends.");
@@ -122,14 +125,15 @@ public class ConferenceService {
 					throw DiplomacyErrors.conflict("CONFERENCE_ALREADY_REQUESTED", "You have already asked for this conference.");
 				}
 				UUID id = UUID.randomUUID();
-				conferences.insert(gameId, new ConferenceRepository.ConferenceRow(id, warId, kind, requester, counterpart,
+				draft.insertConference(new ConferenceRepository.ConferenceRow(id, warId, kind, requester, counterpart,
 						"REQUESTED", 0, context.round(), null, null, context.now()));
 				diplomacy.event(gameId, context, "CONFERENCE_REQUESTED", requester, counterpart, warId,
 						Map.of("conferenceId", id, "kind", kind));
 				if (npc(snapshot, counterpart)) {
 					// Placeholder until AI exists: a nation without a player always agrees to talk.
-					open(gameId, context, conferences.find(gameId, id).orElseThrow());
+					open(draft, gameId, context, draft.current().conference(id).orElseThrow());
 				}
+				draft.write();
 				return new GameCommands.Outcome<>(result(gameId, requester, id, null, List.of()), id);
 			}
 
@@ -145,7 +149,8 @@ public class ConferenceService {
 			public GameCommands.Outcome<DiplomacyViews.ConferenceResult> execute(GameCommands.CommandContext context) {
 				available(gameId);
 				UUID nation = DiplomacyQueries.nationOf(world.snapshot(gameId), context.gamePlayerId());
-				ConferenceRepository.ConferenceRow conference = conference(gameId, conferenceId);
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				ConferenceRepository.ConferenceRow conference = conference(draft, conferenceId);
 				if (!conference.counterpart().equals(nation)) {
 					throw DiplomacyErrors.forbidden("NOT_CONFERENCE_COUNTERPART", "Only the invited war leader can answer.");
 				}
@@ -153,17 +158,18 @@ public class ConferenceService {
 					throw notOpen();
 				}
 				if (accept) {
-					if (conferences.all(gameId).stream().anyMatch(ConferenceRepository.ConferenceRow::active)) {
+					if (draft.current().conferences().stream().anyMatch(ConferenceRepository.ConferenceRow::active)) {
 						throw DiplomacyErrors.conflict("CONFERENCE_IN_PROGRESS",
 								"Another peace conference is in progress; wait until it ends.");
 					}
-					open(gameId, context, conference);
+					open(draft, gameId, context, conference);
 				}
 				else {
-					conferences.close(gameId, conferenceId, "REQUESTED", "REJECTED", context.now());
+					draft.closeConference(conferenceId, "REQUESTED", "REJECTED");
 					diplomacy.event(gameId, context, "CONFERENCE_REJECTED", nation, conference.requester(),
 							conference.warId(), Map.of("conferenceId", conferenceId));
 				}
+				draft.write();
 				return new GameCommands.Outcome<>(result(gameId, nation, conferenceId, null, List.of()), conferenceId);
 			}
 
@@ -178,15 +184,16 @@ public class ConferenceService {
 			public GameCommands.Outcome<DiplomacyViews.ConferenceResult> execute(GameCommands.CommandContext context) {
 				available(gameId);
 				UUID nation = DiplomacyQueries.nationOf(world.snapshot(gameId), context.gamePlayerId());
-				ConferenceRepository.ConferenceRow conference = conference(gameId, conferenceId);
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				ConferenceRepository.ConferenceRow conference = conference(draft, conferenceId);
 				if (!conference.principal(nation)) {
 					throw DiplomacyErrors.forbidden("NOT_CONFERENCE_PRINCIPAL",
 							"Only the two negotiating nations can end this conference.");
 				}
-				if (!conference.open() || !conferences.close(gameId, conferenceId, conference.status(), "CANCELLED",
-						context.now())) {
+				if (!conference.open() || !draft.closeConference(conferenceId, conference.status(), "CANCELLED")) {
 					throw notOpen();
 				}
+				draft.write();
 				if (conference.active()) {
 					gameControl.resumeAfterConference(gameId, conferenceId, context.now());
 				}
@@ -198,15 +205,17 @@ public class ConferenceService {
 		}));
 	}
 
-	private void open(UUID gameId, GameCommands.CommandContext context, ConferenceRepository.ConferenceRow conference) {
-		if (!conferences.open(gameId, conference.id(), context.now())) {
+	private void open(DiplomacyDraft draft, UUID gameId, GameCommands.CommandContext context,
+			ConferenceRepository.ConferenceRow conference) {
+		if (!draft.openConference(conference.id())) {
 			throw notOpen();
 		}
+		draft.write();
 		gameControl.pauseForConference(gameId, conference.id(), context.now());
 		diplomacy.event(gameId, context, "CONFERENCE_OPENED", conference.counterpart(), conference.requester(),
 				conference.warId(), Map.of("conferenceId", conference.id(), "kind", conference.kind()));
 		// Revision 1 is the white peace; the principals revise it from there.
-		addRevision(gameId, context, conference(gameId, conference.id()), conference.requester(), List.of(), 0);
+		addRevision(draft, gameId, context, conference(draft, conference.id()), conference.requester(), List.of(), 0);
 	}
 
 	// --- drafts and approvals -------------------------------------------------------------------
@@ -225,7 +234,8 @@ public class ConferenceService {
 			public GameCommands.Outcome<DiplomacyViews.ConferenceResult> execute(GameCommands.CommandContext context) {
 				available(gameId);
 				UUID nation = DiplomacyQueries.nationOf(world.snapshot(gameId), context.gamePlayerId());
-				ConferenceRepository.ConferenceRow conference = conference(gameId, conferenceId);
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				ConferenceRepository.ConferenceRow conference = conference(draft, conferenceId);
 				if (!conference.principal(nation)) {
 					throw DiplomacyErrors.forbidden("NOT_CONFERENCE_PRINCIPAL",
 							"Only the two negotiating nations can change the draft; others approve or reject it.");
@@ -233,7 +243,8 @@ public class ConferenceService {
 				if (!conference.active()) {
 					throw notOpen();
 				}
-				addRevision(gameId, context, conference, nation, parsed, expectedRevision);
+				addRevision(draft, gameId, context, conference, nation, parsed, expectedRevision);
+				draft.write();
 				return new GameCommands.Outcome<>(result(gameId, nation, conferenceId, null, List.of()), conferenceId);
 			}
 
@@ -254,7 +265,8 @@ public class ConferenceService {
 					public GameCommands.Outcome<DiplomacyViews.ConferenceResult> execute(GameCommands.CommandContext context) {
 						available(gameId);
 						UUID nation = DiplomacyQueries.nationOf(world.snapshot(gameId), context.gamePlayerId());
-						ConferenceRepository.ConferenceRow conference = conference(gameId, conferenceId);
+						DiplomacyDraft draft = drafts.begin(gameId, context.now());
+						ConferenceRepository.ConferenceRow conference = conference(draft, conferenceId);
 						if (!conference.active()) {
 							throw notOpen();
 						}
@@ -275,10 +287,11 @@ public class ConferenceService {
 						DiplomacyViews.TreatyView treaty = null;
 						List<DiplomacyViews.Withdrawal> withdrawals = List.of();
 						if (approve && allApproved(conference, revision, required)) {
-							Settled settled = settle(gameId, context, conference, current);
+							Settled settled = settle(draft, gameId, context, conference, current);
 							treaty = settled.treaty();
 							withdrawals = settled.withdrawals();
 						}
+						draft.write();
 						return new GameCommands.Outcome<>(result(gameId, nation, conferenceId, treaty, withdrawals),
 								conferenceId);
 					}
@@ -286,7 +299,7 @@ public class ConferenceService {
 				}));
 	}
 
-	private void addRevision(UUID gameId, GameCommands.CommandContext context,
+	private void addRevision(DiplomacyDraft draft, UUID gameId, GameCommands.CommandContext context,
 			ConferenceRepository.ConferenceRow conference, UUID author, List<PeaceTerms.Term> terms, int expected) {
 		DiplomacyState.Picture picture = state.load(gameId).orElseThrow();
 		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
@@ -298,7 +311,7 @@ public class ConferenceService {
 		}
 		List<UUID> required = PeaceTerms.requiredApprovers(Set.of(conference.requester(), conference.counterpart()), terms);
 		int next = conference.currentRevision() + 1;
-		boolean added = conferences.addRevision(gameId, conference.id(), expected,
+		boolean added = draft.addRevision(conference.id(), expected,
 				new ConferenceRepository.RevisionRow(next, author,
 						queries.writeTerms(DiplomacyQueries.canonical(terms)), jsonMapper.writeValueAsString(required),
 						context.now()));
@@ -340,8 +353,8 @@ public class ConferenceService {
 	 * attachments end; battalions without access withdraw and sieges are re-judged; the game ends if
 	 * one nation is left, otherwise play resumes.
 	 */
-	private Settled settle(UUID gameId, GameCommands.CommandContext context, ConferenceRepository.ConferenceRow conference,
-			ConferenceRepository.RevisionRow revision) {
+	private Settled settle(DiplomacyDraft draft, UUID gameId, GameCommands.CommandContext context,
+			ConferenceRepository.ConferenceRow conference, ConferenceRepository.RevisionRow revision) {
 		DiplomacyState.Picture picture = state.load(gameId).orElseThrow();
 		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
 		RelationsRepository.WarRow war = activeWar(picture, conference.warId());
@@ -353,7 +366,7 @@ public class ConferenceService {
 		if (!violations.isEmpty()) {
 			throw DiplomacyErrors.termsInvalid(violations, true);
 		}
-		if (!conferences.close(gameId, conference.id(), "ACTIVE", "CONCLUDED", context.now())) {
+		if (!draft.closeConference(conference.id(), "ACTIVE", "CONCLUDED")) {
 			throw notOpen();
 		}
 		UUID treatyId = UUID.randomUUID();
@@ -363,34 +376,37 @@ public class ConferenceService {
 				context.turnNumber(), revision.termsJson(), truceUntil, context.now()), conference.id(), revision.revision(),
 				exiting);
 		for (PeaceTerms.Term term : PeaceTerms.settlementOrder(terms)) {
-			peace.apply(gameId, context, war, treatyId, term, snapshot, picture);
+			peace.apply(draft, gameId, context, war, treatyId, term, snapshot, picture);
 		}
 		List<RelationsRepository.ParticipantRow> participants = picture.participantsOf(war.id());
 		if (exiting == null) {
-			if (!relations.endWar(gameId, war.id(), context.round(), context.turnNumber(), "PEACE_TREATY")) {
+			if (!draft.endWar(war.id(), context.round(), context.turnNumber(), "PEACE_TREATY")) {
 				throw DiplomacyErrors.conflict("WAR_NOT_ACTIVE", "This war has already ended.");
 			}
-			truces(gameId, treatyId, truceUntil, participants, null);
-			calls.all(gameId)
+			truces(draft, treatyId, truceUntil, participants, null);
+			draft.current()
+				.calls()
 				.stream()
 				.filter(c -> c.pending() && c.warId().equals(war.id()))
-				.forEach(c -> calls.close(gameId, c.id(), "CANCELLED", context.round(), context.now()));
-			conferences.all(gameId)
+				.forEach(c -> draft.closeCall(c.id(), "CANCELLED", context.round()));
+			draft.current()
+				.conferences()
 				.stream()
 				.filter(c -> "REQUESTED".equals(c.status()) && c.warId().equals(war.id()))
-				.forEach(c -> conferences.close(gameId, c.id(), "REQUESTED", "CANCELLED", context.now()));
+				.forEach(c -> draft.closeConference(c.id(), "REQUESTED", "CANCELLED"));
 			diplomacy.event(gameId, context, "PEACE_SIGNED", conference.requester(), conference.counterpart(), war.id(),
 					Map.of("treatyId", treatyId, "terms", stored.size(), "truceUntilRound", truceUntil, "conferenceId",
 							conference.id()));
 		}
 		else {
-			relations.leaveWar(gameId, war.id(), exiting, context.round(), "SEPARATE_PEACE");
-			truces(gameId, treatyId, truceUntil, participants, exiting);
+			draft.leaveWar(war.id(), exiting, context.round(), "SEPARATE_PEACE");
+			truces(draft, treatyId, truceUntil, participants, exiting);
 			diplomacy.event(gameId, context, "SEPARATE_PEACE", exiting, conference.counterpart(), war.id(),
 					Map.of("treatyId", treatyId, "terms", stored.size(), "truceUntilRound", truceUntil, "conferenceId",
 							conference.id()));
 		}
 
+		draft.write();
 		elimination.eliminateLandless(gameId, context);
 		peace.returnControl(gameId, context, war.id());
 		int detached = exiting == null ? 0 : withdrawal.endAttachmentsOf(gameId, exiting);
@@ -411,8 +427,8 @@ public class ConferenceService {
 	}
 
 	/** Truces between the two sides (general), or between the exiting nation and the other side (separate). */
-	private void truces(UUID gameId, UUID treatyId, int until, List<RelationsRepository.ParticipantRow> participants,
-			UUID exiting) {
+	private static void truces(DiplomacyDraft draft, UUID treatyId, int until,
+			List<RelationsRepository.ParticipantRow> participants, UUID exiting) {
 		String exitingSide = exiting == null ? null
 				: participants.stream().filter(p -> p.nationId().equals(exiting)).findFirst().orElseThrow().side();
 		for (RelationsRepository.ParticipantRow x : participants) {
@@ -423,7 +439,7 @@ public class ConferenceService {
 				boolean involved = exiting == null || ("ATTACKER".equals(exitingSide) ? x.nationId().equals(exiting)
 						: y.nationId().equals(exiting));
 				if (involved) {
-					relations.insertTruce(gameId, new RelationsRepository.TruceRow(treatyId, x.nationId(), y.nationId(), until));
+					draft.insertTruce(new RelationsRepository.TruceRow(treatyId, x.nationId(), y.nationId(), until));
 				}
 			}
 		}
@@ -483,8 +499,9 @@ public class ConferenceService {
 		return war;
 	}
 
-	private ConferenceRepository.ConferenceRow conference(UUID gameId, UUID conferenceId) {
-		return conferences.find(gameId, conferenceId)
+	private static ConferenceRepository.ConferenceRow conference(DiplomacyDraft draft, UUID conferenceId) {
+		return draft.current()
+			.conference(conferenceId)
 			.orElseThrow(() -> DiplomacyErrors.conflict("CONFERENCE_NOT_FOUND", "Peace conference not found."));
 	}
 
@@ -513,8 +530,9 @@ public class ConferenceService {
 			DiplomacyViews.TreatyView treaty, List<DiplomacyViews.Withdrawal> withdrawals) {
 		DiplomacyState.Picture picture = state.load(gameId).orElseThrow();
 		DiplomacyQueries.Ctx ctx = queries.context(gameId, picture, world.snapshot(gameId), viewer, 0);
-		return new DiplomacyViews.ConferenceResult(queries.conferenceView(ctx, conference(gameId, conferenceId)), treaty,
-				withdrawals);
+		ConferenceRepository.ConferenceRow conference = conferences.find(gameId, conferenceId)
+			.orElseThrow(() -> DiplomacyErrors.conflict("CONFERENCE_NOT_FOUND", "Peace conference not found."));
+		return new DiplomacyViews.ConferenceResult(queries.conferenceView(ctx, conference), treaty, withdrawals);
 	}
 
 	/** Every conference command replays by showing the conference as it is now. */

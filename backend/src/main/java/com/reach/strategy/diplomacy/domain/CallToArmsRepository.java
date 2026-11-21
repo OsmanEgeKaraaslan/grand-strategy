@@ -47,15 +47,6 @@ public class CallToArmsRepository {
 			id, war_id, caller_nation_id, ally_nation_id, alliance_id, status, created_round, answered_round, created_at, side
 			""";
 
-	public void insert(UUID gameId, CallRow call) {
-		jdbc.update("""
-				INSERT INTO game.call_to_arms (id, game_id, war_id, caller_nation_id, ally_nation_id, alliance_id, status,
-				    created_round, created_at, updated_at, side)
-				VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)
-				""", call.id(), gameId, call.warId(), call.caller(), call.ally(), call.allianceId(), call.createdRound(),
-				Timestamp.from(call.createdAt()), Timestamp.from(call.createdAt()), call.side());
-	}
-
 	public Optional<CallRow> find(UUID gameId, UUID id) {
 		return jdbc.query("SELECT " + COLUMNS + " FROM game.call_to_arms WHERE game_id = ? AND id = ?",
 				CallToArmsRepository::row, gameId, id).stream().findFirst();
@@ -64,14 +55,6 @@ public class CallToArmsRepository {
 	public List<CallRow> all(UUID gameId) {
 		return jdbc.query("SELECT " + COLUMNS + " FROM game.call_to_arms WHERE game_id = ? ORDER BY created_at, id",
 				CallToArmsRepository::row, gameId);
-	}
-
-	/** PENDING → {@code status}; false if it was no longer pending. */
-	public boolean close(UUID gameId, UUID id, String status, int round, Instant now) {
-		return jdbc.update("""
-				UPDATE game.call_to_arms SET status = ?, answered_round = ?, updated_at = ?
-				WHERE game_id = ? AND id = ? AND status = 'PENDING'
-				""", status, round, Timestamp.from(now), gameId, id) == 1;
 	}
 
 	private static CallRow row(ResultSet rs, int row) throws SQLException {

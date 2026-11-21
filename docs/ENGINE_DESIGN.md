@@ -204,6 +204,27 @@ Measured on the Grand Campaign: one computer round of 8 turns 1,988 → 1,871 st
 observation 42 → 43; recruitment 18 → 19 (the treasury is no longer cached between the check and the
 payment); plain move 25.
 
+**S4 status (2026-11-21, done).** Diplomacy was already JDBC with pure rules (`Diplomacy`,
+`PeaceTerms`, `WarScore`, `Victory`) and an immutable read model (`DiplomacyState.Picture`); its
+writes were conditional SQL updates scattered through seven services. Its state now changes as one
+value:
+- `diplomacy.domain.Relations` holds alliances, wars, participants, active fronts, truces, tributes,
+  peace proposals, calls to arms and conferences as their row records, with one pure transition per
+  former write. The guarded ones return empty exactly where the conditional update matched no row
+  (`activateAlliance`, `closeProposal`, `revise`, …).
+- `DiplomacyStore` loads it and writes the difference per table in foreign-key order, updates before
+  inserts (a superseded proposal frees the one-pending-proposal slot before the new one takes it).
+- `DiplomacyDraft` is the per-command working copy. Its method names mirror the old repository writes,
+  so the services kept their shape. A draft writes itself before any other module is called and before
+  a fresh `Picture` is read. Drafts register with the transaction: recording an event first writes
+  every pending draft (an event may name a war created in the same command), and a before-commit hook
+  writes anything left, so no change can be lost.
+- Append-only records (events, gifts, treaties, tribute payments, war score, conference revisions and
+  decisions) stay direct inserts. The repositories' old write methods are deleted.
+
+`DiplomacyRollbackIT` now injects its failures at the new write points (the store write that ends the
+war; the tribute payment insert); its assertions are unchanged.
+
 ## 8. Open decisions
 
 | ID | Question | Proposed default |

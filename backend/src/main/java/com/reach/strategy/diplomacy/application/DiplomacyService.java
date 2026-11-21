@@ -41,10 +41,12 @@ public class DiplomacyService {
 	private final ForceWithdrawal withdrawal;
 	private final JsonMapper jsonMapper;
 	private final CallToArmsRepository calls;
+	private final DiplomacyDraft.Factory drafts;
 
 	DiplomacyService(GameCommands gameCommands, DiplomacyState state, RelationsRepository relations,
 			TreatyRepository treaties, DiplomacyEventLog events, DiplomacyQueries queries, WorldApi world,
-			ForceWithdrawal withdrawal, JsonMapper jsonMapper, CallToArmsRepository calls) {
+			ForceWithdrawal withdrawal, JsonMapper jsonMapper, CallToArmsRepository calls, DiplomacyDraft.Factory drafts) {
+		this.drafts = drafts;
 		this.calls = calls;
 		this.gameCommands = gameCommands;
 		this.state = state;
@@ -103,34 +105,36 @@ public class DiplomacyService {
 					invitationAlliances.put(ally, invitableAlliance(picture, snapshot, attacker, targetNationId, ally));
 				}
 				UUID warId = UUID.randomUUID();
-				relations.insertWar(gameId, new RelationsRepository.WarRow(warId, attacker, targetNationId, "ACTIVE",
-						context.round(), context.turnNumber(), null, null, null), context.now());
-				relations.insertParticipant(gameId,
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				draft.insertWar(new RelationsRepository.WarRow(warId, attacker, targetNationId, "ACTIVE", context.round(),
+						context.turnNumber(), null, null, null));
+				draft.insertParticipant(
 						new RelationsRepository.ParticipantRow(warId, attacker, "ATTACKER", context.round(), "DECLARED"));
-				relations.insertParticipant(gameId, new RelationsRepository.ParticipantRow(warId, targetNationId,
-						"DEFENDER", context.round(), "ATTACKED"));
-				relations.insertFront(gameId, warId, attacker, targetNationId);
+				draft.insertParticipant(new RelationsRepository.ParticipantRow(warId, targetNationId, "DEFENDER",
+						context.round(), "ATTACKED"));
+				draft.insertFront(warId, attacker, targetNationId);
 				event(gameId, context, "WAR_DECLARED", attacker, targetNationId, warId, Map.of());
 				// Ruleset v6: allies join only by answering a call to arms; before v6 they join at once (Q-D6).
 				List<UUID> joiners = picture.rules().features().callsToArms() ? List.of()
 						: Diplomacy.defensiveJoiners(attacker, targetNationId, standing, context.round());
 				for (UUID ally : joiners) {
-					relations.insertParticipant(gameId, new RelationsRepository.ParticipantRow(warId, ally, "DEFENDER",
-							context.round(), "DEFENSIVE_RESPONSE"));
-					relations.insertFront(gameId, warId, attacker, ally);
+					draft.insertParticipant(new RelationsRepository.ParticipantRow(warId, ally, "DEFENDER", context.round(),
+							"DEFENSIVE_RESPONSE"));
+					draft.insertFront(warId, attacker, ally);
 					event(gameId, context, "JOINED_WAR", ally, attacker, warId, Map.of("defending", targetNationId));
 				}
 				List<UUID> defenders = new ArrayList<>(List.of(targetNationId));
 				defenders.addAll(joiners);
 				for (UUID defender : defenders) {
-					endPeacefulTies(gameId, context, attacker, defender, warId);
+					endPeacefulTies(draft, gameId, context, attacker, defender, warId);
 				}
 				invitationAlliances.forEach((ally, allianceId) -> {
 					UUID callId = UUID.randomUUID();
-					calls.insert(gameId, new CallToArmsRepository.CallRow(callId, warId, attacker, ally, allianceId, "PENDING",
+					draft.insertCall(new CallToArmsRepository.CallRow(callId, warId, attacker, ally, allianceId, "PENDING",
 							context.round(), null, context.now(), "ATTACKER"));
 					event(gameId, context, "CALL_TO_ARMS", attacker, ally, warId, Map.of("callId", callId, "offensive", true));
 				});
+				draft.write();
 				return new GameCommands.Outcome<>(result(gameId, attacker, context, warId, joiners, invited), warId);
 			}
 
@@ -160,18 +164,19 @@ public class DiplomacyService {
 	 * Two nations now at war keep no peaceful obligations towards each other: a running tribute
 	 * between them is cancelled (PROVISIONAL) and a pending alliance proposal is withdrawn.
 	 */
-	void endPeacefulTies(UUID gameId, GameCommands.CommandContext context, UUID x, UUID y, UUID warId) {
-		for (TreatyRepository.TributeRow t : treaties.tributes(gameId)) {
+	void endPeacefulTies(DiplomacyDraft draft, UUID gameId, GameCommands.CommandContext context, UUID x, UUID y,
+			UUID warId) {
+		for (TreatyRepository.TributeRow t : draft.current().tributes()) {
 			boolean between = (t.payer().equals(x) && t.receiver().equals(y))
 					|| (t.payer().equals(y) && t.receiver().equals(x));
-			if (between && t.active() && treaties.cancelTribute(gameId, t.id(), "WAR_RENEWED", context.round())) {
+			if (between && t.active() && draft.cancelTribute(t.id(), "WAR_RENEWED", context.round())) {
 				event(gameId, context, "TRIBUTE_CANCELLED", t.payer(), t.receiver(), warId,
 						Map.of("tributeId", t.id(), "reason", "WAR_RENEWED"));
 			}
 		}
-		for (RelationsRepository.AllianceRow a : relations.alliances(gameId)) {
+		for (RelationsRepository.AllianceRow a : draft.current().alliances()) {
 			if ("PROPOSED".equals(a.status()) && a.involves(x) && a.involves(y)) {
-				relations.closeAlliance(gameId, a.id(), "PROPOSED", "CANCELLED", "WAR", context.round(), context.now());
+				draft.closeAlliance(a.id(), "PROPOSED", "CANCELLED", "WAR", context.round());
 			}
 		}
 	}
@@ -231,8 +236,10 @@ public class DiplomacyService {
 							"This nation is controlled by the game and does not make alliances yet.");
 				}
 				UUID id = UUID.randomUUID();
-				relations.insertAlliance(gameId, new RelationsRepository.AllianceRow(id, kind.name(), proposer,
-						targetNationId, proposer, "PROPOSED", context.round(), null, null, null), context.now());
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				draft.insertAlliance(new RelationsRepository.AllianceRow(id, kind.name(), proposer, targetNationId, proposer,
+						"PROPOSED", context.round(), null, null, null));
+				draft.write();
 				return new GameCommands.Outcome<>(allianceResult(gameId, proposer, context, id, List.of()), id);
 			}
 
@@ -261,9 +268,11 @@ public class DiplomacyService {
 				if (!blockers.isEmpty()) {
 					throw DiplomacyErrors.alliance(blockers.getFirst());
 				}
-				if (!relations.activateAlliance(gameId, allianceId, context.round(), context.now())) {
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				if (!draft.activateAlliance(allianceId, context.round())) {
 					throw notPending();
 				}
+				draft.write();
 				event(gameId, context, "ALLIANCE_FORMED", alliance.proposer(), nation, null,
 						Map.of("allianceId", allianceId, "kind", alliance.kind()));
 				return new GameCommands.Outcome<>(allianceResult(gameId, nation, context, allianceId, List.of()),
@@ -287,10 +296,11 @@ public class DiplomacyService {
 				DiplomacyState.Picture picture = state.load(gameId).orElseThrow(DiplomacyErrors::notAvailable);
 				UUID nation = DiplomacyQueries.nationOf(world.snapshot(gameId), context.gamePlayerId());
 				proposalFor(picture, allianceId, nation);
-				if (!relations.closeAlliance(gameId, allianceId, "PROPOSED", "REJECTED", "REJECTED", context.round(),
-						context.now())) {
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				if (!draft.closeAlliance(allianceId, "PROPOSED", "REJECTED", "REJECTED", context.round())) {
 					throw notPending();
 				}
+				draft.write();
 				return new GameCommands.Outcome<>(allianceResult(gameId, nation, context, allianceId, List.of()),
 						allianceId);
 			}
@@ -326,8 +336,9 @@ public class DiplomacyService {
 						throw DiplomacyErrors.forbidden("NOT_ALLIANCE_PROPOSER",
 								"Only the proposing nation can withdraw an alliance proposal; reject it instead.");
 					}
-					relations.closeAlliance(gameId, allianceId, "PROPOSED", "CANCELLED", "WITHDRAWN", context.round(),
-							context.now());
+					DiplomacyDraft draft = drafts.begin(gameId, context.now());
+					draft.closeAlliance(allianceId, "PROPOSED", "CANCELLED", "WITHDRAWN", context.round());
+					draft.write();
 					return new GameCommands.Outcome<>(allianceResult(gameId, nation, context, allianceId, List.of()),
 							allianceId);
 				}
@@ -341,7 +352,9 @@ public class DiplomacyService {
 					throw DiplomacyErrors.conflict("ALLIES_AT_WAR_TOGETHER",
 							"You and your ally fight on the same side of a war; make peace before ending the alliance.");
 				}
-				relations.closeAlliance(gameId, allianceId, "ACTIVE", "ENDED", "TERMINATED", context.round(), context.now());
+				DiplomacyDraft draft = drafts.begin(gameId, context.now());
+				draft.closeAlliance(allianceId, "ACTIVE", "ENDED", "TERMINATED", context.round());
+				draft.write();
 				event(gameId, context, "ALLIANCE_ENDED", nation, alliance.other(nation), null,
 						Map.of("allianceId", allianceId, "kind", alliance.kind()));
 				List<DiplomacyViews.Withdrawal> moved = withdraw(gameId, context, nation, null);
@@ -397,7 +410,10 @@ public class DiplomacyService {
 
 	// --- shared ---------------------------------------------------------------------------------
 
-	/** Withdraws every battalion that lost access and records it publicly. */
+	/**
+	 * Withdraws every battalion that lost access and records it publicly. The caller writes its
+	 * draft first: the military module reads the relations from the database.
+	 */
 	List<DiplomacyViews.Withdrawal> withdraw(UUID gameId, GameCommands.CommandContext context, UUID actor, UUID warId) {
 		// Attachments the new relations no longer allow end first, so their battalions withdraw with their owners.
 		int detached = withdrawal.endInvalidAttachments(gameId);
@@ -417,6 +433,8 @@ public class DiplomacyService {
 
 	void event(UUID gameId, GameCommands.CommandContext context, String kind, UUID actor, UUID target, UUID warId,
 			Map<String, ?> details) {
+		// An event may name a war, alliance or conference created in this transaction: write those first.
+		drafts.writeAll();
 		events.record(gameId, context.round(), context.turnNumber(), kind, actor, target, warId,
 				jsonMapper.writeValueAsString(new LinkedHashMap<>(details)), context.now());
 	}
