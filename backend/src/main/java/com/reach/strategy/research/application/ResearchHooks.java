@@ -12,13 +12,9 @@ import com.reach.strategy.game.api.GameStartInitializer;
 import com.reach.strategy.game.api.RoundPhase;
 import com.reach.strategy.military.api.MilitaryModifiers;
 import com.reach.strategy.platform.read.ReadScope;
-import com.reach.strategy.research.domain.Institution;
-import com.reach.strategy.research.domain.InstitutionRepository;
-import com.reach.strategy.research.domain.NationDoctrine;
-import com.reach.strategy.research.domain.NationDoctrineRepository;
-import com.reach.strategy.research.domain.NationResearch;
-import com.reach.strategy.research.domain.NationResearchRepository;
 import com.reach.strategy.research.domain.ResearchLogRepository;
+import com.reach.strategy.research.domain.ResearchStore;
+import com.reach.strategy.research.rules.Studies;
 import com.reach.strategy.research.rules.InstitutionType;
 import com.reach.strategy.research.rules.InstitutionType.Pool;
 import com.reach.strategy.research.rules.Research;
@@ -92,36 +88,39 @@ class ResearchHooks {
 	}
 
 	@Bean
-	UpkeepSource institutionUpkeep(InstitutionRepository institutions, ResearchRulesets rulesets, WorldApi world) {
-		return new InstitutionUpkeep(institutions, rulesets, world);
+	UpkeepSource institutionUpkeep(ResearchStore store, ResearchRulesets rulesets, WorldApi world) {
+		return new InstitutionUpkeep(store, rulesets, world);
 	}
 
 	@Bean
 	GameStartInitializer researchStartInitializer(ResearchRulesets rulesets, WorldApi world,
-			NationResearchRepository research) {
+			ResearchStore store) {
 		return (gameId, mapId, rulesetVersion) -> {
 			if (rulesets.find(rulesetVersion).isEmpty()) {
 				return;
 			}
 			// Every nation starts at level 1 of both tracks with no points and no institutions.
-			world.snapshot(gameId)
+			Studies started = Studies.empty();
+			for (WorldApi.NationState n : world.snapshot(gameId)
 				.nations()
 				.stream()
 				.sorted(java.util.Comparator.comparing(n -> n.id().toString()))
-				.forEach(n -> research.save(NationResearch.start(gameId, n.id(), rulesetVersion)));
-			research.flush();
+				.toList()) {
+				started = started.begin(Studies.Progress.start(n.id(), rulesetVersion));
+			}
+			store.persist(gameId, Studies.empty(), started);
 		};
 	}
 
 	@Bean
-	RoundPhase researchPhase(ResearchRulesets rulesets, WorldApi world, InstitutionRepository institutions,
-			NationResearchRepository research, ResearchLogRepository log) {
-		return new ResearchPhase(rulesets, world, institutions, research, log);
+	RoundPhase researchPhase(ResearchRulesets rulesets, WorldApi world, ResearchStore store,
+			ResearchLogRepository log) {
+		return new ResearchPhase(rulesets, world, store, log);
 	}
 
 	@Bean
-	RoundPhase institutionPhase(InstitutionRepository institutions) {
-		return new InstitutionPhase(institutions);
+	RoundPhase institutionPhase(ResearchStore store) {
+		return new InstitutionPhase(store);
 	}
 
 	/** A nation's research effects, read from authoritative state. */
@@ -129,13 +128,11 @@ class ResearchHooks {
 	static class ResearchEffects {
 
 		private final ResearchRulesets rulesets;
-		private final NationResearchRepository research;
-		private final NationDoctrineRepository doctrines;
+		private final ResearchStore store;
 
-		ResearchEffects(ResearchRulesets rulesets, NationResearchRepository research, NationDoctrineRepository doctrines) {
+		ResearchEffects(ResearchRulesets rulesets, ResearchStore store) {
 			this.rulesets = rulesets;
-			this.research = research;
-			this.doctrines = doctrines;
+			this.store = store;
 		}
 
 		@Transactional(readOnly = true)
@@ -144,7 +141,7 @@ class ResearchHooks {
 				// Same result as below, from the game-wide read shared by the scope.
 				return ofGame(gameId).getOrDefault(nationId, Research.Effects.NONE);
 			}
-			NationResearch r = research.findById(nationId).filter(x -> x.gameId().equals(gameId)).orElse(null);
+			Studies.Progress r = store.progress(gameId, nationId).orElse(null);
 			if (r == null) {
 				return Research.Effects.NONE;
 			}
@@ -152,9 +149,9 @@ class ResearchHooks {
 			if (rules == null) {
 				return Research.Effects.NONE;
 			}
-			List<String> chosen = doctrines.findByGameIdAndNationIdOrderByDoctrineKey(gameId, nationId)
+			List<String> chosen = store.doctrines(gameId, nationId)
 				.stream()
-				.map(NationDoctrine::doctrineKey)
+				.map(Studies.Doctrine::doctrineKey)
 				.toList();
 			return Research.effects(r.level(ResearchRules.Track.MILITARY), r.level(ResearchRules.Track.CIVILIAN), chosen,
 					rules);
@@ -172,11 +169,11 @@ class ResearchHooks {
 
 		private Map<UUID, Research.Effects> loadGame(UUID gameId) {
 			Map<UUID, List<String>> chosen = new HashMap<>();
-			for (NationDoctrine d : doctrines.findByGameIdOrderByNationIdAscDoctrineKeyAsc(gameId)) {
+			for (Studies.Doctrine d : store.doctrines(gameId)) {
 				chosen.computeIfAbsent(d.nationId(), n -> new java.util.ArrayList<>()).add(d.doctrineKey());
 			}
 			Map<UUID, Research.Effects> effects = new HashMap<>();
-			for (NationResearch r : research.findByGameIdOrderByNationId(gameId)) {
+			for (Studies.Progress r : store.progress(gameId)) {
 				rulesets.find(r.rulesetVersion())
 					.ifPresent(rules -> effects.put(r.nationId(), Research.effects(r.level(ResearchRules.Track.MILITARY),
 							r.level(ResearchRules.Track.CIVILIAN), chosen.getOrDefault(r.nationId(), List.of()), rules)));
@@ -195,16 +192,13 @@ class ResearchHooks {
 
 		private final ResearchRulesets rulesets;
 		private final WorldApi world;
-		private final InstitutionRepository institutions;
-		private final NationResearchRepository research;
+		private final ResearchStore store;
 		private final ResearchLogRepository log;
 
-		ResearchPhase(ResearchRulesets rulesets, WorldApi world, InstitutionRepository institutions,
-				NationResearchRepository research, ResearchLogRepository log) {
+		ResearchPhase(ResearchRulesets rulesets, WorldApi world, ResearchStore store, ResearchLogRepository log) {
 			this.rulesets = rulesets;
 			this.world = world;
-			this.institutions = institutions;
-			this.research = research;
+			this.store = store;
 			this.log = log;
 		}
 
@@ -224,19 +218,25 @@ class ResearchHooks {
 			Map<UUID, WorldApi.ProvinceState> byCity = new HashMap<>();
 			world.snapshot(gameId).provinces().forEach(p -> byCity.put(p.cityId(), p));
 			Map<UUID, List<InstitutionType>> producing = new HashMap<>();
-			for (Institution i : institutions.findByGameIdOrderById(gameId)) {
+			for (Studies.Institution i : store.institutions(gameId)) {
 				WorldApi.ProvinceState p = byCity.get(i.cityId());
 				if (Research.produces(i.active(), p.ownerNationId(), p.controllerNationId())) {
 					producing.computeIfAbsent(p.ownerNationId(), n -> new java.util.ArrayList<>()).add(i.type());
 				}
 			}
-			for (NationResearch r : research.findByGameIdOrderByNationId(gameId)) {
+			Studies before = Studies.of(store.progress(gameId), List.of(), List.of());
+			Studies after = before;
+			for (Studies.Progress r : before.progress()) {
 				Map<Pool, Integer> gained = Research.pointsPerRound(producing.getOrDefault(r.nationId(), List.of()), rules);
-				gained.forEach(r::add);
+				Studies.Progress updated = r;
+				for (Pool pool : Pool.values()) {
+					updated = updated.add(pool, gained.get(pool));
+				}
+				after = after.update(updated);
 				log.insertRound(gameId, context.round(), r.nationId(), gained.get(Pool.MILITARY), gained.get(Pool.CIVILIAN),
 						gained.get(Pool.DOCTRINE));
 			}
-			research.flush();
+			store.persist(gameId, before, after);
 		}
 
 	}
@@ -244,10 +244,10 @@ class ResearchHooks {
 	/** Step INSTITUTIONS (Q-E8): institutions due this round become ACTIVE and produce from the next one. */
 	static class InstitutionPhase implements RoundPhase {
 
-		private final InstitutionRepository institutions;
+		private final ResearchStore store;
 
-		InstitutionPhase(InstitutionRepository institutions) {
-			this.institutions = institutions;
+		InstitutionPhase(ResearchStore store) {
+			this.store = store;
 		}
 
 		@Override
@@ -258,11 +258,14 @@ class ResearchHooks {
 		@Override
 		@Transactional(propagation = Propagation.MANDATORY)
 		public void apply(RoundContext context) {
-			institutions
-				.findByGameIdAndStatusAndCompletesAfterRoundLessThanEqualOrderById(context.gameId(),
-						Institution.Status.UNDER_CONSTRUCTION, context.round())
-				.forEach(Institution::complete);
-			institutions.flush();
+			Studies before = Studies.of(List.of(), store.institutions(context.gameId()), List.of());
+			Studies after = before;
+			for (Studies.Institution i : before.institutions()) {
+				if (i.status() == Studies.Institution.Status.UNDER_CONSTRUCTION && i.completesAfterRound() <= context.round()) {
+					after = after.update(i.completed());
+				}
+			}
+			store.persist(context.gameId(), before, after);
 		}
 
 	}
@@ -273,12 +276,12 @@ class ResearchHooks {
 	 */
 	static class InstitutionUpkeep implements UpkeepSource {
 
-		private final InstitutionRepository institutions;
+		private final ResearchStore store;
 		private final ResearchRulesets rulesets;
 		private final WorldApi world;
 
-		InstitutionUpkeep(InstitutionRepository institutions, ResearchRulesets rulesets, WorldApi world) {
-			this.institutions = institutions;
+		InstitutionUpkeep(ResearchStore store, ResearchRulesets rulesets, WorldApi world) {
+			this.store = store;
 			this.rulesets = rulesets;
 			this.world = world;
 		}
@@ -287,14 +290,14 @@ class ResearchHooks {
 		@Transactional(readOnly = true)
 		public Map<UUID, Long> upkeepByNation(UUID gameId, String rulesetVersion) {
 			Map<UUID, Long> total = new HashMap<>();
-			List<Institution> all = institutions.findByGameIdOrderById(gameId);
+			List<Studies.Institution> all = store.institutions(gameId);
 			if (all.isEmpty()) {
 				return total;
 			}
 			Map<UUID, WorldApi.ProvinceState> byCity = new HashMap<>();
 			world.snapshot(gameId).provinces().forEach(p -> byCity.put(p.cityId(), p));
 			Map<InstitutionType, Long> costs = new EnumMap<>(InstitutionType.class);
-			for (Institution i : all) {
+			for (Studies.Institution i : all) {
 				WorldApi.ProvinceState p = byCity.get(i.cityId());
 				if (!Research.produces(i.active(), p.ownerNationId(), p.controllerNationId())) {
 					continue;

@@ -18,13 +18,9 @@ import com.reach.strategy.game.api.GameAccess;
 import com.reach.strategy.game.api.GameCommands;
 import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.platform.web.ApiException;
-import com.reach.strategy.research.domain.Institution;
-import com.reach.strategy.research.domain.InstitutionRepository;
-import com.reach.strategy.research.domain.NationDoctrine;
-import com.reach.strategy.research.domain.NationDoctrineRepository;
-import com.reach.strategy.research.domain.NationResearch;
-import com.reach.strategy.research.domain.NationResearchRepository;
 import com.reach.strategy.research.domain.ResearchLogRepository;
+import com.reach.strategy.research.domain.ResearchStore;
+import com.reach.strategy.research.rules.Studies;
 import com.reach.strategy.research.rules.InstitutionType;
 import com.reach.strategy.research.rules.InstitutionType.Pool;
 import com.reach.strategy.research.rules.Research;
@@ -52,23 +48,18 @@ public class ResearchService {
 	private final WorldApi world;
 	private final EconomyApi economy;
 	private final List<SiegeStatus> siegeStatus;
-	private final InstitutionRepository institutions;
-	private final NationResearchRepository research;
-	private final NationDoctrineRepository doctrines;
+	private final ResearchStore store;
 	private final ResearchLogRepository log;
 
 	ResearchService(GameAccess gameAccess, GameCommands gameCommands, ResearchRulesets rulesets, WorldApi world,
-			EconomyApi economy, List<SiegeStatus> siegeStatus, InstitutionRepository institutions,
-			NationResearchRepository research, NationDoctrineRepository doctrines, ResearchLogRepository log) {
+			EconomyApi economy, List<SiegeStatus> siegeStatus, ResearchStore store, ResearchLogRepository log) {
 		this.gameAccess = gameAccess;
 		this.gameCommands = gameCommands;
 		this.rulesets = rulesets;
 		this.world = world;
 		this.economy = economy;
 		this.siegeStatus = List.copyOf(siegeStatus);
-		this.institutions = institutions;
-		this.research = research;
-		this.doctrines = doctrines;
+		this.store = store;
 		this.log = log;
 	}
 
@@ -94,8 +85,8 @@ public class ResearchService {
 		}
 		UUID nationId = nationOf(snapshot, membership.gamePlayerId());
 		EconomyApi.TreasuryState treasury = economy.treasury(nationId);
-		Map<InstitutionType, Institution> existing = new HashMap<>();
-		institutions.findByGameIdAndCityIdOrderByType(gameId, cityId).forEach(i -> existing.put(i.type(), i));
+		Map<InstitutionType, Studies.Institution> existing = new HashMap<>();
+		store.institutionsOfCity(gameId, cityId).forEach(i -> existing.put(i.type(), i));
 		boolean besieged = besieged(gameId, cityId);
 		List<ResearchViews.InstitutionOption> options = new ArrayList<>();
 		int ordered = Math.max(membership.round(), 1);
@@ -109,7 +100,7 @@ public class ResearchService {
 				.map(Enum::name)
 				.toList();
 			int completes = Research.completesAfterRound(ordered, ir.buildDurationRounds());
-			Institution i = existing.get(type);
+			Studies.Institution i = existing.get(type);
 			options.add(new ResearchViews.InstitutionOption(type.name(), type.pool().name(), ir.buildCostMg(),
 					ir.buildDurationRounds(), completes, completes + 1, ir.pointsPerRound(), ir.upkeepMg(),
 					blockers.isEmpty(), blockers, i == null ? null : institutionView(i, p, rules)));
@@ -131,7 +122,7 @@ public class ResearchService {
 				WorldApi.ProvinceState p = snapshot.provinceOfCity(cityId).orElseThrow(ResearchService::cityNotFound);
 				UUID nationId = nationOf(snapshot, context.gamePlayerId());
 				EconomyApi.TreasuryState treasury = economy.treasury(nationId);
-				boolean exists = institutions.findByGameIdAndCityIdAndType(gameId, cityId, type).isPresent();
+				boolean exists = store.institutionsOfCity(gameId, cityId).stream().anyMatch(i -> i.type() == type);
 				List<Research.InstitutionBlocker> blockers = Research.institutionBlockers(type,
 						new Research.InstitutionRequest(nationId, p.ownerNationId(), p.controllerNationId(), true,
 								besieged(gameId, cityId), exists, treasury.treasuryMg(), treasury.inArrears()),
@@ -141,9 +132,10 @@ public class ResearchService {
 				}
 				ResearchRules.InstitutionRules ir = rules.institution(type);
 				economy.spend(nationId, ir.buildCostMg());
-				Institution institution = institutions.saveAndFlush(Institution.project(gameId, cityId, type,
+				Studies.Institution institution = Studies.Institution.project(UUID.randomUUID(), cityId, type,
 						context.round(), Research.completesAfterRound(context.round(), ir.buildDurationRounds()),
-						ir.buildCostMg(), context.rulesetVersion(), context.now()));
+						ir.buildCostMg(), context.rulesetVersion(), context.now());
+				store.persist(gameId, Studies.empty(), Studies.empty().found(institution));
 				return new GameCommands.Outcome<>(new ResearchViews.InstitutionResult(
 						institutionView(institution, p, rules), ir.buildCostMg(), economy.treasury(nationId).treasuryMg()),
 						institution.id());
@@ -153,7 +145,7 @@ public class ResearchService {
 			public ResearchViews.InstitutionResult replay(GameCommands.CommandContext context, UUID resultRef) {
 				ResearchRules rules = rulesOf(context.rulesetVersion());
 				WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
-				Institution institution = institutions.findByGameIdAndId(gameId, resultRef)
+				Studies.Institution institution = store.institution(gameId, resultRef)
 					.orElseThrow(() -> new IllegalStateException("Replayed institution " + resultRef + " is missing"));
 				WorldApi.ProvinceState p = snapshot.provinceOfCity(institution.cityId()).orElseThrow();
 				UUID nationId = nationOf(snapshot, context.gamePlayerId());
@@ -177,7 +169,7 @@ public class ResearchService {
 				ResearchRules rules = rulesOf(context.rulesetVersion());
 				WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
 				UUID nationId = nationOf(snapshot, context.gamePlayerId());
-				NationResearch r = researchOf(gameId, nationId);
+				Studies.Progress r = researchOf(gameId, nationId);
 				Pool pool = track == Track.MILITARY ? Pool.MILITARY : Pool.CIVILIAN;
 				Research.Quote quote = Research.technology(track, r.level(track), r.points(pool), true, rules);
 				if (!quote.blockers().isEmpty()) {
@@ -187,9 +179,9 @@ public class ResearchService {
 					throw new ApiException(HttpStatus.CONFLICT, "STALE_TECHNOLOGY_LEVEL",
 							"That technology level is not the next one; refresh and try again.");
 				}
-				r.spend(pool, quote.costPoints());
-				r.raise(track, quote.targetLevel());
-				research.saveAndFlush(r);
+				Studies before = Studies.of(List.of(r), List.of(), List.of());
+				store.persist(gameId, before, before.update(r.spend(pool, quote.costPoints()).raise(track,
+						quote.targetLevel())));
 				return recorded(gameId, nationId, "TECHNOLOGY", track.name(), quote.targetLevel(), quote.costPoints(),
 						context, snapshot);
 			}
@@ -212,16 +204,16 @@ public class ResearchService {
 				ResearchRules rules = rulesOf(context.rulesetVersion());
 				WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
 				UUID nationId = nationOf(snapshot, context.gamePlayerId());
-				NationResearch r = researchOf(gameId, nationId);
+				Studies.Progress r = researchOf(gameId, nationId);
 				Set<String> chosen = chosenDoctrines(gameId, nationId);
 				Research.Quote quote = Research.doctrine(doctrineKey, chosen, r.points(Pool.DOCTRINE), true, rules);
 				if (!quote.blockers().isEmpty()) {
 					throw unlockRejection(quote.blockers().getFirst());
 				}
-				r.spend(Pool.DOCTRINE, quote.costPoints());
-				research.saveAndFlush(r);
-				doctrines.saveAndFlush(NationDoctrine.chosen(gameId, nationId, doctrineKey, quote.targetLevel(),
-						quote.costPoints(), context.round(), context.now()));
+				Studies before = Studies.of(List.of(r), List.of(), List.of());
+				store.persist(gameId, before, before.update(r.spend(Pool.DOCTRINE, quote.costPoints()))
+					.choose(new Studies.Doctrine(UUID.randomUUID(), nationId, doctrineKey, quote.targetLevel(),
+							quote.costPoints(), context.round(), context.now())));
 				return recorded(gameId, nationId, "DOCTRINE", doctrineKey, null, quote.costPoints(), context, snapshot);
 			}
 
@@ -256,15 +248,14 @@ public class ResearchService {
 	private ResearchViews.Overview overview(UUID gameId, int round, boolean yourTurn, String rulesetVersion,
 			UUID nationId, WorldApi.WorldSnapshot snapshot) {
 		ResearchRules rules = rulesets.find(rulesetVersion).orElse(null);
-		NationResearch r = rules == null ? null
-				: research.findById(nationId).filter(x -> x.gameId().equals(gameId)).orElse(null);
+		Studies.Progress r = rules == null ? null : store.progress(gameId, nationId).orElse(null);
 		if (r == null) {
 			return new ResearchViews.Overview(gameId, round, yourTurn, false, nationId, List.of(), null, null, List.of(),
 					List.of(), null);
 		}
 		Map<UUID, WorldApi.ProvinceState> byCity = new HashMap<>();
 		snapshot.provinces().forEach(p -> byCity.put(p.cityId(), p));
-		List<Institution> own = institutions.findByGameIdOrderById(gameId)
+		List<Studies.Institution> own = store.institutions(gameId)
 			.stream()
 			.filter(i -> nationId.equals(byCity.get(i.cityId()).ownerNationId()))
 			.toList();
@@ -273,7 +264,7 @@ public class ResearchService {
 				WorldApi.ProvinceState p = byCity.get(i.cityId());
 				return Research.produces(i.active(), p.ownerNationId(), p.controllerNationId());
 			})
-			.map(Institution::type)
+			.map(Studies.Institution::type)
 			.toList();
 		Map<Pool, Integer> perRound = Research.pointsPerRound(producing, rules);
 		int[] last = log.lastRound(gameId, nationId);
@@ -303,7 +294,7 @@ public class ResearchService {
 						e.militaryUpkeepReductionBps(), e.growthBonusBps(), e.highestUnlockedWorkshopTier(), e.doctrines()));
 	}
 
-	private static ResearchViews.TrackView track(Track track, NationResearch r, boolean yourTurn, ResearchRules rules) {
+	private static ResearchViews.TrackView track(Track track, Studies.Progress r, boolean yourTurn, ResearchRules rules) {
 		int level = r.level(track);
 		Pool pool = track == Track.MILITARY ? Pool.MILITARY : Pool.CIVILIAN;
 		List<ResearchViews.LevelView> levels = new ArrayList<>();
@@ -325,7 +316,7 @@ public class ResearchService {
 		return new ResearchViews.TrackView(track.name(), level, rules.maxLevel(track), levels, next);
 	}
 
-	private static ResearchViews.InstitutionView institutionView(Institution i, WorldApi.ProvinceState p,
+	private static ResearchViews.InstitutionView institutionView(Studies.Institution i, WorldApi.ProvinceState p,
 			ResearchRules rules) {
 		ResearchRules.InstitutionRules ir = rules.institution(i.type());
 		return new ResearchViews.InstitutionView(i.id(), i.cityId(), p.cityName(), p.provinceKey(), i.type().name(),
@@ -341,17 +332,16 @@ public class ResearchService {
 					"This game's ruleset has no research."));
 	}
 
-	private NationResearch researchOf(UUID gameId, UUID nationId) {
-		return research.findById(nationId)
-			.filter(r -> r.gameId().equals(gameId))
+	private Studies.Progress researchOf(UUID gameId, UUID nationId) {
+		return store.progress(gameId, nationId)
 			.orElseThrow(() -> new ApiException(HttpStatus.UNPROCESSABLE_CONTENT, "NOT_AVAILABLE_IN_RULESET",
 					"This game's ruleset has no research."));
 	}
 
 	private Set<String> chosenDoctrines(UUID gameId, UUID nationId) {
-		return doctrines.findByGameIdAndNationIdOrderByDoctrineKey(gameId, nationId)
+		return store.doctrines(gameId, nationId)
 			.stream()
-			.map(NationDoctrine::doctrineKey)
+			.map(Studies.Doctrine::doctrineKey)
 			.collect(Collectors.toCollection(TreeSet::new));
 	}
 
