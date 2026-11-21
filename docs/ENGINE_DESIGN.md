@@ -293,7 +293,8 @@ own; the battle report reveals the modifiers only afterwards). An exact predicti
 have to send every opponent's private modifiers to the browser. That would leak hidden information,
 which AGENTS.md §4 forbids. A prediction without them would often be wrong. Recruitment,
 construction, research and fortress works already show their exact cost, duration and blockers from
-the server's views, and a plain move is predicted (D-UX1). TeaVM therefore stays out of the build. A
+the server's views, and every command whose result the player can already see is predicted in the
+browser (D-UX1, extended 2026-11-21). TeaVM therefore stays out of the build. A
 battle preview from public information only (an estimate, clearly labelled) would be a new game
 feature and needs a product decision first; it is recorded as open in `docs/OPEN_QUESTIONS.md`.
 

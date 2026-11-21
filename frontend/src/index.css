@@ -4196,3 +4196,185 @@ a.person:focus-visible .person__display {
     white-space: nowrap;
   }
 }
+
+/* --- Battle in progress (instant feedback while the server resolves an attack) --------------- */
+
+.battle-clash {
+  display: grid;
+  gap: 0.75rem;
+  text-align: center;
+  animation: dialog-rise 180ms ease-out;
+}
+
+.battle-clash__title {
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.battle-clash__field {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 6.5rem;
+}
+
+.battle-clash__banner {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+}
+
+.battle-clash__banner--attacker {
+  animation: clash-charge-left 700ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.battle-clash__banner--defender {
+  animation: clash-charge-right 700ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+.battle-clash__flag {
+  width: 2.6rem;
+  height: 1.8rem;
+  border-radius: 3px;
+  background: var(--banner);
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 35%), 0 0 18px color-mix(in srgb, var(--banner) 55%, transparent);
+  animation: clash-flutter 900ms ease-in-out 700ms infinite alternate;
+}
+
+.battle-clash__name {
+  font-weight: 600;
+}
+
+.battle-clash__soldiers {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-clash__clash {
+  position: relative;
+  width: 4.5rem;
+  height: 4.5rem;
+}
+
+.battle-clash__blade {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.35rem;
+  height: 3.6rem;
+  margin: -1.8rem 0 0 -0.175rem;
+  border-radius: 2px;
+  background: linear-gradient(#f4efe6, #9c958a);
+  transform-origin: 50% 85%;
+}
+
+.battle-clash__blade--left {
+  animation: clash-blade-left 620ms ease-in-out 400ms infinite;
+}
+
+.battle-clash__blade--right {
+  animation: clash-blade-right 620ms ease-in-out 400ms infinite;
+}
+
+.battle-clash__spark {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-left: -0.7rem;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff6c8 0 25%, var(--accent-strong) 45%, transparent 70%);
+  opacity: 0;
+  animation: clash-spark 620ms ease-out 400ms infinite;
+}
+
+.battle-clash__line {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.battle-clash__phases {
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.battle-clash__phases span {
+  width: 1.6rem;
+  height: 0.3rem;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 12%);
+  animation: clash-phase 1100ms ease-in-out infinite;
+}
+
+@keyframes clash-charge-left {
+  from { opacity: 0; transform: translateX(-60%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes clash-charge-right {
+  from { opacity: 0; transform: translateX(60%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes clash-flutter {
+  from { transform: skewY(-3deg); }
+  to { transform: skewY(3deg); }
+}
+
+@keyframes clash-blade-left {
+  0%, 100% { transform: rotate(-55deg); }
+  45% { transform: rotate(-12deg); }
+}
+
+@keyframes clash-blade-right {
+  0%, 100% { transform: rotate(55deg); }
+  45% { transform: rotate(12deg); }
+}
+
+@keyframes clash-spark {
+  0%, 35% { opacity: 0; transform: scale(0.4); }
+  45% { opacity: 1; transform: scale(1.2); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+
+@keyframes clash-phase {
+  0%, 100% { background: rgb(255 255 255 / 12%); }
+  50% { background: var(--accent); }
+}
+
+/* The report then appears section by section, as if the battle unfolded. */
+.battle-report--reveal > * {
+  animation: report-reveal 320ms ease-out both;
+}
+
+.battle-report--reveal > *:nth-child(2) { animation-delay: 80ms; }
+.battle-report--reveal > *:nth-child(3) { animation-delay: 160ms; }
+.battle-report--reveal > *:nth-child(4) { animation-delay: 240ms; }
+.battle-report--reveal > *:nth-child(5) { animation-delay: 320ms; }
+.battle-report--reveal > *:nth-child(n + 6) { animation-delay: 400ms; }
+
+@keyframes report-reveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battle-clash,
+  .battle-clash__banner--attacker,
+  .battle-clash__banner--defender,
+  .battle-clash__flag,
+  .battle-clash__blade--left,
+  .battle-clash__blade--right,
+  .battle-clash__spark,
+  .battle-clash__phases span,
+  .battle-report--reveal > * {
+    animation: none;
+  }
+
+  .battle-clash__blade--left { transform: rotate(-30deg); }
+  .battle-clash__blade--right { transform: rotate(30deg); }
+}

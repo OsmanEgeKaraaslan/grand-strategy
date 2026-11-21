@@ -142,7 +142,12 @@ describe('Game military', () => {
     await userEvent.click(within(confirm).getByRole('button', { name: 'Attack Sablewater' }))
 
     expect(move).toHaveBeenCalledWith('g1', ['b1'], 'sablewater', expect.stringMatching(/^[0-9a-f-]{36}$/))
-    expect(await screen.findByText('Victory at Sablewater.')).toBeInTheDocument()
+    // The battle is shown at once, from what both sides can see; the outcome only with the server's report.
+    const clash = screen.getByRole('status', { name: 'Battle of Sablewater in progress' })
+    expect(within(clash).getByText(/attacks/)).toBeInTheDocument()
+    expect(within(clash).queryByText(/won/)).not.toBeInTheDocument()
+    expect(await screen.findByText('Victory at Sablewater.', undefined, { timeout: 3000 })).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: 'Battle of Sablewater in progress' })).not.toBeInTheDocument()
     const report = screen.getByRole('region', { name: 'Battle of Sablewater' })
     expect(within(report).getByText('Kingdom of Varn won.')).toBeInTheDocument()
     expect(within(report).getByText('River crossing ×0.8')).toBeInTheDocument()

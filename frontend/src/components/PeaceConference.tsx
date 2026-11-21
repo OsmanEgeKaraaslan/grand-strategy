@@ -55,20 +55,13 @@ export function ConferenceCard({
       : `Separate peace: ${names.nation(c.requesterNationId)} with ${names.nation(c.counterpartNationId)}`
   const terms = c.terms.map((t) => ({ ...t }))
 
+  // Shown at once (D-UX1): the last approval settles the treaty, which the server's answer confirms.
   function decideCurrent(action: 'approve' | 'reject') {
     decide.mutate(
       { conferenceId: c.id, revision: c.currentRevision, action, idempotencyKey: crypto.randomUUID() },
-      {
-        onSuccess: (r) =>
-          onMessage(
-            r.treaty
-              ? 'The treaty is settled. Play resumes.'
-              : action === 'approve'
-                ? `You approved revision ${c.currentRevision}.`
-                : `You rejected revision ${c.currentRevision}.`,
-          ),
-      },
+      { onSuccess: (r) => r.treaty && onMessage('The treaty is settled. Play resumes.') },
     )
+    onMessage(action === 'approve' ? `You approved revision ${c.currentRevision}.` : `You rejected revision ${c.currentRevision}.`)
   }
 
   return (
@@ -85,26 +78,20 @@ export function ConferenceCard({
           <button
             type="button"
             className="button button--primary"
-            disabled={answer.isPending}
-            onClick={() =>
-              answer.mutate(
-                { conferenceId: c.id, accept: true, idempotencyKey: crypto.randomUUID() },
-                { onSuccess: () => onMessage('The peace conference is open. Normal play is paused.') },
-              )
-            }
+            onClick={() => {
+              answer.mutate({ conferenceId: c.id, accept: true, idempotencyKey: crypto.randomUUID() })
+              onMessage('The peace conference is open. Normal play is paused.')
+            }}
           >
             Accept conference
           </button>
           <button
             type="button"
             className="button"
-            disabled={answer.isPending}
-            onClick={() =>
-              answer.mutate(
-                { conferenceId: c.id, accept: false, idempotencyKey: crypto.randomUUID() },
-                { onSuccess: () => onMessage('You refused the conference.') },
-              )
-            }
+            onClick={() => {
+              answer.mutate({ conferenceId: c.id, accept: false, idempotencyKey: crypto.randomUUID() })
+              onMessage('You refused the conference.')
+            }}
           >
             Refuse
           </button>
@@ -156,10 +143,10 @@ export function ConferenceCard({
       <div className="diplomacy__actions">
         {c.youMustDecide && (
           <>
-            <button type="button" className="button button--primary" disabled={decide.isPending} onClick={() => decideCurrent('approve')}>
+            <button type="button" className="button button--primary" onClick={() => decideCurrent('approve')}>
               Approve revision {c.currentRevision}
             </button>
-            <button type="button" className="button" disabled={decide.isPending} onClick={() => decideCurrent('reject')}>
+            <button type="button" className="button" onClick={() => decideCurrent('reject')}>
               Reject
             </button>
           </>
@@ -173,13 +160,10 @@ export function ConferenceCard({
           <button
             type="button"
             className="button button--danger"
-            disabled={cancel.isPending}
-            onClick={() =>
-              cancel.mutate(
-                { conferenceId: c.id, idempotencyKey: crypto.randomUUID() },
-                { onSuccess: () => onMessage('The conference ended without a treaty. Play resumes where it stopped.') },
-              )
-            }
+            onClick={() => {
+              cancel.mutate({ conferenceId: c.id, idempotencyKey: crypto.randomUUID() })
+              onMessage('The conference ended without a treaty. Play resumes where it stopped.')
+            }}
           >
             End conference
           </button>
@@ -293,13 +277,10 @@ function DraftEditor({
         <button
           type="button"
           className="button button--primary"
-          disabled={submit.isPending}
-          onClick={() =>
-            submit.mutate(
-              { conferenceId: c.id, expectedRevision: c.currentRevision, terms, idempotencyKey: crypto.randomUUID() },
-              { onSuccess: (r) => onDone(`Revision ${r.conference.currentRevision} published. Everyone affected must approve it.`) },
-            )
-          }
+          onClick={() => {
+            submit.mutate({ conferenceId: c.id, expectedRevision: c.currentRevision, terms, idempotencyKey: crypto.randomUUID() })
+            onDone(`Revision ${c.currentRevision + 1} published. Everyone affected must approve it.`)
+          }}
         >
           Publish revision
         </button>

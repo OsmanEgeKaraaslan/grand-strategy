@@ -29,7 +29,7 @@ describe('GamePage', () => {
     expect(api.getMap).toHaveBeenCalledWith('map-1')
     const varnhold = within(map).getByRole('button', { name: 'Varnhold, owned by Kingdom of Varn' })
     expect(varnhold).toHaveAttribute('fill', '#3f6fb5')
-    expect(within(map).getByRole('button', { name: 'Sablewater, owned by Ostran Confederacy, mountains' })).toHaveAttribute(
+    expect(within(map).getByRole('button', { name: /^Sablewater, owned by Ostran Confederacy, mountains/ })).toHaveAttribute(
       'fill',
       '#b5503a',
     )

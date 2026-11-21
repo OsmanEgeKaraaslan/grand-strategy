@@ -398,17 +398,16 @@ function GroupForm({ gameId, battalionIds, onDone }: { gameId: string; battalion
       className="army-form"
       onSubmit={(event) => {
         event.preventDefault()
-        regroup.mutate(
-          { name: name.trim(), battalionIds, idempotencyKey: crypto.randomUUID() },
-          { onSuccess: (result) => onDone(result.army.name) },
-        )
+        // Shown at once (D-UX1); a refusal rolls the group back and is reported.
+        regroup.mutate({ name: name.trim(), battalionIds, idempotencyKey: crypto.randomUUID() })
+        onDone(name.trim())
       }}
     >
       <label>
         Group name
         <input value={name} maxLength={40} onChange={(event) => setName(event.target.value)} placeholder="e.g. First Army" autoFocus />
       </label>
-      <button type="submit" className="button button--small" disabled={name.trim() === '' || regroup.isPending}>
+      <button type="submit" className="button button--small" disabled={name.trim() === ''}>
         Name {battalionIds.length} as a group
       </button>
       <p className="muted">
@@ -451,8 +450,10 @@ function LendForm({
       <button
         type="button"
         className="button button--small"
-        disabled={attach.isPending}
-        onClick={() => attach.mutate({ battalionIds, commanderNationId: chosen, idempotencyKey: crypto.randomUUID() }, { onSuccess: onDone })}
+        onClick={() => {
+          attach.mutate({ battalionIds, commanderNationId: chosen, idempotencyKey: crypto.randomUUID() })
+          onDone()
+        }}
       >
         Lend {battalionIds.length} battalion(s)
       </button>
@@ -492,7 +493,6 @@ function LentBattalions({
                   className="icon-button"
                   aria-label="Recall"
                   title="Recall to your command"
-                  disabled={release.isPending}
                   onClick={() => release.mutate({ battalionIds: [b.id], idempotencyKey: crypto.randomUUID() })}
                 >
                   <Icon name="recall" size={14} />

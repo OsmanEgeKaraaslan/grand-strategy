@@ -72,8 +72,11 @@ anything. When this file conflicts with a one-off request, ask before deviating.
 - Server state via TanStack Query; no client-side "authoritative" game state.
 - Components render server state and submit intents. Optimistic updates only for
   purely cosmetic UI, or for commands whose result the client can predict exactly from
-  what it already knows (D-UX1: a plain move). A prediction is always rolled back on a
-  refusal and replaced by the next server state; never predict hidden information.
+  what it already knows (D-UX1: every command except end turn and moves that fight; the
+  predictions live in `frontend/src/api/predict.ts`). A prediction is always rolled back on a
+  refusal and replaced by the next server state; never predict hidden information. Consequences
+  that depend on others (who joins a war, battalions that must withdraw) and battle outcomes
+  are shown only when the server answers.
 - The map is SVG rendered from template geometry; game state is overlaid.
 
 ## 5. Testing requirements

@@ -136,7 +136,7 @@ function Track({ gameId, track, title, icon }: { gameId: string; track: Research
           <button
             type="button"
             className="button"
-            disabled={!track.next.allowed || unlock.isPending}
+            disabled={!track.next.allowed}
             onClick={() =>
               unlock.mutate({ track: track.track, targetLevel: track.next!.targetLevel, idempotencyKey: crypto.randomUUID() })
             }
@@ -154,7 +154,9 @@ function Track({ gameId, track, title, icon }: { gameId: string; track: Research
       ) : (
         <p className="muted">Fully researched.</p>
       )}
-      {unlock.isSuccess && <Alert kind="success">Level {unlock.data.level} researched.</Alert>}
+      {(unlock.isPending || unlock.isSuccess) && unlock.variables && (
+        <Alert kind="success">Level {unlock.variables.targetLevel} researched.</Alert>
+      )}
       {unlock.error && <Alert>{describeError(unlock.error)}</Alert>}
     </div>
   )
@@ -193,7 +195,7 @@ function Doctrines({ gameId, doctrines, points }: { gameId: string; doctrines: D
               <button
                 type="button"
                 className="button"
-                disabled={!d.allowed || unlock.isPending}
+                disabled={!d.allowed}
                 onClick={() => unlock.mutate({ doctrine: d.key, idempotencyKey: crypto.randomUUID() })}
               >
                 Choose · {d.costPoints} points

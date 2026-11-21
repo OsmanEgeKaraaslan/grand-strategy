@@ -53,7 +53,8 @@ export function PeaceNegotiation({
   const propose = useProposePeace(gameId)
   const counter = useCounterPeace(gameId)
   const check = useCheckPeace(gameId)
-  const sending = propose.isPending || counter.isPending
+  // Sending is shown at once (D-UX1); a refusal rolls the proposal back and is reported.
+  const sending = false
   const error = propose.error ?? counter.error
   const summary = settlementSummary(terms, names)
 
@@ -75,12 +76,12 @@ export function PeaceNegotiation({
       return
     }
     const idempotencyKey = crypto.randomUUID()
-    const done = () => onDone(counterOf ? 'Counter-proposal sent.' : 'Peace proposal sent.')
     if (counterOf) {
-      counter.mutate({ proposalId: counterOf.id, terms, idempotencyKey }, { onSuccess: done })
+      counter.mutate({ proposalId: counterOf.id, terms, idempotencyKey })
     } else {
-      propose.mutate({ warId: war.id, terms, idempotencyKey }, { onSuccess: done })
+      propose.mutate({ warId: war.id, terms, idempotencyKey })
     }
+    onDone(counterOf ? 'Counter-proposal sent.' : 'Peace proposal sent.')
   }
 
   return (

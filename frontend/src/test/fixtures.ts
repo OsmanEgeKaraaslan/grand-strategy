@@ -3,12 +3,15 @@ import type {
   BattalionDetails,
   BattleReport,
   CityEconomy,
+  DiplomacyOverview,
   EconomyOverview,
   GameMap,
   GameState,
   Lobby,
   MilitaryOverview,
+  PeaceProposal,
   RecruitOption,
+  WarView,
 } from '../api/types'
 
 export const VARN = 'nation-varn'
@@ -370,6 +373,126 @@ export function battalionDetailsFixture(overrides: Partial<BattalionDetails> = {
       returns: [{ cityId: 'city-varnhold', cityName: 'Varn', provinceKey: 'varnhold', soldiers: 650, fallback: false }],
       upkeepSavedMg: 325,
     },
+    ...overrides,
+  }
+}
+
+// --- diplomacy: Varn (you) and Ostra, at peace or at war (w1) ---
+
+export const DIPLOMACY_RULES = {
+  version: 'v5',
+  truceRounds: 10,
+  proposalExpiryRounds: 3,
+  maxPeaceTerms: 10,
+  tributeRateBps: 1000,
+  tributeRounds: 10,
+  populationMinPeople: 1000,
+  populationMaxPeople: 2000,
+  populationMaxShareBps: 2000,
+  populationMinResidual: 1000,
+  reparationsMaxMg: 1_000_000,
+  maxScore: 100,
+  victoryMaxRounds: 30,
+  victoryProvincePoints: 20,
+  victoryPointsPerThousandPopulation: 1,
+  normalAllianceGrantsAccess: true,
+  defensiveAllianceGrantsAccess: false,
+  coBelligerentAccess: true,
+}
+
+const side = (total: number) => ({
+  battles: total,
+  sieges: 0,
+  occupation: 0,
+  total,
+  battlesWon: total > 0 ? 1 : 0,
+  siegesWon: 0,
+  occupiedEnemyPopulation: 0,
+  enemyPopulation: 20000,
+})
+
+export function warFixture(overrides: Partial<WarView> = {}): WarView {
+  return {
+    id: 'w1',
+    status: 'ACTIVE',
+    attackerLeaderId: VARN,
+    defenderLeaderId: OSTRA,
+    participants: [
+      { nationId: VARN, name: 'Kingdom of Varn', side: 'ATTACKER', joinReason: 'DECLARED', joinedRound: 2 },
+      { nationId: OSTRA, name: 'Ostran Confederacy', side: 'DEFENDER', joinReason: 'ATTACKED', joinedRound: 2 },
+    ],
+    declaredRound: 2,
+    endedRound: null,
+    endReason: null,
+    durationRounds: 3,
+    score: { attacker: side(7), defender: side(0), net: 7, maxScore: 100 },
+    yourSide: 'ATTACKER',
+    youLead: true,
+    ...overrides,
+  }
+}
+
+export function diplomacyFixture(status: 'PEACE' | 'WAR', overrides: Partial<DiplomacyOverview> = {}): DiplomacyOverview {
+  const atWar = status === 'WAR'
+  return {
+    gameId: 'g1',
+    available: true,
+    rulesetVersion: 'v5',
+    round: 4,
+    yourTurn: true,
+    yourNationId: VARN,
+    rules: DIPLOMACY_RULES,
+    nations: [
+      { nationId: VARN, name: 'Kingdom of Varn', color: '#3f6fb5', you: true, status: 'SELF', allianceKind: null, allianceId: null, warId: null, truceUntilRound: null, weMayEnter: true, theyMayEnter: true, warBlockers: [], allianceBlockers: [] },
+      {
+        nationId: OSTRA,
+        name: 'Ostran Confederacy',
+        color: '#b5503a',
+        you: false,
+        status,
+        allianceKind: null,
+        allianceId: null,
+        warId: atWar ? 'w1' : null,
+        truceUntilRound: null,
+        weMayEnter: atWar,
+        theyMayEnter: atWar,
+        warBlockers: atWar ? ['ALREADY_AT_WAR'] : [],
+        allianceBlockers: atWar ? ['AT_WAR'] : [],
+      },
+    ],
+    wars: atWar ? [warFixture()] : [],
+    alliances: [],
+    proposals: [],
+    treaties: [],
+    tributes: [],
+    events: atWar
+      ? [{ id: 'ev1', round: 2, kind: 'WAR_DECLARED', actorNationId: VARN, targetNationId: OSTRA, warId: 'w1', details: {}, createdAt: '' }]
+      : [],
+    gifts: [],
+    ...overrides,
+  }
+}
+
+export function proposalFixture(overrides: Partial<PeaceProposal> = {}): PeaceProposal {
+  return {
+    id: 'pp1',
+    warId: 'w1',
+    proposerNationId: OSTRA,
+    recipientNationId: VARN,
+    status: 'PENDING',
+    terms: [
+      { type: 'GOLD', fromNationId: OSTRA, toNationId: VARN, amountMg: 20000 },
+      { type: 'TRIBUTE', fromNationId: OSTRA, toNationId: VARN, tributeRateBps: 1000, tributeRounds: 10 },
+    ],
+    createdRound: 4,
+    createdTurn: 7,
+    createdStateVersion: 30,
+    respondedRound: null,
+    counterOfId: null,
+    expiresAfterRound: 7,
+    incoming: true,
+    violations: [],
+    createdAt: '',
     ...overrides,
   }
 }

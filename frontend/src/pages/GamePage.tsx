@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { useMutationState, useQueryClient } from '@tanstack/react-query'
 import { describeError } from '../api/client'
 import {
   useBattle,
@@ -28,6 +28,7 @@ import { useUnreadCount } from '../api/social'
 import { useAuth } from '../auth/AuthContext'
 import { Alert } from '../components/Alert'
 import { ArmyInspector } from '../components/ArmyInspector'
+import { BattleClash } from '../components/BattleClash'
 import { BattleReportView } from '../components/BattleReportView'
 import { DiplomacyPanel } from '../components/DiplomacyPanel'
 import { ForcesCard } from '../components/ForcesCard'
@@ -76,6 +77,42 @@ export function GamePage() {
 /** Which floating window describes the selection: the province, or the forces standing in it. */
 type Inspector = 'province' | 'army' | null
 
+/** A battle being fought while the server resolves it: only what both players can see on the map. */
+interface Clash {
+  provinceKey: string
+  attackerNationId: string
+  defenderNationId: string
+  attackers: number
+  defenders: number
+  startedAt: number
+}
+
+/** How long the notice of a refused instant command stays. */
+const REFUSED_NOTICE_MS = 7000
+
+/**
+ * Instant commands that the server refused, recently: their prediction has been rolled back, and the
+ * panel that sent them may have closed meanwhile, so the page says so (and why).
+ */
+function useRefusedCommands(): { id: number; error: Error }[] {
+  const failed = useMutationState({
+    filters: { status: 'error', predicate: (m) => m.meta?.instant === true },
+    select: (m) => ({ id: m.mutationId, error: m.state.error as Error, at: m.state.submittedAt }),
+  })
+  const [now, setNow] = useState(() => Date.now())
+  // A new refusal is always newer than `now`; the timer below then ages it out.
+  const recent = failed.filter((f) => now - f.at < REFUSED_NOTICE_MS)
+  useEffect(() => {
+    if (recent.length === 0) return
+    const timer = window.setTimeout(() => setNow(Date.now()), 1000)
+    return () => window.clearTimeout(timer)
+  }, [recent.length, now])
+  return recent.map(({ id, error }) => ({ id, error }))
+}
+
+/** The clash is shown at least this long, so a fast answer still reads as a battle (about 1 s). */
+const CLASH_MIN_MS = 1100
+
 function GameView({ state, map }: { state: GameState; map: GameMap }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [inspector, setInspector] = useState<Inspector>(null)
@@ -87,6 +124,9 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
   const [diplomacyNation, setDiplomacyNation] = useState<string | null>(null)
   const [pendingAttack, setPendingAttack] = useState<string | null>(null)
   const [orderMessage, setOrderMessage] = useState<string | null>(null)
+  // A battle being fought: shown at once while the server resolves it (its outcome is never guessed).
+  const [clash, setClash] = useState<Clash | null>(null)
+  const [revealBattle, setRevealBattle] = useState(false)
   // The conference window opens by itself whenever a conference pauses the game; it can be minimised.
   const [minimisedConference, setMinimisedConference] = useState<string | null>(null)
   const [resultHidden, setResultHidden] = useState(false)
@@ -245,23 +285,71 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
   function execute(key: string) {
     setPendingAttack(null)
     setOrderMessage(null)
+    const fight = orders.targets.get(key) === 'ATTACK' ? startClash(key) : null
     move.mutate(
       { battalionIds: selectedBattalions, toProvinceKey: key, idempotencyKey: crypto.randomUUID() },
       {
         onSuccess: (result) => {
           const name = provinceNames.get(result.toProvinceKey) ?? result.toProvinceKey
-          setOrderMessage(
-            result.outcome === 'MOVED'
-              ? `Moved ${result.battalions.length} ${result.battalions.length === 1 ? 'battalion' : 'battalions'} to ${name}.`
-              : result.outcome === 'ATTACK_WON'
-                ? `Victory at ${name}.`
-                : `The attack on ${name} was repelled.`,
-          )
-          if (result.battle) showBattle(result.battle)
+          const report = () => {
+            setOrderMessage(
+              result.outcome === 'MOVED'
+                ? `Moved ${result.battalions.length} ${result.battalions.length === 1 ? 'battalion' : 'battalions'} to ${name}.`
+                : result.outcome === 'ATTACK_WON'
+                  ? `Victory at ${name}.`
+                  : `The attack on ${name} was repelled.`,
+            )
+            setClash(null)
+            if (result.battle) {
+              setRevealBattle(fight !== null)
+              showBattle(result.battle)
+            }
+          }
+          // The clash runs at least its minimum length, so a fast answer never cuts it short.
+          const wait = fight ? Math.max(0, CLASH_MIN_MS - (Date.now() - fight.startedAt)) : 0
+          if (wait > 0) {
+            window.setTimeout(report, wait)
+          }
+          else {
+            report()
+          }
           setSelectedBattalions([])
         },
+        onError: () => setClash(null),
       },
     )
+  }
+
+  /** Both sides as everyone can see them on the map: nations and soldiers (no fog of war). */
+  function startClash(key: string): Clash | null {
+    const battalions = military.data?.battalions ?? []
+    const attacking = battalions.filter((b) => selectedBattalions.includes(b.id))
+    const hostile = battalions.filter(
+      (b) =>
+        b.provinceKey === key &&
+        b.nationId !== yourNationId &&
+        b.commanderNationId !== yourNationId &&
+        (diplomacy.data?.available !== true ||
+          diplomacy.data.nations.find((n) => n.nationId === b.nationId)?.status === 'WAR'),
+    )
+    if (attacking.length === 0 || hostile.length === 0) {
+      return null
+    }
+    const strongest = new Map<string, number>()
+    hostile.forEach((b) => strongest.set(b.nationId, (strongest.get(b.nationId) ?? 0) + b.manpower))
+    const defenderNationId = [...strongest.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0][0]
+    const next: Clash = {
+      provinceKey: key,
+      attackerNationId: yourNationId ?? '',
+      defenderNationId,
+      attackers: attacking.reduce((sum, b) => sum + b.manpower, 0),
+      defenders: hostile.reduce((sum, b) => sum + b.manpower, 0),
+      startedAt: Date.now(),
+    }
+    setRequestedBattleId(null)
+    setShownBattle(null)
+    setClash(next)
+    return next
   }
 
   function showBattle(report: BattleReport) {
@@ -272,6 +360,7 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
   function closeBattle() {
     setRequestedBattleId(null)
     setShownBattle(null)
+    setRevealBattle(false)
   }
 
   function openPanel(next: PanelKey | null) {
@@ -286,6 +375,7 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
   }
 
   const errors = [requestedBattle.error, economy.error, military.error, diplomacy.error, sieges.error].filter((e) => e != null)
+  const refused = useRefusedCommands()
 
   return (
     <div className="game-shell">
@@ -461,7 +551,7 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
         targetCount={orders.targets.size}
         reason={orders.reason}
         pendingAttack={pendingAttack ? (provinceNames.get(pendingAttack) ?? pendingAttack) : null}
-        busy={move.isPending}
+        busy={move.isPending && clash !== null}
         message={orderMessage}
         error={move.error}
         onConfirm={() => pendingAttack && execute(pendingAttack)}
@@ -473,7 +563,7 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
         }}
       />
 
-      {(battle || (finished && !resultHidden)) && (
+      {(battle || clash || (finished && !resultHidden)) && (
         <div className="center-stage">
           {finished && !resultHidden && (
             <>
@@ -483,14 +573,34 @@ function GameView({ state, map }: { state: GameState; map: GameMap }) {
               </button>
             </>
           )}
-          {battle && <BattleReportView battle={battle} nations={nations} provinceNames={provinceNames} onClose={closeBattle} />}
+          {clash && !battle && (
+            <BattleClash
+              provinceName={provinceNames.get(clash.provinceKey) ?? clash.provinceKey}
+              attacker={nations.get(clash.attackerNationId)}
+              defender={nations.get(clash.defenderNationId)}
+              attackers={clash.attackers}
+              defenders={clash.defenders}
+            />
+          )}
+          {battle && (
+            <BattleReportView
+              battle={battle}
+              nations={nations}
+              provinceNames={provinceNames}
+              onClose={closeBattle}
+              reveal={revealBattle}
+            />
+          )}
         </div>
       )}
 
-      {errors.length > 0 && (
+      {(errors.length > 0 || refused.length > 0) && (
         <div className="toast-stack">
           {errors.map((error, i) => (
             <Alert key={i}>{describeError(error)}</Alert>
+          ))}
+          {refused.map((r) => (
+            <Alert key={`refused-${r.id}`}>Not done — the change was undone. {describeError(r.error)}</Alert>
           ))}
         </div>
       )}

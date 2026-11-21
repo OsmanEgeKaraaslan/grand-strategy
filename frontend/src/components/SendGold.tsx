@@ -52,19 +52,14 @@ export function SendGold({
       setConfirming(true)
       return
     }
-    send.mutate(
-      { recipientNationId: recipient, amountMg: amountMg!, idempotencyKey: crypto.randomUUID() },
-      {
-        onSuccess: (result) => {
-          setMessage(
-            `Sent ${formatGold(result.gift.amountMg)} gold to ${names.nation(result.gift.recipientNationId)}. Your treasury: ${formatGold(result.treasuryMg)} gold.`,
-          )
-          setAmount('')
-          setConfirming(false)
-        },
-        onError: () => setConfirming(false),
-      },
+    // Shown at once (D-UX1): only your own treasury changes; a refusal is rolled back and reported.
+    send.mutate({ recipientNationId: recipient, amountMg: amountMg!, idempotencyKey: crypto.randomUUID() })
+    setMessage(
+      `Sent ${formatGold(amountMg!)} gold to ${names.nation(recipient)}.` +
+        (after !== null ? ` Your treasury: ${formatGold(after)} gold.` : ''),
     )
+    setAmount('')
+    setConfirming(false)
   }
 
   return (
@@ -114,7 +109,7 @@ export function SendGold({
           <button
             type="submit"
             className={`button ${confirming ? 'button--primary' : ''}`}
-            disabled={problem !== null || send.isPending}
+            disabled={problem !== null}
           >
             {confirming ? 'Confirm gift' : 'Send gold'}
           </button>

@@ -347,13 +347,10 @@ export function NationActions({
           <button
             type="button"
             className="button"
-            disabled={propose.isPending}
-            onClick={() =>
-              propose.mutate(
-                { nationId: n.nationId, kind, idempotencyKey: crypto.randomUUID() },
-                { onSuccess: () => onMessage(`Alliance proposed to ${n.name}. It answers on its turn.`) },
-              )
-            }
+            onClick={() => {
+              propose.mutate({ nationId: n.nationId, kind, idempotencyKey: crypto.randomUUID() })
+              onMessage(`Alliance proposed to ${n.name}. It answers on its turn.`)
+            }}
           >
             Propose alliance
           </button>
@@ -424,22 +421,23 @@ function DeclareWar({
       <button
         type="button"
         className="button button--danger"
-        disabled={declare.isPending}
-        onClick={() =>
+        onClick={() => {
+          // The invited allies are the player's own choice, so the message names them at once.
+          const declared =
+            `War declared on ${target.name}.` + (invited.length > 0 ? ` Invited to join you: ${invited.map(nationName).join(', ')}.` : '')
           declare.mutate(
             { targetNationId: target.nationId, idempotencyKey: crypto.randomUUID(), invite: invited },
             {
-              onSuccess: (r) =>
-                onDeclared(
-                  `War declared on ${target.name}.` +
-                    (r.joinedDefenders.length > 0 ? ` ${r.joinedDefenders.length} ally(ies) joined the defence.` : '') +
-                    ((r.invitedAllies ?? []).length > 0
-                      ? ` Invited to join you: ${(r.invitedAllies ?? []).map(nationName).join(', ')}.`
-                      : ''),
-                ),
+              // Who joined the defence is the server's answer: the message grows when it arrives.
+              onSuccess: (r) => {
+                if (r.joinedDefenders.length > 0) {
+                  onDeclared(`${declared} ${r.joinedDefenders.length} ally(ies) joined the defence.`)
+                }
+              },
             },
           )
-        }
+          onDeclared(declared)
+        }}
       >
         Confirm declaration
       </button>
@@ -608,6 +606,7 @@ function ProposalCard({
           ),
       },
     )
+    onMessage('Peace signed.')
   }
 
   return (
@@ -631,19 +630,16 @@ function ProposalCard({
       )}
       {yourTurn && p.incoming && (
         <div className="peace__actions">
-          <button type="button" className="button button--primary" disabled={accept.isPending} onClick={handleAccept}>
+          <button type="button" className="button button--primary" onClick={handleAccept}>
             {confirming ? 'Confirm: accept these terms' : 'Accept'}
           </button>
           <button
             type="button"
             className="button"
-            disabled={action.isPending}
-            onClick={() =>
-              action.mutate(
-                { proposalId: p.id, action: 'reject', idempotencyKey: crypto.randomUUID() },
-                { onSuccess: () => onMessage('Proposal rejected. The war goes on.') },
-              )
-            }
+            onClick={() => {
+              action.mutate({ proposalId: p.id, action: 'reject', idempotencyKey: crypto.randomUUID() })
+              onMessage('Proposal rejected. The war goes on.')
+            }}
           >
             Reject
           </button>
@@ -661,13 +657,10 @@ function ProposalCard({
         <button
           type="button"
           className="button"
-          disabled={action.isPending}
-          onClick={() =>
-            action.mutate(
-              { proposalId: p.id, action: 'cancel', idempotencyKey: crypto.randomUUID() },
-              { onSuccess: () => onMessage('Proposal withdrawn.') },
-            )
-          }
+          onClick={() => {
+            action.mutate({ proposalId: p.id, action: 'cancel', idempotencyKey: crypto.randomUUID() })
+            onMessage('Proposal withdrawn.')
+          }}
         >
           Withdraw proposal
         </button>
@@ -700,10 +693,12 @@ function Alliances({
     action.mutate(
       { allianceId: a.id, action: act, idempotencyKey: crypto.randomUUID() },
       {
-        onSuccess: (r) =>
-          onMessage(text + (r.withdrawals.length > 0 ? ` ${r.withdrawals.length} battalion(s) withdrew.` : '')),
+        onSuccess: (r) => {
+          if (r.withdrawals.length > 0) onMessage(`${text} ${r.withdrawals.length} battalion(s) withdrew.`)
+        },
       },
     )
+    onMessage(text)
   }
 
   return (
@@ -720,10 +715,10 @@ function Alliances({
             {yourTurn && a.canAccept && (
               <>
                 {' '}
-                <button type="button" className="button" disabled={action.isPending} onClick={() => run(a, 'accept', 'Alliance formed.')}>
+                <button type="button" className="button" onClick={() => run(a, 'accept', 'Alliance formed.')}>
                   Accept
                 </button>{' '}
-                <button type="button" className="button" disabled={action.isPending} onClick={() => run(a, 'reject', 'Alliance rejected.')}>
+                <button type="button" className="button" onClick={() => run(a, 'reject', 'Alliance rejected.')}>
                   Reject
                 </button>
               </>
@@ -734,7 +729,6 @@ function Alliances({
                 <button
                   type="button"
                   className="button"
-                  disabled={action.isPending}
                   onClick={() => run(a, 'terminate', a.status === 'PROPOSED' ? 'Proposal withdrawn.' : 'Alliance ended.')}
                 >
                   {a.status === 'PROPOSED' ? 'Withdraw' : 'End alliance'}
@@ -800,20 +794,17 @@ function WarActions({
         <button
           type="button"
           className="button button--primary"
-          disabled={request.isPending}
-          onClick={() =>
+          onClick={() => {
             request.mutate(
               { warId: war.id, kind, idempotencyKey: crypto.randomUUID() },
               {
-                onSuccess: (r) =>
-                  onMessage(
-                    r.conference.status === 'ACTIVE'
-                      ? 'The peace conference is open. Normal play is paused.'
-                      : `${names.nation(counterpart)} has been asked to a peace conference.`,
-                  ),
+                onSuccess: (r) => {
+                  if (r.conference.status === 'ACTIVE') onMessage('The peace conference is open. Normal play is paused.')
+                },
               },
             )
-          }
+            onMessage(`${names.nation(counterpart)} has been asked to a peace conference.`)
+          }}
         >
           {kind === 'GENERAL' ? 'Request peace conference' : `Ask ${names.nation(counterpart)} for a separate peace`}
         </button>
@@ -826,13 +817,10 @@ function WarActions({
               type="button"
               className="button button--small"
               title={`Ask ${names.nation(a)} to join the defence; it answers on its turn`}
-              disabled={call.isPending}
-              onClick={() =>
-                call.mutate(
-                  { warId: war.id, allyNationId: a, idempotencyKey: crypto.randomUUID() },
-                  { onSuccess: () => onMessage(`${names.nation(a)} has been called to arms. It answers on its turn.`) },
-                )
-              }
+              onClick={() => {
+                call.mutate({ warId: war.id, allyNationId: a, idempotencyKey: crypto.randomUUID() })
+                onMessage(`${names.nation(a)} has been called to arms. It answers on its turn.`)
+              }}
             >
               Call {names.nation(a)} to arms
             </button>
@@ -885,22 +873,15 @@ function CallsToArms({
                     <button
                       type="button"
                       className="button button--danger"
-                      disabled={answer.isPending}
-                      onClick={() =>
-                        answer.mutate(
-                          { callId: c.id, accept: false, idempotencyKey: crypto.randomUUID() },
-                          {
-                            onSuccess: () => {
-                              setDeclining(null)
-                              onMessage(
-                                c.side === 'ATTACKER'
-                                  ? `You declined the invitation of ${names.nation(c.callerNationId)}. Your alliance stands.`
-                                  : `You declined. Your alliance with ${names.nation(c.callerNationId)} has ended.`,
-                              )
-                            },
-                          },
+                      onClick={() => {
+                        answer.mutate({ callId: c.id, accept: false, idempotencyKey: crypto.randomUUID() })
+                        setDeclining(null)
+                        onMessage(
+                          c.side === 'ATTACKER'
+                            ? `You declined the invitation of ${names.nation(c.callerNationId)}. Your alliance stands.`
+                            : `You declined. Your alliance with ${names.nation(c.callerNationId)} has ended.`,
                         )
-                      }
+                      }}
                     >
                       Confirm: decline
                     </button>
@@ -913,13 +894,10 @@ function CallsToArms({
                     <button
                       type="button"
                       className="button button--primary"
-                      disabled={answer.isPending}
-                      onClick={() =>
-                        answer.mutate(
-                          { callId: c.id, accept: true, idempotencyKey: crypto.randomUUID() },
-                          { onSuccess: () => onMessage(`You joined the war on the side of ${names.nation(c.callerNationId)}.`) },
-                        )
-                      }
+                      onClick={() => {
+                        answer.mutate({ callId: c.id, accept: true, idempotencyKey: crypto.randomUUID() })
+                        onMessage(`You joined the war on the side of ${names.nation(c.callerNationId)}.`)
+                      }}
                     >
                       Honour — join the war
                     </button>

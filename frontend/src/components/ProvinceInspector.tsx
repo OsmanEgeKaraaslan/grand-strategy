@@ -257,12 +257,12 @@ function WorkshopBuild({ gameId, city }: { gameId: string; city: CityEconomy }) 
         blockers={construction.allowed ? [] : construction.blockers.map((b) => CONSTRUCTION_BLOCKER_TEXT[b])}
         blockersLabel="Why you cannot build"
         disabled={!construction.allowed}
-        pending={build.isPending}
+        pending={false}
         onClick={() => build.mutate({ cityId: city.cityId, idempotencyKey: crypto.randomUUID() })}
       />
-      {build.isSuccess && (
+      {(build.isPending || build.isSuccess) && (
         <p className="action-result" role="status">
-          Construction started. Treasury: {formatGold(build.data.treasuryMg)} gold.
+          Construction started.{build.data && ` Treasury: ${formatGold(build.data.treasuryMg)} gold.`}
         </p>
       )}
       {build.error && <Alert>{describeError(build.error)}</Alert>}
@@ -306,12 +306,12 @@ function Institutions({ gameId, cityId, stateVersion }: { gameId: string; cityId
             ]}
             blockers={o.allowed ? [] : o.blockers.map((b) => INSTITUTION_BLOCKER_TEXT[b] ?? b)}
             disabled={!o.allowed}
-            pending={build.isPending}
+            pending={false}
             onClick={() => build.mutate({ cityId, type: o.type, idempotencyKey: crypto.randomUUID() })}
           />
         )
       })}
-      {build.isSuccess && (
+      {(build.isPending || build.isSuccess) && (
         <p className="action-result" role="status">
           Construction started.
         </p>
@@ -350,7 +350,7 @@ function Workshops({ gameId, city, maxWorkshops, ownedByYou }: { gameId: string;
                   blockers={w.upgrade.allowed ? [] : w.upgrade.blockers.map((b) => WORKSHOP_UPGRADE_BLOCKER_TEXT[b])}
                   blockersLabel="Why you cannot upgrade"
                   disabled={!w.upgrade.allowed}
-                  pending={upgrade.isPending}
+                  pending={false}
                   onClick={() => upgrade.mutate({ cityId: city.cityId, buildingId: w.id, idempotencyKey: crypto.randomUUID() })}
                 />
               )}
@@ -364,7 +364,7 @@ function Workshops({ gameId, city, maxWorkshops, ownedByYou }: { gameId: string;
                   blockers={w.repair.allowed ? [] : w.repair.blockers.map((b) => WORKSHOP_REPAIR_BLOCKER_TEXT[b])}
                   blockersLabel="Why you cannot repair"
                   disabled={!w.repair.allowed}
-                  pending={repair.isPending}
+                  pending={false}
                   onClick={() => repair.mutate({ cityId: city.cityId, buildingId: w.id, idempotencyKey: crypto.randomUUID() })}
                 />
               )}
@@ -415,13 +415,13 @@ function Recruitment({ gameId, city, yourTurn }: { gameId: string; city: CityRec
           ]}
           blockers={o.allowed || !yourTurn ? (yourTurn ? [] : ['You can recruit on your turn.']) : o.blockers.map((b) => RECRUIT_BLOCKER_TEXT[b])}
           disabled={!o.allowed}
-          pending={recruit.isPending}
+          pending={false}
           onClick={() => recruit.mutate({ cityId: city.cityId, unitType: o.unitType, idempotencyKey: crypto.randomUUID() })}
         />
       ))}
-      {recruit.isSuccess && (
+      {(recruit.isPending || recruit.isSuccess) && recruit.variables && (
         <p className="action-result" role="status">
-          Recruited {UNIT_LABELS[recruit.data.battalion.unitType]} in {city.cityName}.
+          Recruited {UNIT_LABELS[recruit.variables.unitType]} in {city.cityName}.
         </p>
       )}
       {recruit.error && <Alert>{describeError(recruit.error)}</Alert>}
@@ -502,7 +502,7 @@ function FortressWorks({ gameId, data }: { gameId: string; data: ProvinceFortifi
           icon="repair"
           label={`Repair fortress · ${formatGold(data.repair.costMg)} gold`}
           option={data.repair}
-          pending={repair.isPending}
+          pending={false}
           onClick={() => repair.mutate({ cityId: data.cityId, idempotencyKey: crypto.randomUUID() })}
         />
       ) : (
@@ -512,7 +512,7 @@ function FortressWorks({ gameId, data }: { gameId: string; data: ProvinceFortifi
             icon={data.upgrade.targetLevel === 1 ? 'fortress' : 'upgrade'}
             label={`${data.upgrade.targetLevel === 1 ? 'Build fortress' : `Raise to level ${data.upgrade.targetLevel}`} · ${formatGold(data.upgrade.costMg)} gold`}
             option={data.upgrade}
-            pending={build.isPending}
+            pending={false}
             onClick={() => build.mutate({ cityId: data.cityId, targetLevel: data.upgrade!.targetLevel, idempotencyKey: crypto.randomUUID() })}
           />
         )
@@ -520,7 +520,7 @@ function FortressWorks({ gameId, data }: { gameId: string; data: ProvinceFortifi
       {atMax && !damaged && <span className="muted">The fortress is at its highest level.</span>}
       {build.error && <Alert>{describeError(build.error)}</Alert>}
       {repair.error && <Alert>{describeError(repair.error)}</Alert>}
-      {(build.isSuccess || repair.isSuccess) && (
+      {(build.isPending || build.isSuccess || repair.isPending || repair.isSuccess) && (
         <p className="action-result" role="status">
           Fortress work ordered.
         </p>

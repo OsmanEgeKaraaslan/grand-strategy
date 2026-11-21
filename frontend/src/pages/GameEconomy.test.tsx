@@ -106,7 +106,7 @@ describe('Game economy', () => {
     const buildWorkshop = vi.fn().mockResolvedValue({
       workshop: { id: 'w2', tier: 1, status: 'UNDER_CONSTRUCTION', orderedRound: 1, completesAfterRound: 1, operationalFromRound: 2 },
       treasuryMg: 10000,
-      city: cityEconomyFixture(),
+      city: cityEconomyFixture({ cityId: 'city-elmsford', provinceKey: 'elmsford', cityName: 'Elmsford' }),
     })
     renderGame({ buildWorkshop })
     await showPanel('economy')

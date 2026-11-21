@@ -225,7 +225,7 @@ describe('Map orders (UI-A)', () => {
     fireEvent.contextMenu(within(svg).getByRole('button', { name: /^Sablewater/ }))
     await userEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Attack Sablewater' }))
     await waitFor(() => expect(move).toHaveBeenCalledWith('g1', ['b1', 'b2'], 'sablewater', expect.any(String)))
-    expect(await screen.findByRole('region', { name: 'Battle of Sablewater' })).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Battle of Sablewater' }, { timeout: 3000 })).toBeInTheDocument()
   })
 
   it('gives no order for an illegal destination, on another player\'s turn, or after Escape', async () => {

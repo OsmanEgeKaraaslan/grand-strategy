@@ -10,11 +10,14 @@ export function BattleReportView({
   nations,
   provinceNames,
   onClose,
+  reveal = false,
 }: {
   battle: BattleReport
   nations: Map<string, NationStyle>
   provinceNames: Map<string, string>
   onClose?: () => void
+  /** Unfold the report section by section (right after a battle the player just fought). */
+  reveal?: boolean
 }) {
   const { details } = battle
   const attacker = nations.get(battle.attackerNationId)
@@ -26,7 +29,7 @@ export function BattleReportView({
   const pct = (lost: number, initial: number) => `${((lost * 100) / initial).toFixed(1)}%`
 
   return (
-    <section className="card battle-report" aria-labelledby={`battle-${battle.id}`}>
+    <section className={`card battle-report${reveal ? ' battle-report--reveal' : ''}`} aria-labelledby={`battle-${battle.id}`}>
       <div className="battle-report__header">
         <h2 id={`battle-${battle.id}`}>Battle of {name(battle.provinceKey)}</h2>
         {onClose && (

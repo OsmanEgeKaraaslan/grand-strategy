@@ -1,130 +1,23 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { DiplomacyOverview, GameResult, PeaceProposal, WarView } from '../api/types'
+import type { DiplomacyOverview, GameResult } from '../api/types'
 import { fakeApi, openForces, renderPage, showPanel } from '../test/render'
-import { OSTRA, VARN, economyFixture, gameStateFixture, mapFixture, militaryFixture } from '../test/fixtures'
+import {
+  DIPLOMACY_RULES as RULES,
+  OSTRA,
+  VARN,
+  diplomacyFixture,
+  economyFixture,
+  gameStateFixture,
+  mapFixture,
+  militaryFixture,
+  proposalFixture,
+  warFixture,
+} from '../test/fixtures'
 import { GamePage } from './GamePage'
 
 const me = { id: 'p1', displayName: 'Aldric', createdAt: '', updatedAt: '' }
-
-const RULES = {
-  version: 'v5',
-  truceRounds: 10,
-  proposalExpiryRounds: 3,
-  maxPeaceTerms: 10,
-  tributeRateBps: 1000,
-  tributeRounds: 10,
-  populationMinPeople: 1000,
-  populationMaxPeople: 2000,
-  populationMaxShareBps: 2000,
-  populationMinResidual: 1000,
-  reparationsMaxMg: 1_000_000,
-  maxScore: 100,
-  victoryMaxRounds: 30,
-  victoryProvincePoints: 20,
-  victoryPointsPerThousandPopulation: 1,
-  normalAllianceGrantsAccess: true,
-  defensiveAllianceGrantsAccess: false,
-  coBelligerentAccess: true,
-}
-
-const side = (total: number) => ({
-  battles: total,
-  sieges: 0,
-  occupation: 0,
-  total,
-  battlesWon: total > 0 ? 1 : 0,
-  siegesWon: 0,
-  occupiedEnemyPopulation: 0,
-  enemyPopulation: 20000,
-})
-
-function warFixture(overrides: Partial<WarView> = {}): WarView {
-  return {
-    id: 'w1',
-    status: 'ACTIVE',
-    attackerLeaderId: VARN,
-    defenderLeaderId: OSTRA,
-    participants: [
-      { nationId: VARN, name: 'Kingdom of Varn', side: 'ATTACKER', joinReason: 'DECLARED', joinedRound: 2 },
-      { nationId: OSTRA, name: 'Ostran Confederacy', side: 'DEFENDER', joinReason: 'ATTACKED', joinedRound: 2 },
-    ],
-    declaredRound: 2,
-    endedRound: null,
-    endReason: null,
-    durationRounds: 3,
-    score: { attacker: side(7), defender: side(0), net: 7, maxScore: 100 },
-    yourSide: 'ATTACKER',
-    youLead: true,
-    ...overrides,
-  }
-}
-
-function diplomacyFixture(status: 'PEACE' | 'WAR', overrides: Partial<DiplomacyOverview> = {}): DiplomacyOverview {
-  const atWar = status === 'WAR'
-  return {
-    gameId: 'g1',
-    available: true,
-    rulesetVersion: 'v5',
-    round: 4,
-    yourTurn: true,
-    yourNationId: VARN,
-    rules: RULES,
-    nations: [
-      { nationId: VARN, name: 'Kingdom of Varn', color: '#3f6fb5', you: true, status: 'SELF', allianceKind: null, allianceId: null, warId: null, truceUntilRound: null, weMayEnter: true, theyMayEnter: true, warBlockers: [], allianceBlockers: [] },
-      {
-        nationId: OSTRA,
-        name: 'Ostran Confederacy',
-        color: '#b5503a',
-        you: false,
-        status,
-        allianceKind: null,
-        allianceId: null,
-        warId: atWar ? 'w1' : null,
-        truceUntilRound: null,
-        weMayEnter: atWar,
-        theyMayEnter: atWar,
-        warBlockers: atWar ? ['ALREADY_AT_WAR'] : [],
-        allianceBlockers: atWar ? ['AT_WAR'] : [],
-      },
-    ],
-    wars: atWar ? [warFixture()] : [],
-    alliances: [],
-    proposals: [],
-    treaties: [],
-    tributes: [],
-    events: atWar
-      ? [{ id: 'ev1', round: 2, kind: 'WAR_DECLARED', actorNationId: VARN, targetNationId: OSTRA, warId: 'w1', details: {}, createdAt: '' }]
-      : [],
-    gifts: [],
-    ...overrides,
-  }
-}
-
-function proposalFixture(overrides: Partial<PeaceProposal> = {}): PeaceProposal {
-  return {
-    id: 'pp1',
-    warId: 'w1',
-    proposerNationId: OSTRA,
-    recipientNationId: VARN,
-    status: 'PENDING',
-    terms: [
-      { type: 'GOLD', fromNationId: OSTRA, toNationId: VARN, amountMg: 20000 },
-      { type: 'TRIBUTE', fromNationId: OSTRA, toNationId: VARN, tributeRateBps: 1000, tributeRounds: 10 },
-    ],
-    createdRound: 4,
-    createdTurn: 7,
-    createdStateVersion: 30,
-    respondedRound: null,
-    counterOfId: null,
-    expiresAfterRound: 7,
-    incoming: true,
-    violations: [],
-    createdAt: '',
-    ...overrides,
-  }
-}
 
 const withMarrowfield = gameStateFixture({
   provinces: [
@@ -363,13 +256,11 @@ describe('Peace negotiation', () => {
     expect(await screen.findByText(/Peace signed. Truce until round 14. 2 battalion\(s\) withdrew./)).toBeInTheDocument()
   })
 
-  it('rejects, or counters starting from the received terms', async () => {
+  it('rejects a proposal at once', async () => {
     const peaceAction = vi.fn().mockResolvedValue({ proposal: proposalFixture({ status: 'REJECTED' }) })
-    const counterPeace = vi.fn().mockResolvedValue({ proposal: proposalFixture({ incoming: false }) })
     renderGame({
       getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('WAR', { proposals: [proposalFixture({ terms: [] })] })),
       peaceAction,
-      counterPeace,
     })
     await showPanel('diplomacy')
 
@@ -377,7 +268,19 @@ describe('Peace negotiation', () => {
     expect(within(proposal).getByText(/White peace/)).toBeInTheDocument()
     await userEvent.click(within(proposal).getByRole('button', { name: 'Reject' }))
     expect(peaceAction).toHaveBeenCalledWith('g1', 'pp1', 'reject', expect.any(String))
+    // Shown before the server's refetch (D-UX1): the rejected proposal is no longer open to answer.
+    expect(screen.queryByRole('button', { name: 'Counter-proposal' })).not.toBeInTheDocument()
+  })
 
+  it('counters starting from the received terms', async () => {
+    const counterPeace = vi.fn().mockResolvedValue({ proposal: proposalFixture({ incoming: false }) })
+    renderGame({
+      getDiplomacy: vi.fn().mockResolvedValue(diplomacyFixture('WAR', { proposals: [proposalFixture({ terms: [] })] })),
+      counterPeace,
+    })
+    await showPanel('diplomacy')
+
+    const proposal = await screen.findByRole('article', { name: 'Incoming peace proposal' })
     await userEvent.click(within(proposal).getByRole('button', { name: 'Counter-proposal' }))
     const negotiation = screen.getByRole('group', { name: 'Peace negotiation' })
     await userEvent.click(within(negotiation).getByRole('button', { name: 'Send counter-proposal' }))

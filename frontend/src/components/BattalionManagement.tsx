@@ -47,29 +47,23 @@ export function BattalionManagement({
   const soldiers = validAmount ? parsed : 0
   const cost = replacementCost(quote.recruitCostMg, quote.battalionManpower, soldiers)
 
+  // Both commands are shown at once (D-UX1): the quote and the preview are the server's own numbers.
   function handleReinforce() {
-    setMessage(null)
-    reinforce.mutate(
-      { battalionId, soldiers, idempotencyKey: crypto.randomUUID() },
-      {
-        onSuccess: (result) => {
-          setAmountText(null)
-          setMessage(`Added ${result.soldiersAdded.toLocaleString('en-US')} soldiers for ${formatGold(result.costMg)} gold.`)
-        },
-      },
-    )
+    reinforce.mutate({ battalionId, soldiers, idempotencyKey: crypto.randomUUID() })
+    setAmountText(null)
+    setMessage(`Added ${soldiers.toLocaleString('en-US')} soldiers for ${formatGold(cost)} gold.`)
   }
 
   function handleDisband() {
-    disband.mutate(
-      { battalionId, idempotencyKey: crypto.randomUUID() },
-      {
-        onSuccess: (result) => {
-          setConfirming(false)
-          onDisbanded(result)
-        },
-      },
-    )
+    disband.mutate({ battalionId, idempotencyKey: crypto.randomUUID() })
+    setConfirming(false)
+    onDisbanded({
+      battalionId,
+      unitType: battalion.unitType,
+      soldiersReturned: preview.soldiers,
+      returns: preview.returns,
+      upkeepSavedMg: preview.upkeepSavedMg,
+    })
   }
 
   return (
@@ -123,10 +117,10 @@ export function BattalionManagement({
           <button
             type="button"
             className="button button--primary button--small"
-            disabled={!quote.allowed || !validAmount || reinforce.isPending}
+            disabled={!quote.allowed || !validAmount}
             onClick={handleReinforce}
           >
-            {reinforce.isPending ? 'Reinforcing…' : `Reinforce with ${soldiers.toLocaleString('en-US')}`}
+            {`Reinforce with ${soldiers.toLocaleString('en-US')}`}
           </button>
           {message && <p role="status">{message}</p>}
           {reinforce.error && <Alert>{describeError(reinforce.error)}</Alert>}
@@ -162,8 +156,8 @@ export function BattalionManagement({
               </ul>
               <p className="muted">Upkeep saved: {formatGold(preview.upkeepSavedMg)} gold per round. This cannot be undone.</p>
               <div className="confirm__actions">
-                <button type="button" className="button button--danger button--small" disabled={disband.isPending} onClick={handleDisband}>
-                  {disband.isPending ? 'Disbanding…' : 'Confirm disband'}
+                <button type="button" className="button button--danger button--small" onClick={handleDisband}>
+                  Confirm disband
                 </button>
                 <button type="button" className="button button--ghost button--small" onClick={() => setConfirming(false)}>
                   Cancel
