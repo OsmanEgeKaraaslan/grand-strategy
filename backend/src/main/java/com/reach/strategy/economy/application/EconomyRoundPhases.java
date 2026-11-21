@@ -84,6 +84,8 @@ class EconomyRoundPhases {
 				.stream()
 				.collect(Collectors.toMap(Ledger.Purse::nationId, Function.identity()));
 			Ledger[] after = { before };
+			// Every UpkeepSource once for the whole game, not once per nation.
+			Map<UUID, Long> upkeepByNation = treasuryService.upkeepByNation(context.gameId(), context.rulesetVersion());
 			snapshot.world()
 				.nations()
 				.stream()
@@ -97,7 +99,7 @@ class EconomyRoundPhases {
 					long income = snapshot.collectibleIncomeOf(nationId);
 					// Every UpkeepSource (battalions since Phase 5; fortresses in Phase 7) as of now:
 					// units destroyed earlier in this round cost nothing.
-					long upkeep = treasuryService.upkeepOf(context.gameId(), context.rulesetVersion(), nationId);
+					long upkeep = upkeepByNation.getOrDefault(nationId, 0L);
 					Treasury.Settlement settlement = Treasury.settle(treasury.treasuryMg(), income, upkeep);
 					after[0] = after[0].settle(nationId, settlement);
 					reports.insert(context.gameId(), context.round(), nationId, settlement, context.now());
@@ -195,6 +197,8 @@ class EconomyRoundPhases {
 			Map<UUID, Integer> growthBonus = new java.util.HashMap<>();
 			technology.forEach(t -> t.ofGame(gameId)
 				.forEach((nation, tech) -> growthBonus.merge(nation, tech.growthBonusBps(), Math::max)));
+			List<EconomyReportRepository.Growth> growths = new java.util.ArrayList<>();
+			Map<UUID, Integer> grown = new java.util.LinkedHashMap<>();
 			world.snapshot(gameId)
 				.provinces()
 				.stream()
@@ -206,11 +210,14 @@ class EconomyRoundPhases {
 					}
 					int bonus = Math.max(0, growthBonus.getOrDefault(p.ownerNationId(), 0));
 					int growth = PopulationGrowth.growth(p.population(), bonus, rules);
-					reports.insertGrowth(gameId, context.round(), p.cityId(), p.population(), growth);
+					growths.add(new EconomyReportRepository.Growth(p.cityId(), p.population(), growth));
 					if (growth > 0) {
-						world.changePopulation(gameId, p.cityId(), growth);
+						grown.put(p.cityId(), growth);
 					}
 				});
+			// One batched write for the reports and one for the cities, not two statements per city.
+			reports.insertGrowths(gameId, context.round(), growths);
+			world.changePopulations(gameId, grown);
 		}
 
 	}

@@ -225,6 +225,20 @@ value:
 `DiplomacyRollbackIT` now injects its failures at the new write points (the store write that ends the
 war; the tribute payment insert); its assertions are unchanged.
 
+**S5 status (2026-11-21, done).** After S2–S4 every round phase already computes on values loaded at
+its start and writes through a store; the remaining per-row work was removed:
+- GROWTH writes all cities in one batched update (`WorldApi.changePopulations`) and all growth reports
+  in one batched insert, instead of two statements per city (72 cities on the Grand Campaign).
+- ECONOMY asks every upkeep source once for the whole game (`TreasuryService.upkeepByNation`) instead
+  of once per nation.
+- CONSTRUCTION, RESEARCH, INSTITUTIONS and FORTIFICATIONS load their rows once and write the changed
+  ones in one batch (S3); SIEGES writes before each call into another module (S3); TRIBUTE and
+  DIPLOMACY write through a draft only when something is due (S4).
+
+The phases still run inside `RoundProcessor` in `RoundPhase.Step` order, in the end-turn transaction,
+behind the `round_resolution` guard. Measured: one computer round of 8 turns 1,965 → 1,751 statements.
+Each phase still reads the world snapshot on its own; S6 shares those reads.
+
 ## 8. Open decisions
 
 | ID | Question | Proposed default |

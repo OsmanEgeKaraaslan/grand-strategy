@@ -140,6 +140,33 @@ public class WorldStateRepository {
 		return updated.getFirst();
 	}
 
+	/** One batched statement; a city that is missing or would go negative fails the whole batch. */
+	public void changePopulations(UUID gameId, java.util.Map<UUID, Integer> deltaByCity) {
+		if (deltaByCity.isEmpty()) {
+			return;
+		}
+		List<java.util.Map.Entry<UUID, Integer>> rows = deltaByCity.entrySet()
+			.stream()
+			.sorted(java.util.Map.Entry.comparingByKey(java.util.Comparator.comparing(UUID::toString)))
+			.toList();
+		int[][] counts = jdbc.batchUpdate("""
+				UPDATE game.city SET population = population + ?
+				WHERE game_id = ? AND id = ? AND population + ? >= 0
+				""", rows, rows.size(), (ps, e) -> {
+			ps.setInt(1, e.getValue());
+			ps.setObject(2, gameId);
+			ps.setObject(3, e.getKey());
+			ps.setInt(4, e.getValue());
+		});
+		for (int[] batch : counts) {
+			for (int count : batch) {
+				if (count == 0) {
+					throw new IllegalStateException("A city of game " + gameId + " cannot change population as asked");
+				}
+			}
+		}
+	}
+
 	public void setController(UUID gameId, String provinceKey, UUID controllerNationId) {
 		int updated = jdbc.update("""
 				UPDATE game.province_state ps SET controller_nation_id = ?

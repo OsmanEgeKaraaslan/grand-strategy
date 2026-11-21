@@ -77,6 +77,15 @@ class TreasuryService implements EconomyApi {
 		return reports.grossIncome(gameId, nationId, round);
 	}
 
+	/** Upkeep of every nation at the next round end, each source read once (exact arithmetic). */
+	Map<UUID, Long> upkeepByNation(UUID gameId, String rulesetVersion) {
+		Map<UUID, Long> total = new java.util.HashMap<>();
+		for (UpkeepSource source : upkeepSources) {
+			source.upkeepByNation(gameId, rulesetVersion).forEach((nation, mg) -> total.merge(nation, mg, Math::addExact));
+		}
+		return total;
+	}
+
 	/** Upkeep of a nation at the next round end, summed over every source (exact arithmetic). */
 	long upkeepOf(UUID gameId, String rulesetVersion, UUID nationId) {
 		long total = 0;

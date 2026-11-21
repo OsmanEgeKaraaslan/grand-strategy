@@ -185,6 +185,12 @@ public class WorldService implements WorldApi {
 
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
+	public void changePopulations(UUID gameId, java.util.Map<UUID, Integer> deltaByCity) {
+		worldState.changePopulations(gameId, deltaByCity);
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.MANDATORY)
 	public void transferOwnership(UUID gameId, String provinceKey, UUID fromNationId, UUID toNationId) {
 		worldState.transferOwnership(gameId, provinceKey, fromNationId, toNationId);
 	}

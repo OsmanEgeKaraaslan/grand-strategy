@@ -53,6 +53,12 @@ public interface WorldApi {
 	int changePopulation(UUID gameId, UUID cityId, int delta);
 
 	/**
+	 * Several population changes in one batched write (round-end growth); every city must exist and
+	 * stay non-negative, otherwise nothing is changed (the caller's transaction fails).
+	 */
+	void changePopulations(UUID gameId, java.util.Map<UUID, Integer> deltaByCity);
+
+	/**
 	 * Changes only the military controller of a province (occupation, liberation, return of control
 	 * after peace). Legal ownership is never changed here (Q-W1). Must run inside the caller's transaction.
 	 */

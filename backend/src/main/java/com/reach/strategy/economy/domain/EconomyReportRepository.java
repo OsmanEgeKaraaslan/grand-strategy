@@ -37,11 +37,24 @@ public class EconomyReportRepository {
 	}
 
 	/** One city's growth at one round end; the primary key forbids growing a city twice in a round. */
-	public void insertGrowth(UUID gameId, int round, UUID cityId, int populationBefore, int growth) {
-		jdbc.update("""
+	public record Growth(UUID cityId, int populationBefore, int growth) {
+	}
+
+	/** Every city's growth of one round in one batched statement. */
+	public void insertGrowths(UUID gameId, int round, java.util.List<Growth> growths) {
+		if (growths.isEmpty()) {
+			return;
+		}
+		jdbc.batchUpdate("""
 				INSERT INTO game.population_growth (game_id, round_number, city_id, population_before, growth)
 				VALUES (?, ?, ?, ?, ?)
-				""", gameId, round, cityId, populationBefore, growth);
+				""", growths, growths.size(), (ps, g) -> {
+			ps.setObject(1, gameId);
+			ps.setInt(2, round);
+			ps.setObject(3, g.cityId());
+			ps.setInt(4, g.populationBefore());
+			ps.setInt(5, g.growth());
+		});
 	}
 
 	public OptionalLong grossIncome(UUID gameId, UUID nationId, int round) {
