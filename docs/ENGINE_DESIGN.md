@@ -2,7 +2,7 @@
 
 Status: **PROPOSED** (2026-11-20). Approved to start by the product owner on 2026-11-20 ("design
 first"); the open decisions in §8 need answers before the stages that depend on them. Stages S1–S6
-are done (2026-11-21, status paragraphs in §7); S7 waits for decision D3 (a new build dependency).
+are done (2026-11-21, status paragraphs in §7); S7 was decided against (D3, §7).
 
 ## 1. Problem
 
@@ -275,13 +275,35 @@ Every command still runs through the same services and the command pipeline, so 
 implementation of every rule. The values are kept in memory for the turn by the stores, instead of a
 separate `GameState` that the computer would apply commands to.
 
+**After S6 (2026-11-21).** The writing read scope now also covers every human command and every end
+of turn (`GameCommandService`, `TurnService`); a membership is also forgotten whenever the game row
+changes (pause, resume, elimination, finish, a new turn). Three reads were removed at their source:
+- `GameCommand` reports itself as new, so its insert no longer reads the row first (its id is
+  assigned in code).
+- A game's map and its diplomacy ruleset cannot change once set, so each is looked up once per game
+  and server (bounded caches; an empty answer is never kept).
+
+Measured: plain move 24 → 21 statements, recruitment 19 → 17, one computer round 1,211 → 1,107,
+an observation 39 → 37.
+
+**S7 decision (2026-11-21): not done.** The product owner allowed TeaVM (D3), but the only command
+whose result the browser cannot already show is a battle, and a battle's outcome depends on both
+sides' technology and doctrines. A nation's research is private (the research view is the caller's
+own; the battle report reveals the modifiers only afterwards). An exact prediction would therefore
+have to send every opponent's private modifiers to the browser. That would leak hidden information,
+which AGENTS.md §4 forbids. A prediction without them would often be wrong. Recruitment,
+construction, research and fortress works already show their exact cost, duration and blockers from
+the server's views, and a plain move is predicted (D-UX1). TeaVM therefore stays out of the build. A
+battle preview from public information only (an estimate, clearly labelled) would be a new game
+feature and needs a product decision first; it is recorded as open in `docs/OPEN_QUESTIONS.md`.
+
 ## 8. Open decisions
 
 | ID | Question | Proposed default |
 |---|---|---|
 | **D1** | Keep a per-game `GameState` cache between requests (keyed by state version), or load per command? | Load per command first (simple, correct with several instances); add a cache later only if measurements ask for it |
 | **D2** | Persist a computer phase per computer turn or once for the whole phase? | Per computer turn: a crash loses at most one turn, and humans see progress |
-| **D3** | TeaVM (or another Java→JS/Wasm compiler) as a new build dependency for S7 | Decide when S6 is done; written justification then (AGENTS.md §1) |
+| **D3** | TeaVM (or another Java→JS/Wasm compiler) as a new build dependency for S7 | **Decided 2026-11-21: not adopted** (see S7 below). The product owner allowed it; it would need the opponent's private modifiers in the browser |
 | **D4** | Diff writes with JDBC batches, or keep JPA entities for writes? | JDBC batches for migrated tables (no persistence-context surprises, fewer statements) |
 
 ## 9. Risks and how they are contained

@@ -20,6 +20,8 @@ import com.reach.strategy.game.rules.TurnOrder;
 import com.reach.strategy.world.api.WorldApi;
 import tools.jackson.databind.json.JsonMapper;
 
+import com.reach.strategy.platform.read.ReadScope;
+
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
@@ -58,6 +60,8 @@ class TurnAdvancer {
 	 * completes exactly once and the victory condition is asked.
 	 */
 	Advanced advance(Game game, Instant now) {
+		// The turn moves on: no read scope may answer from the old membership (ENGINE_DESIGN S6).
+		ReadScope.forget(GameAccessService.MEMBERSHIP);
 		List<GamePlayer> seats = memberships.findByGameIdOrderBySeatOrder(game.id());
 		TurnOrder.Advance advance = game.nextTurn(skippedSeats(game), seats.size());
 		if (advance.roundCompleted()) {

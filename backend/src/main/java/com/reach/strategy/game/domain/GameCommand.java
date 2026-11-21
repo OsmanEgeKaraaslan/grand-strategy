@@ -6,7 +6,12 @@ import java.util.UUID;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+
+import org.springframework.data.domain.Persistable;
 
 /**
  * An executed gameplay command, recorded in the same transaction as its effects. Its
@@ -15,7 +20,7 @@ import jakarta.persistence.Table;
  */
 @Entity
 @Table(name = "game_command")
-public class GameCommand {
+public class GameCommand implements Persistable<UUID> {
 
 	public static final String END_TURN = "END_TURN";
 
@@ -47,7 +52,27 @@ public class GameCommand {
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
+	/** Its id is assigned here, so without this Hibernate would read the row before inserting it. */
+	@Transient
+	private boolean isNew = true;
+
 	protected GameCommand() {
+	}
+
+	@Override
+	public UUID getId() {
+		return id;
+	}
+
+	@Override
+	public boolean isNew() {
+		return isNew;
+	}
+
+	@PostLoad
+	@PostPersist
+	void markNotNew() {
+		isNew = false;
 	}
 
 	public GameCommand(UUID gameId, UUID gamePlayerId, UUID idempotencyKey, String commandType, int turnNumber,

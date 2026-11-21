@@ -55,7 +55,20 @@ class GameCommandService implements GameCommands {
 		return run(me, gameId, idempotencyKey, commandType, handler, true);
 	}
 
+	/**
+	 * Every command runs in a writing read scope (ENGINE_DESIGN S6): state it reads twice (the world
+	 * snapshot, the relations, a module's values) is loaded once, and every writer keeps the memory
+	 * exact. A computer turn has opened the scope already.
+	 */
 	private <T> T run(CurrentPlayer me, UUID gameId, UUID idempotencyKey, String commandType, Handler<T> handler,
+			boolean outOfTurn) {
+		if (ReadScope.active()) {
+			return runInScope(me, gameId, idempotencyKey, commandType, handler, outOfTurn);
+		}
+		return ReadScope.runTurn(() -> runInScope(me, gameId, idempotencyKey, commandType, handler, outOfTurn));
+	}
+
+	private <T> T runInScope(CurrentPlayer me, UUID gameId, UUID idempotencyKey, String commandType, Handler<T> handler,
 			boolean outOfTurn) {
 		Game game = games.findByIdForUpdate(gameId).orElseThrow(GameErrors::gameNotFound);
 		GamePlayer mine = memberships.findByGameIdOrderBySeatOrder(game.id())

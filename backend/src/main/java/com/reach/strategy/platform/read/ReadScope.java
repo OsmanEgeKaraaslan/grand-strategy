@@ -13,14 +13,14 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * <ul>
  * <li>{@link #run} opens a scope in a <em>read-only</em> transaction (the computer's observation):
  * nothing can be written, so nothing remembered can go stale.</li>
- * <li>{@link #runTurn} opens a scope in a <em>writing</em> transaction that plays a whole computer
- * turn (ENGINE_DESIGN S6, decision D2). Every writer keeps the memory exact: a store replaces the
+ * <li>{@link #runTurn} opens a scope in a <em>writing</em> transaction: every game command, every end
+ * of turn and a whole computer turn (ENGINE_DESIGN S6, decision D2). Every writer keeps the memory
+ * exact: a store replaces the
  * value it remembered with the value it wrote ({@link #replace}) or forgets it ({@link #forget}); the
- * world forgets its snapshot on every write; values owned outside the stores (a membership, whose
- * turn and state version change with every command) are forgotten at every command boundary.</li>
+ * world forgets its snapshot on every write; a membership (turn, pause, state version) is forgotten
+ * whenever the game row changes and at every command boundary.</li>
  * </ul>
- * Outside a scope nothing is remembered, so endpoints and human commands behave exactly as without
- * it. Remembered values must be immutable. The key names the read and its arguments, its first
+ * Outside a scope nothing is remembered. Remembered values must be immutable. The key names the read and its arguments, its first
  * element being the read's name, e.g. {@code List.of("world.snapshot", gameId)}.
  */
 public final class ReadScope {
@@ -45,7 +45,7 @@ public final class ReadScope {
 		return open(work, false);
 	}
 
-	/** Runs a computer turn with a fresh memory in a writing transaction (see the class comment). */
+	/** Runs a command, an end of turn or a computer turn with a fresh memory in a writing transaction. */
 	public static <T> T runTurn(Supplier<T> work) {
 		if (SCOPE.get() != null) {
 			throw new IllegalStateException("A turn scope cannot be nested in another scope");

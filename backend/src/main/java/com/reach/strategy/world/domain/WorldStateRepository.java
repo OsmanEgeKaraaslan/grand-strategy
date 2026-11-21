@@ -130,12 +130,30 @@ public class WorldStateRepository {
 
 	/** The map a game is played on (via its nations' templates); empty before the start. */
 	public java.util.Optional<UUID> mapIdOf(UUID gameId) {
-		return jdbc.queryForList("""
+		UUID known = MAP_OF_GAME.get(gameId);
+		if (known != null) {
+			return java.util.Optional.of(known);
+		}
+		java.util.Optional<UUID> map = jdbc.queryForList("""
 				SELECT DISTINCT nt.map_template_id FROM game.nation n
 				JOIN game.nation_template nt ON nt.id = n.nation_template_id
 				WHERE n.game_id = ?
 				""", UUID.class, gameId).stream().findFirst();
+		map.ifPresent(id -> MAP_OF_GAME.put(gameId, id));
+		return map;
 	}
+
+	/**
+	 * A game's map never changes once its nations exist, so it is looked up once per game and server
+	 * (bounded; the oldest games are dropped first). An empty answer (no nations yet) is not kept.
+	 */
+	private static final java.util.Map<UUID, UUID> MAP_OF_GAME = java.util.Collections
+		.synchronizedMap(new java.util.LinkedHashMap<>(256, 0.75f, true) {
+			@Override
+			protected boolean removeEldestEntry(java.util.Map.Entry<UUID, UUID> eldest) {
+				return size() > 10_000;
+			}
+		});
 
 	/** Adds delta to a city's population; the CHECK constraint rejects a negative result. */
 	public int changePopulation(UUID gameId, UUID cityId, int delta) {

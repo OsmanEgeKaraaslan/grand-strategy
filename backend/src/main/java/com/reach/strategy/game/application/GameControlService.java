@@ -9,6 +9,8 @@ import com.reach.strategy.game.domain.GamePlayer;
 import com.reach.strategy.game.domain.GamePlayerRepository;
 import com.reach.strategy.game.domain.GameRepository;
 
+import com.reach.strategy.platform.read.ReadScope;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,12 +36,14 @@ class GameControlService implements GameControl {
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void pauseForConference(UUID gameId, UUID conferenceId, Instant now) {
+		ReadScope.forget(GameAccessService.MEMBERSHIP);
 		game(gameId).pause(conferenceId, now);
 	}
 
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void resumeAfterConference(UUID gameId, UUID conferenceId, Instant now) {
+		ReadScope.forget(GameAccessService.MEMBERSHIP);
 		Game game = game(gameId);
 		if (game.finished()) {
 			return;
@@ -55,6 +59,7 @@ class GameControlService implements GameControl {
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
 	public void eliminatePlayer(UUID gameId, UUID gamePlayerId, int round) {
+		ReadScope.forget(GameAccessService.MEMBERSHIP);
 		GamePlayer player = memberships.findByGameIdOrderBySeatOrder(gameId)
 			.stream()
 			.filter(member -> member.id().equals(gamePlayerId))
@@ -67,6 +72,7 @@ class GameControlService implements GameControl {
 	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
 	public boolean finishIfDecided(UUID gameId, Instant now) {
+		ReadScope.forget(GameAccessService.MEMBERSHIP);
 		return advancer.finishIfDecided(game(gameId), now);
 	}
 

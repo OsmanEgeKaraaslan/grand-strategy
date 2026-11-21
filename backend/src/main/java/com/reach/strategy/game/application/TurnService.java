@@ -53,6 +53,15 @@ public class TurnService {
 
 	@Transactional
 	public TurnResult endTurn(CurrentPlayer me, UUID gameId, UUID idempotencyKey, int expectedTurnNumber) {
+		// A writing read scope (ENGINE_DESIGN S6): round processing reads shared state (the world
+		// snapshot above all) in many phases; every writer keeps the memory exact.
+		if (ReadScope.active()) {
+			return endTurnInScope(me, gameId, idempotencyKey, expectedTurnNumber);
+		}
+		return ReadScope.runTurn(() -> endTurnInScope(me, gameId, idempotencyKey, expectedTurnNumber));
+	}
+
+	private TurnResult endTurnInScope(CurrentPlayer me, UUID gameId, UUID idempotencyKey, int expectedTurnNumber) {
 		Game game = games.findByIdForUpdate(gameId).orElseThrow(GameErrors::gameNotFound);
 		GamePlayer mine = memberOf(game, me);
 

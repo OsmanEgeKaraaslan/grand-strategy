@@ -29,10 +29,29 @@ public class RelationsRepository {
 
 	/** The ruleset version of a game with diplomacy; empty for games of rulesets before v5. */
 	public Optional<String> rulesetVersion(UUID gameId) {
-		return jdbc.queryForList("SELECT ruleset_version FROM game.diplomacy_game WHERE game_id = ?", String.class, gameId)
+		String known = RULESET_OF_GAME.get(gameId);
+		if (known != null) {
+			return Optional.of(known);
+		}
+		Optional<String> version = jdbc
+			.queryForList("SELECT ruleset_version FROM game.diplomacy_game WHERE game_id = ?", String.class, gameId)
 			.stream()
 			.findFirst();
+		version.ifPresent(v -> RULESET_OF_GAME.put(gameId, v));
+		return version;
 	}
+
+	/**
+	 * A game's diplomacy ruleset never changes once enabled, so it is read once per game and server
+	 * (bounded; the oldest games are dropped first). "No diplomacy" is not kept: it is read again.
+	 */
+	private static final java.util.Map<UUID, String> RULESET_OF_GAME = java.util.Collections
+		.synchronizedMap(new java.util.LinkedHashMap<>(256, 0.75f, true) {
+			@Override
+			protected boolean removeEldestEntry(java.util.Map.Entry<UUID, String> eldest) {
+				return size() > 10_000;
+			}
+		});
 
 	public void enable(UUID gameId, String rulesetVersion, Instant now) {
 		jdbc.update("INSERT INTO game.diplomacy_game (game_id, ruleset_version, created_at) VALUES (?, ?, ?)", gameId,
