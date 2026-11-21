@@ -132,7 +132,7 @@ public class BattalionService {
 					throw rejection(blockers.getFirst());
 				}
 				long cost = Reinforcement.cost(battalion.unitType(), soldiers, rules);
-				economy.spend(nationId, cost);
+				EconomyApi.TreasuryState paid = economy.spend(nationId, cost);
 				int population = world.changePopulation(gameId, province.cityId(), -soldiers);
 				Forces after = before.reinforce(battalionId, province.cityId(), soldiers,
 						MilitaryService.clock(rules, context));
@@ -141,7 +141,7 @@ public class BattalionService {
 
 				MilitaryViews.ReinforceResult result = new MilitaryViews.ReinforceResult(
 						MilitaryService.view(reinforced, state, nationId, MilitaryService.clock(rules, context), rules), soldiers, cost,
-						economy.treasury(nationId).treasuryMg(), province.cityId(), population);
+						paid.treasuryMg(), province.cityId(), population);
 				UUID transferId = record(gameId, ManpowerTransferRepository.Kind.REINFORCE, battalion, nationId,
 						soldiers, cost, result, context);
 				return new GameCommands.Outcome<>(result, transferId);

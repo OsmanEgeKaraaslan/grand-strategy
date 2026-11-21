@@ -14,12 +14,10 @@ import com.reach.strategy.game.api.GameStartInitializer;
 import com.reach.strategy.game.api.RoundPhase;
 import com.reach.strategy.military.api.Hostility;
 import com.reach.strategy.military.api.SiegeGate;
-import com.reach.strategy.siege.domain.Fortification;
-import com.reach.strategy.siege.domain.FortificationRepository;
-import com.reach.strategy.siege.domain.Siege;
-import com.reach.strategy.siege.domain.SiegeRepository;
+import com.reach.strategy.siege.domain.SiegeStore;
 import com.reach.strategy.siege.rules.FortressWorks;
 import com.reach.strategy.siege.rules.SiegeRules;
+import com.reach.strategy.siege.rules.Strongholds;
 import com.reach.strategy.world.api.WorldApi;
 import com.reach.strategy.platform.read.ReadScope;
 
@@ -37,8 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
 class SiegeHooks {
 
 	@Bean
-	SiegeChecks siegeChecks(SiegeRepository sieges, SiegeEngine engine) {
-		return new SiegeChecks(sieges, engine);
+	SiegeChecks siegeChecks(SiegeStore store, SiegeEngine engine) {
+		return new SiegeChecks(store, engine);
 	}
 
 	@Bean
@@ -47,30 +45,29 @@ class SiegeHooks {
 	}
 
 	@Bean
-	RoundPhase fortificationPhase(FortificationRepository fortifications, SiegeRepository sieges,
-			SiegeRulesets rulesets) {
-		return new FortificationPhase(fortifications, sieges, rulesets);
+	RoundPhase fortificationPhase(SiegeStore store, SiegeRulesets rulesets) {
+		return new FortificationPhase(store, rulesets);
 	}
 
 	@Bean
-	UpkeepSource fortressUpkeep(FortificationRepository fortifications, SiegeRulesets rulesets, WorldApi world) {
-		return new FortressUpkeep(fortifications, rulesets, world);
+	UpkeepSource fortressUpkeep(SiegeStore store, SiegeRulesets rulesets, WorldApi world) {
+		return new FortressUpkeep(store, rulesets, world);
 	}
 
 	@Bean
 	GameStartInitializer fortificationStartInitializer(SiegeRulesets rulesets, WorldApi world,
-			FortificationRepository fortifications, Clock clock) {
-		return new StartingFortresses(rulesets, world, fortifications, clock);
+			SiegeStore store, Clock clock) {
+		return new StartingFortresses(rulesets, world, store, clock);
 	}
 
 	/** {@link SiegeGate} for military commands and {@link SiegeStatus} for economy commands. */
 	static class SiegeChecks implements SiegeGate, SiegeStatus {
 
-		private final SiegeRepository sieges;
+		private final SiegeStore store;
 		private final SiegeEngine engine;
 
-		SiegeChecks(SiegeRepository sieges, SiegeEngine engine) {
-			this.sieges = sieges;
+		SiegeChecks(SiegeStore store, SiegeEngine engine) {
+			this.store = store;
 			this.engine = engine;
 		}
 
@@ -80,8 +77,7 @@ class SiegeHooks {
 			if (ReadScope.active()) {
 				return besiegedProvinces(gameId).contains(provinceStateId);
 			}
-			return sieges.findByGameIdAndProvinceStateIdAndStatus(gameId, provinceStateId, Siege.Status.ACTIVE)
-				.isPresent();
+			return activeSieges(gameId).stream().anyMatch(s -> s.provinceStateId().equals(provinceStateId));
 		}
 
 		@Override
@@ -90,7 +86,7 @@ class SiegeHooks {
 			if (ReadScope.active()) {
 				return besiegedCities(gameId).contains(cityId);
 			}
-			return sieges.existsByGameIdAndCityIdAndStatus(gameId, cityId, Siege.Status.ACTIVE);
+			return activeSieges(gameId).stream().anyMatch(s -> s.cityId().equals(cityId));
 		}
 
 		@Override
@@ -112,7 +108,7 @@ class SiegeHooks {
 		/** The game's active sieges, read once per read scope. */
 		private java.util.List<ActiveSiege> activeSieges(UUID gameId) {
 			return ReadScope.remember(java.util.List.of("siege.active", gameId),
-					() -> sieges.findByGameIdAndStatusOrderById(gameId, Siege.Status.ACTIVE)
+					() -> store.activeSieges(gameId)
 						.stream()
 						.map(s -> new ActiveSiege(s.provinceStateId(), s.cityId()))
 						.toList());
@@ -165,13 +161,11 @@ class SiegeHooks {
 	 */
 	static class FortificationPhase implements RoundPhase {
 
-		private final FortificationRepository fortifications;
-		private final SiegeRepository sieges;
+		private final SiegeStore store;
 		private final SiegeRulesets rulesets;
 
-		FortificationPhase(FortificationRepository fortifications, SiegeRepository sieges, SiegeRulesets rulesets) {
-			this.fortifications = fortifications;
-			this.sieges = sieges;
+		FortificationPhase(SiegeStore store, SiegeRulesets rulesets) {
+			this.store = store;
 			this.rulesets = rulesets;
 		}
 
@@ -183,16 +177,22 @@ class SiegeHooks {
 		@Override
 		@Transactional(propagation = Propagation.MANDATORY)
 		public void apply(RoundContext context) {
-			for (Fortification f : fortifications.findByGameIdAndProjectCompletesAfterRoundLessThanEqualOrderById(
-					context.gameId(), context.round())) {
-				if (sieges.existsByGameIdAndCityIdAndStatus(context.gameId(), f.cityId(), Siege.Status.ACTIVE)) {
+			Set<UUID> besieged = store.activeSieges(context.gameId())
+				.stream()
+				.map(Strongholds.Siege::cityId)
+				.collect(java.util.stream.Collectors.toSet());
+			Strongholds before = Strongholds.of(store.fortresses(context.gameId()), java.util.List.of());
+			Strongholds after = before;
+			for (Strongholds.Fortress f : before.fortresses()) {
+				if (f.projectCompletesAfterRound() == null || f.projectCompletesAfterRound() > context.round()
+						|| besieged.contains(f.cityId())) {
 					continue;
 				}
 				SiegeRules rules = rulesets.rules(f.rulesetVersion());
 				int level = f.project() == FortressWorks.Project.UPGRADE ? f.projectTargetLevel() : f.level();
-				f.completeProject(rules.level(level).maxIntegrity());
+				after = after.with(f.projectCompleted(rules.level(level).maxIntegrity()));
 			}
-			fortifications.flush();
+			store.persist(context.gameId(), before, after);
 		}
 
 	}
@@ -204,12 +204,12 @@ class SiegeHooks {
 	 */
 	static class FortressUpkeep implements UpkeepSource {
 
-		private final FortificationRepository fortifications;
+		private final SiegeStore store;
 		private final SiegeRulesets rulesets;
 		private final WorldApi world;
 
-		FortressUpkeep(FortificationRepository fortifications, SiegeRulesets rulesets, WorldApi world) {
-			this.fortifications = fortifications;
+		FortressUpkeep(SiegeStore store, SiegeRulesets rulesets, WorldApi world) {
+			this.store = store;
 			this.rulesets = rulesets;
 			this.world = world;
 		}
@@ -218,12 +218,12 @@ class SiegeHooks {
 		@Transactional(readOnly = true)
 		public Map<UUID, Long> upkeepByNation(UUID gameId, String rulesetVersion) {
 			Map<UUID, Long> total = new HashMap<>();
-			var forts = fortifications.findByGameIdOrderById(gameId);
+			var forts = store.fortresses(gameId);
 			if (forts.isEmpty()) {
 				return total;
 			}
 			WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
-			for (Fortification f : forts) {
+			for (Strongholds.Fortress f : forts) {
 				if (f.effectiveLevel() < 1) {
 					continue;
 				}
@@ -244,13 +244,13 @@ class SiegeHooks {
 
 		private final SiegeRulesets rulesets;
 		private final WorldApi world;
-		private final FortificationRepository fortifications;
+		private final SiegeStore store;
 		private final Clock clock;
 
-		StartingFortresses(SiegeRulesets rulesets, WorldApi world, FortificationRepository fortifications, Clock clock) {
+		StartingFortresses(SiegeRulesets rulesets, WorldApi world, SiegeStore store, Clock clock) {
 			this.rulesets = rulesets;
 			this.world = world;
-			this.fortifications = fortifications;
+			this.store = store;
 			this.clock = clock;
 		}
 
@@ -262,6 +262,7 @@ class SiegeHooks {
 				return;
 			}
 			WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
+			Strongholds[] built = { Strongholds.empty() };
 			rules.startingFortresses(world.mapSummary(mapId).key())
 				.entrySet()
 				.stream()
@@ -270,10 +271,10 @@ class SiegeHooks {
 					WorldApi.ProvinceState p = snapshot.province(entry.getKey())
 						.orElseThrow(() -> new IllegalStateException(
 								"Ruleset " + rulesetVersion + " fortifies unknown province " + entry.getKey()));
-					fortifications.save(Fortification.starting(gameId, p.cityId(), entry.getValue(),
+					built[0] = built[0].with(Strongholds.Fortress.starting(UUID.randomUUID(), p.cityId(), entry.getValue(),
 							rules.level(entry.getValue()).maxIntegrity(), rulesetVersion, clock.instant()));
 				});
-			fortifications.flush();
+			store.persist(gameId, Strongholds.empty(), built[0]);
 		}
 
 	}

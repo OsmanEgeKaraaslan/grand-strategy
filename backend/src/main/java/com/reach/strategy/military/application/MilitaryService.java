@@ -192,7 +192,7 @@ public class MilitaryService {
 					throw rejection(blockers.getFirst());
 				}
 				long cost = rules.unit(type).recruitCostMg();
-				economy.spend(nationId, cost);
+				EconomyApi.TreasuryState paid = economy.spend(nationId, cost);
 				int population = world.changePopulation(gameId, cityId, -rules.battalionManpower());
 				Forces.Unit battalion = Forces.Unit.raised(UUID.randomUUID(), nationId, type, rules.battalionManpower(),
 						cityId, province.provinceStateId(), cost, context.round(), context.turnNumber(), context.now());
@@ -200,7 +200,7 @@ public class MilitaryService {
 				store.persist(gameId, Forces.empty(), Forces.empty().raise(battalion));
 				return new GameCommands.Outcome<>(new MilitaryViews.RecruitResult(
 						view(battalion, state, nationId, MilitaryService.clock(rules, context), rules),
-						economy.treasury(nationId).treasuryMg(), population), battalion.id());
+						paid.treasuryMg(), population), battalion.id());
 			}
 
 			@Override

@@ -9,11 +9,16 @@ public interface EconomyApi {
 	/** Current treasury of a nation in milligold, and whether it is in arrears (Q-E1b). */
 	TreasuryState treasury(UUID nationId);
 
+	/** Every nation's treasury of a game in one read (for round-end checks over all nations). */
+	java.util.Map<UUID, TreasuryState> treasuries(UUID gameId);
+
 	/**
 	 * Deducts an amount the caller has already validated as affordable. Must run inside the
 	 * caller's command transaction; the non-negative treasury constraint is the backstop.
+	 *
+	 * @return the treasury after the payment (so callers need not read it again)
 	 */
-	void spend(UUID nationId, long amountMg);
+	TreasuryState spend(UUID nationId, long amountMg);
 
 	/**
 	 * Moves gold between two treasuries of the same game (reparations, tribute): exactly what leaves

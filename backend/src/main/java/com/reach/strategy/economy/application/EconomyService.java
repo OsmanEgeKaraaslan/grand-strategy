@@ -135,9 +135,10 @@ public class EconomyService {
 						context.round(), Construction.completesAfterRound(context.round(), tierRules.buildDurationRounds()),
 						tierRules.buildCostMg(), context.now());
 				Ledger before = Ledger.of(List.of(treasury), List.of());
-				store.persist(gameId, before, before.spend(nation.id(), tierRules.buildCostMg()).build(project));
-				return new GameCommands.Outcome<>(result(gameId, cityId, project, nation.id(), context, rules),
-						project.id());
+				Ledger after = before.spend(nation.id(), tierRules.buildCostMg()).build(project);
+				store.persist(gameId, before, after);
+				return new GameCommands.Outcome<>(
+						result(gameId, cityId, project, nation.id(), after.purse(nation.id()), context, rules), project.id());
 			}
 
 			@Override
@@ -146,16 +147,15 @@ public class EconomyService {
 				Ledger.Building project = store.building(gameId, resultRef)
 					.orElseThrow(() -> new IllegalStateException("Replayed workshop " + resultRef + " is missing"));
 				WorldApi.NationState nation = state.load(gameId, rules).nationOfPlayer(context.gamePlayerId());
-				return result(gameId, project.cityId(), project, nation.id(), context, rules);
+				return result(gameId, project.cityId(), project, nation.id(), treasuryOf(nation.id()), context, rules);
 			}
 
 		});
 	}
 
 	private EconomyViews.BuildResult result(UUID gameId, UUID cityId, Ledger.Building project, UUID nationId,
-			GameCommands.CommandContext context, EconomyRules rules) {
+			Ledger.Purse treasury, GameCommands.CommandContext context, EconomyRules rules) {
 		EconomyState.Snapshot snapshot = state.load(gameId, rules);
-		Ledger.Purse treasury = treasuryOf(nationId);
 		boolean stillYourTurn = true;
 		return new EconomyViews.BuildResult(workshopView(project), treasury.treasuryMg(),
 				cityView(new Lookups(gameId), cityOf(snapshot, cityId), nationId, treasury, stillYourTurn, context.round(), rules));
@@ -495,8 +495,10 @@ public class EconomyService {
 	}
 
 	private Ledger.Purse treasuryOf(UUID nationId) {
-		return store.purse(nationId)
-			.orElseThrow(() -> new IllegalStateException("Nation " + nationId + " has no treasury"));
+		// Shared with TreasuryService inside a read scope: one read per nation for every view.
+		return com.reach.strategy.platform.read.ReadScope.remember(List.of("economy.purse", nationId),
+				() -> store.purse(nationId)
+					.orElseThrow(() -> new IllegalStateException("Nation " + nationId + " has no treasury")));
 	}
 
 	private static EconomyState.City cityOf(EconomyState.Snapshot snapshot, UUID cityId) {

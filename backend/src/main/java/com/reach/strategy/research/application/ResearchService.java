@@ -131,13 +131,13 @@ public class ResearchService {
 					throw institutionRejection(blockers.getFirst());
 				}
 				ResearchRules.InstitutionRules ir = rules.institution(type);
-				economy.spend(nationId, ir.buildCostMg());
+				EconomyApi.TreasuryState paid = economy.spend(nationId, ir.buildCostMg());
 				Studies.Institution institution = Studies.Institution.project(UUID.randomUUID(), cityId, type,
 						context.round(), Research.completesAfterRound(context.round(), ir.buildDurationRounds()),
 						ir.buildCostMg(), context.rulesetVersion(), context.now());
 				store.persist(gameId, Studies.empty(), Studies.empty().found(institution));
 				return new GameCommands.Outcome<>(new ResearchViews.InstitutionResult(
-						institutionView(institution, p, rules), ir.buildCostMg(), economy.treasury(nationId).treasuryMg()),
+						institutionView(institution, p, rules), ir.buildCostMg(), paid.treasuryMg()),
 						institution.id());
 			}
 

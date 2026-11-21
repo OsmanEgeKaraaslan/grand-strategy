@@ -189,16 +189,22 @@ class EconomyRoundPhases {
 				return;
 			}
 			UUID gameId = context.gameId();
+			// The game's besieged cities and every nation's technology, each read once (not once per city).
+			java.util.Set<UUID> besiegedCities = new java.util.HashSet<>();
+			siegeStatus.forEach(s -> besiegedCities.addAll(s.besiegedCities(gameId)));
+			Map<UUID, Integer> growthBonus = new java.util.HashMap<>();
+			technology.forEach(t -> t.ofGame(gameId)
+				.forEach((nation, tech) -> growthBonus.merge(nation, tech.growthBonusBps(), Math::max)));
 			world.snapshot(gameId)
 				.provinces()
 				.stream()
 				.sorted(java.util.Comparator.comparing(p -> p.cityId().toString()))
 				.forEach(p -> {
-					boolean besieged = siegeStatus.stream().anyMatch(s -> s.cityBesieged(gameId, p.cityId()));
+					boolean besieged = besiegedCities.contains(p.cityId());
 					if (!PopulationGrowth.blockers(p.ownerNationId(), p.controllerNationId(), besieged, rules).isEmpty()) {
 						return;
 					}
-					int bonus = technology.stream().mapToInt(t -> t.growthBonusBps(gameId, p.ownerNationId())).max().orElse(0);
+					int bonus = Math.max(0, growthBonus.getOrDefault(p.ownerNationId(), 0));
 					int growth = PopulationGrowth.growth(p.population(), bonus, rules);
 					reports.insertGrowth(gameId, context.round(), p.cityId(), p.population(), growth);
 					if (growth > 0) {

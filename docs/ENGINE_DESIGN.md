@@ -172,6 +172,38 @@ write), and the other 21 are the command pipeline, the world and relation reads 
 Those shrink when their modules become pure (S3–S5) and when the computer phase keeps the whole
 `GameState` in memory (S6), which this stage makes possible for the military slice.
 
+**S3 status (2026-11-21, done).** Economy, research and sieges follow the same pattern as the
+military: an immutable value per module in its `rules` package with pure transitions, and a JDBC
+store that loads it and writes only new and changed rows in batches.
+
+| Module | Value | Store | Tables |
+|---|---|---|---|
+| economy | `Ledger` (treasuries `Purse`, workshops `Building`) | `EconomyStore` | `nation_economy`, `building` |
+| research | `Studies` (`Progress`, `Institution`, `Doctrine`) | `ResearchStore` | `nation_research`, `institution`, `nation_doctrine` |
+| siege | `Strongholds` (`Fortress`, `Siege`) | `SiegeStore` | `fortification`, `siege` |
+
+Every command of these modules (workshop build, upgrade and repair; institutions, technology and
+doctrines; fortress works) and their round phases (income, construction, research, institutions,
+sieges, fortifications) now run through them. Five round phases used to rely on JPA dirty checking
+(an entity changed without an explicit save); they now write explicitly. A value may hold only part
+of a game (one treasury, say): it is always compared with the value it was derived from. The siege
+engine writes its pending changes before every call into another module and before each siege
+round row, so no module ever reads stale fortress or siege rows. JPA is left only in `game` and
+`identity`.
+
+Removing JPA also removed its first-level cache, which had answered repeated reads of the same row
+inside one transaction for free. The resulting re-reads were fixed at their source rather than by a
+new cache:
+- `EconomyApi.spend` returns the treasury after payment.
+- `EconomyApi.treasuries(gameId)` reads every treasury at once for round-end checks.
+- Treasury reads share the read scope of the computer's observation.
+- The growth phase reads the besieged cities and every nation's technology once per round instead of
+  once per city.
+
+Measured on the Grand Campaign: one computer round of 8 turns 1,988 → 1,871 statements; an
+observation 42 → 43; recruitment 18 → 19 (the treasury is no longer cached between the check and the
+payment); plain move 25.
+
 ## 8. Open decisions
 
 | ID | Question | Proposed default |

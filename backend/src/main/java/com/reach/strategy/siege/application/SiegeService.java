@@ -16,11 +16,9 @@ import com.reach.strategy.identity.api.CurrentPlayer;
 import com.reach.strategy.military.api.MilitaryModifiers;
 import com.reach.strategy.military.api.MilitaryPresence;
 import com.reach.strategy.platform.web.ApiException;
-import com.reach.strategy.siege.domain.Fortification;
-import com.reach.strategy.siege.domain.FortificationRepository;
-import com.reach.strategy.siege.domain.Siege;
-import com.reach.strategy.siege.domain.SiegeRepository;
 import com.reach.strategy.siege.domain.SiegeRoundRepository;
+import com.reach.strategy.siege.domain.SiegeStore;
+import com.reach.strategy.siege.rules.Strongholds;
 import com.reach.strategy.siege.rules.FortressWorks;
 import com.reach.strategy.siege.rules.SiegeMath;
 import com.reach.strategy.siege.rules.SiegeRules;
@@ -47,14 +45,13 @@ public class SiegeService {
 	private final WorldApi world;
 	private final EconomyApi economy;
 	private final MilitaryPresence military;
-	private final FortificationRepository fortifications;
-	private final SiegeRepository sieges;
+	private final SiegeStore store;
 	private final SiegeRoundRepository siegeRounds;
 	private final List<MilitaryModifiers> modifiers;
 
 	SiegeService(GameAccess gameAccess, GameCommands gameCommands, SiegeRulesets rulesets, WorldApi world,
-			EconomyApi economy, MilitaryPresence military, FortificationRepository fortifications,
-			SiegeRepository sieges, SiegeRoundRepository siegeRounds, List<MilitaryModifiers> modifiers) {
+			EconomyApi economy, MilitaryPresence military, SiegeStore store, SiegeRoundRepository siegeRounds,
+			List<MilitaryModifiers> modifiers) {
 		this.modifiers = List.copyOf(modifiers);
 		this.gameAccess = gameAccess;
 		this.gameCommands = gameCommands;
@@ -62,8 +59,7 @@ public class SiegeService {
 		this.world = world;
 		this.economy = economy;
 		this.military = military;
-		this.fortifications = fortifications;
-		this.sieges = sieges;
+		this.store = store;
 		this.siegeRounds = siegeRounds;
 	}
 
@@ -75,19 +71,18 @@ public class SiegeService {
 		Optional<SiegeRules> rules = rulesets.find(membership.rulesetVersion());
 		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
 		List<MilitaryPresence.Presence> presence = military.presence(gameId);
-		List<SiegeViews.FortificationView> forts = fortifications.findByGameIdOrderById(gameId)
+		List<SiegeViews.FortificationView> forts = store.fortresses(gameId)
 			.stream()
 			.map(f -> fortView(f, snapshot))
 			.sorted(Comparator.comparing(SiegeViews.FortificationView::provinceKey))
 			.toList();
-		List<SiegeViews.SiegeSummary> active = sieges.findByGameIdAndStatusOrderById(gameId, Siege.Status.ACTIVE)
+		List<SiegeViews.SiegeSummary> active = store.activeSieges(gameId)
 			.stream()
-			.map(s -> summary(s, snapshot, presence, rules.orElse(null)))
+			.map(s -> summary(gameId, s, snapshot, presence, rules.orElse(null)))
 			.toList();
-		List<SiegeViews.SiegeSummary> recent = sieges
-			.findTop20ByGameIdAndStatusNotOrderByEndedRoundDescIdAsc(gameId, Siege.Status.ACTIVE)
+		List<SiegeViews.SiegeSummary> recent = store.endedSieges(gameId, RECENT_SIEGES)
 			.stream()
-			.map(s -> summary(s, snapshot, presence, null))
+			.map(s -> summary(gameId, s, snapshot, presence, null))
 			.toList();
 		return new SiegeViews.Overview(gameId, membership.round(), rules.isPresent(), forts, active, recent);
 	}
@@ -100,9 +95,11 @@ public class SiegeService {
 		WorldApi.ProvinceState province = snapshot.province(provinceKey)
 			.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PROVINCE_NOT_FOUND", "Province not found."));
 		UUID nationId = nationOf(snapshot, membership.gamePlayerId());
-		Fortification fort = fortifications.findByGameIdAndCityId(gameId, province.cityId()).orElse(null);
-		Siege active = sieges
-			.findByGameIdAndProvinceStateIdAndStatus(gameId, province.provinceStateId(), Siege.Status.ACTIVE)
+		Strongholds.Fortress fort = store.fortressOfCity(gameId, province.cityId()).orElse(null);
+		Strongholds.Siege active = store.activeSieges(gameId)
+			.stream()
+			.filter(s -> s.provinceStateId().equals(province.provinceStateId()))
+			.findFirst()
 			.orElse(null);
 		SiegeViews.WorksOption upgrade = null;
 		SiegeViews.WorksOption repair = null;
@@ -115,14 +112,14 @@ public class SiegeService {
 		return new SiegeViews.ProvinceFortification(province.provinceKey(), province.cityId(), province.cityName(),
 				province.population(), province.ownerNationId(), province.controllerNationId(), rules.isPresent(),
 				fort == null ? null : fortView(fort, snapshot),
-				active == null ? null : summary(active, snapshot, military.presence(gameId), rules.orElse(null)),
+				active == null ? null : summary(gameId, active, snapshot, military.presence(gameId), rules.orElse(null)),
 				upgrade, repair);
 	}
 
 	@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 	public SiegeViews.SiegeDetails siege(CurrentPlayer me, UUID gameId, UUID siegeId) {
 		GameAccess.Membership membership = startedGameMembership(me, gameId);
-		Siege siege = sieges.findByGameIdAndId(gameId, siegeId)
+		Strongholds.Siege siege = store.siege(gameId, siegeId)
 			.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "SIEGE_NOT_FOUND", "Siege not found in this game."));
 		WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
 		List<SiegeViews.RoundView> rounds = siegeRounds.of(gameId, siegeId)
@@ -130,7 +127,7 @@ public class SiegeService {
 			.map(r -> new SiegeViews.RoundView(r.round(), r.artilleryManpower(), r.progressAdded(), r.progressAfter(),
 					r.populationBefore(), r.populationLost()))
 			.toList();
-		return new SiegeViews.SiegeDetails(summary(siege, snapshot, military.presence(gameId),
+		return new SiegeViews.SiegeDetails(summary(gameId, siege, snapshot, military.presence(gameId),
 				rulesets.find(membership.rulesetVersion()).orElse(null)), rounds);
 	}
 
@@ -165,11 +162,11 @@ public class SiegeService {
 					.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CITY_NOT_FOUND",
 							"City not found in this game."));
 				UUID nationId = nationOf(snapshot, context.gamePlayerId());
-				Fortification fort = fortifications.findByGameIdAndCityId(gameId, cityId).orElse(null);
+				Strongholds.Fortress fort = store.fortressOfCity(gameId, cityId).orElse(null);
 				if (kind == FortressWorks.Project.REPAIR && fort == null) {
 					throw new ApiException(HttpStatus.NOT_FOUND, "FORTRESS_NOT_FOUND", "This city has no fortress.");
 				}
-				boolean besieged = sieges.existsByGameIdAndCityIdAndStatus(gameId, cityId, Siege.Status.ACTIVE);
+				boolean besieged = store.activeSieges(gameId).stream().anyMatch(s -> s.cityId().equals(cityId));
 				FortressWorks.State state = worksState(nationId, province, fort, besieged, true,
 						economy.treasury(nationId));
 				FortressWorks.Quote quote = kind == FortressWorks.Project.UPGRADE ? FortressWorks.upgrade(state, rules)
@@ -181,21 +178,23 @@ public class SiegeService {
 					throw new ApiException(HttpStatus.CONFLICT, "STALE_FORTRESS_LEVEL",
 							"The fortress is not at the level you expected; refresh and try again.");
 				}
-				economy.spend(nationId, quote.costMg());
-				Fortification target = fort != null ? fort
-						: Fortification.firstLevelProject(gameId, cityId, context.rulesetVersion(), context.now());
-				target.startProject(kind, kind == FortressWorks.Project.UPGRADE ? quote.targetLevel() : null,
-						context.round(), SiegeMath.completesAfterRound(context.round(), quote.durationRounds()),
-						quote.costMg());
-				fortifications.saveAndFlush(target);
+				EconomyApi.TreasuryState paid = economy.spend(nationId, quote.costMg());
+				Strongholds.Fortress existing = fort != null ? fort
+						: Strongholds.Fortress.firstLevelProject(UUID.randomUUID(), cityId, context.rulesetVersion(),
+								context.now());
+				Strongholds.Fortress target = existing.projectStarted(kind,
+						kind == FortressWorks.Project.UPGRADE ? quote.targetLevel() : null, context.round(),
+						SiegeMath.completesAfterRound(context.round(), quote.durationRounds()), quote.costMg());
+				Strongholds before = fort == null ? Strongholds.empty() : Strongholds.of(List.of(fort), List.of());
+				store.persist(gameId, before, before.with(target));
 				return new GameCommands.Outcome<>(new SiegeViews.WorksResult(fortView(target, snapshot), quote.costMg(),
-						economy.treasury(nationId).treasuryMg()), target.id());
+						paid.treasuryMg()), target.id());
 			}
 
 			@Override
 			public SiegeViews.WorksResult replay(GameCommands.CommandContext context, UUID resultRef) {
 				WorldApi.WorldSnapshot snapshot = world.snapshot(gameId);
-				Fortification fort = fortifications.findById(resultRef)
+				Strongholds.Fortress fort = store.fortress(gameId, resultRef)
 					.orElseThrow(() -> new IllegalStateException("Replayed fortification " + resultRef + " is missing"));
 				UUID nationId = nationOf(snapshot, context.gamePlayerId());
 				return new SiegeViews.WorksResult(fortView(fort, snapshot), fort.projectCostMg(),
@@ -207,7 +206,8 @@ public class SiegeService {
 
 	// --- views --------------------------------------------------------------------------------
 
-	private static FortressWorks.State worksState(UUID nationId, WorldApi.ProvinceState province, Fortification fort,
+	private static FortressWorks.State worksState(UUID nationId, WorldApi.ProvinceState province,
+			Strongholds.Fortress fort,
 			boolean besieged, boolean yourTurn, EconomyApi.TreasuryState treasury) {
 		return new FortressWorks.State(nationId, province.ownerNationId(), province.controllerNationId(), yourTurn,
 				besieged, fort == null ? 0 : fort.level(), fort == null ? null : fort.status(),
@@ -222,7 +222,7 @@ public class SiegeService {
 				completes + 1, quote.allowed(), quote.blockers().stream().map(Enum::name).toList());
 	}
 
-	private static SiegeViews.FortificationView fortView(Fortification f, WorldApi.WorldSnapshot snapshot) {
+	private static SiegeViews.FortificationView fortView(Strongholds.Fortress f, WorldApi.WorldSnapshot snapshot) {
 		WorldApi.ProvinceState p = snapshot.provinceOfCity(f.cityId()).orElseThrow();
 		SiegeViews.ProjectView project = f.project() == null ? null
 				: new SiegeViews.ProjectView(f.project().name(), f.projectTargetLevel(), f.projectCompletesAfterRound(),
@@ -232,7 +232,7 @@ public class SiegeService {
 	}
 
 	/** @param rules the game's ruleset for estimates of an active siege; null for ended sieges */
-	private SiegeViews.SiegeSummary summary(Siege s, WorldApi.WorldSnapshot snapshot,
+	private SiegeViews.SiegeSummary summary(UUID gameId, Strongholds.Siege s, WorldApi.WorldSnapshot snapshot,
 			List<MilitaryPresence.Presence> presence, SiegeRules rules) {
 		WorldApi.ProvinceState p = snapshot.provinces()
 			.stream()
@@ -244,14 +244,14 @@ public class SiegeService {
 		Integer roundsLeft = null;
 		Integer nextAttrition = null;
 		Integer artilleryBonus = null;
-		if (s.status() == Siege.Status.ACTIVE && rules != null) {
+		if (s.status() == Strongholds.Siege.Status.ACTIVE && rules != null) {
 			artillery = presence.stream()
 				.filter(b -> b.provinceStateId().equals(s.provinceStateId()) && b.nationId().equals(s.besiegerNationId())
 						&& b.artillery())
 				.mapToInt(MilitaryPresence.Presence::manpower)
 				.sum();
 			artilleryBonus = modifiers.isEmpty() ? 0
-					: modifiers.getFirst().of(s.gameId(), s.besiegerNationId()).siegeArtilleryBonusBps();
+					: modifiers.getFirst().of(gameId, s.besiegerNationId()).siegeArtilleryBonusBps();
 			rate = SiegeMath.progressPerRound(artillery, rules, artilleryBonus);
 			roundsLeft = SiegeMath.estimatedRoundsLeft(s.progress(), s.requiredProgress(), rate);
 			nextAttrition = SiegeMath.attrition(p.population(), rules);

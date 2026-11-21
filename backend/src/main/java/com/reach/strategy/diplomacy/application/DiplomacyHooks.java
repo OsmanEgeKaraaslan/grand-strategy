@@ -300,10 +300,12 @@ class DiplomacyHooks {
 				provinces.get(p.ownerNationId())[0]++;
 				population.merge(p.ownerNationId(), (long) p.population(), Long::sum);
 			});
+			// Every treasury in one read, not one per nation.
+			Map<UUID, EconomyApi.TreasuryState> treasuries = economy.treasuries(gameId);
 			return snapshot.nations()
 				.stream()
 				.map(n -> new Victory.NationFacts(n.id(), provinces.get(n.id())[0], population.get(n.id()),
-						economy.treasury(n.id()).treasuryMg(), n.eliminated()))
+						treasuries.get(n.id()).treasuryMg(), n.eliminated()))
 				.toList();
 		}
 
@@ -311,10 +313,12 @@ class DiplomacyHooks {
 		private Outcome outcome(UUID gameId, DiplomacyState.Picture picture, int round, String reason, UUID winner) {
 			List<Victory.NationFacts> facts = facts(gameId, world.snapshot(gameId));
 			Victory.Outcome ranked = Victory.rank(facts, picture.rules().victory());
+			Map<UUID, Long> treasuryOf = new java.util.HashMap<>();
+			facts.forEach(f -> treasuryOf.put(f.nationId(), f.treasuryMg()));
 			List<Standing> standings = ranked.standings()
 				.stream()
 				.map(r -> new Standing(r.nationId(), r.rank(), r.score(), r.ownedProvinces(), r.ownedPopulation(),
-						economy.treasury(r.nationId()).treasuryMg()))
+						treasuryOf.get(r.nationId())))
 				.toList();
 			Map<String, Long> statistics = new LinkedHashMap<>();
 			statistics.put("roundsPlayed", (long) round);

@@ -10,6 +10,7 @@ import com.reach.strategy.economy.api.UpkeepSource;
 import com.reach.strategy.economy.domain.EconomyReportRepository;
 import com.reach.strategy.economy.domain.EconomyStore;
 import com.reach.strategy.economy.rules.Ledger;
+import com.reach.strategy.platform.read.ReadScope;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -33,15 +34,27 @@ class TreasuryService implements EconomyApi {
 	@Override
 	@Transactional(readOnly = true)
 	public TreasuryState treasury(UUID nationId) {
-		Ledger.Purse purse = load(nationId);
+		// Inside a read scope (the computer's observation) every view shares one read per nation.
+		Ledger.Purse purse = ReadScope.remember(List.of("economy.purse", nationId), () -> load(nationId));
 		return new TreasuryState(purse.treasuryMg(), purse.inArrears());
 	}
 
 	@Override
+	@Transactional(readOnly = true)
+	public Map<UUID, TreasuryState> treasuries(UUID gameId) {
+		Map<UUID, TreasuryState> all = new java.util.HashMap<>();
+		store.purses(gameId).forEach(p -> all.put(p.nationId(), new TreasuryState(p.treasuryMg(), p.inArrears())));
+		return Map.copyOf(all);
+	}
+
+	@Override
 	@Transactional(propagation = Propagation.MANDATORY)
-	public void spend(UUID nationId, long amountMg) {
+	public TreasuryState spend(UUID nationId, long amountMg) {
 		Ledger before = Ledger.of(List.of(load(nationId)), List.of());
-		store.persist(null, before, before.spend(nationId, amountMg));
+		Ledger after = before.spend(nationId, amountMg);
+		store.persist(null, before, after);
+		Ledger.Purse purse = after.purse(nationId);
+		return new TreasuryState(purse.treasuryMg(), purse.inArrears());
 	}
 
 	@Override
