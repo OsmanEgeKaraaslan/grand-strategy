@@ -1,12 +1,12 @@
 # Privacy Policy
 
-Version 1.0 · Clash of Empires
+Version 1.0 · Blaspi
 
-This policy explains what personal data Clash of Empires uses, why, who else handles it, how long it is kept and what you can do about it. It describes how the game actually works today; when that changes, this policy changes first and you are asked to read the new version.
+This policy explains what personal data Blaspi uses, why, who else handles it, how long it is kept and what you can do about it. It describes how the game actually works today; when that changes, this policy changes first and you are asked to read the new version.
 
 ## 1. Who we are
 
-Clash of Empires is an independent browser game run by its developer ("we", "us"). For anything about your data, write to **{{CONTACT_EMAIL}}**.
+Blaspi is an independent browser game run by Osman Ege Karaaslan, an individual developer, who decides how and why your personal data is used and is responsible for it (the data controller; "we", "us"). For anything about your data, write to **blaspiteam@outlook.com**.
 
 ## 2. What we collect and why
 
@@ -33,19 +33,18 @@ The only emails we send are the ones your account needs: confirming your email a
 ## 3. Why we are allowed to use your data
 
 - **To provide the game you signed up for** (performing our agreement with you, the Terms of Service): your account, profile, games, friends, invitations and notifications.
-- **To keep the game secure and working** (our legitimate interest in a safe and reliable service): sign-in records, the human check, error records, abuse protection and backups. Our interest does not override yours: these records are limited to what is needed and are not used for anything else.
+- **To keep the game secure and working** (our legitimate interest in a safe and reliable service): sign-in records, the human check, error records and abuse protection. Our interest does not override yours: these records are limited to what is needed and are not used for anything else.
 - **To enforce the Terms of Service** (our legitimate interest in a fair game for everyone): moderation records.
 - **To show that you accepted our documents** (our legitimate interest, and legal obligations where they apply): your acceptance records.
 
 ## 4. Who else handles your data
 
-- **Supabase** provides sign-in and hosts the game database. Account emails (confirmation and password reset) are sent through an email delivery service on our behalf.
+- **Supabase** provides sign-in and hosts the game database, in the EU (Frankfurt, Germany). Account emails (confirmation and password reset) are sent through an email delivery service on our behalf.
 - **Cloudflare** runs the human check (Turnstile) on the sign-in and account forms.
-- **Backblaze** stores our encrypted database backups in the EU. They cannot read them.
-- **Our hosting providers** run the game server and deliver the website to your browser. Like any website, they process your IP address to deliver pages and may keep short technical logs.
+- **Hetzner** runs the game server in Germany, and **our website host** delivers the website to your browser. Like any website, they process your IP address to deliver pages and may keep short technical logs.
 - **Other players** see your public profile and your actions in shared games, as described above.
 
-These providers act on our behalf. They may process data in countries other than yours. We do not give your data to anyone else, unless the law requires us to.
+These providers act on our behalf. Some of them, such as Supabase and Cloudflare, are companies based in the United States whose systems or staff may process data outside the country where you live; where personal data from the EU leaves the EU, this is covered by the providers' data processing terms, which include the European Commission's Standard Contractual Clauses. We do not give your data to anyone else, unless the law requires us to.
 
 ## 5. How long we keep your data
 
@@ -55,7 +54,6 @@ These providers act on our behalf. They may process data in countries other than
 - **Acceptance records**: as long as the game is run, as evidence of what was agreed.
 - **Moderation records**: as long as the game is run, so that decisions can be explained and reviewed.
 - **Server logs**: rotated automatically; older entries are overwritten and not archived.
-- **Backups**: encrypted copies of the game database are kept for up to 30 days and then deleted automatically, so data you changed or deleted can remain in them until then.
 
 **Deleting your account.** You can delete your account yourself on the Account page (you will be asked for your password). When you do:
 
@@ -68,20 +66,32 @@ While you are still taking part in a game that has not finished, the account can
 
 ## 6. Your rights
 
-Depending on where you live, data protection law gives you rights over your personal data, such as the right to access it, to have it corrected or deleted, to restrict or object to its use, to receive it in a portable format, and to complain to your data protection authority. You can change your profile on the profile page, change your password and delete your account on the Account page. For anything else, write to **{{CONTACT_EMAIL}}**; we may ask you to confirm that the account is yours before acting.
+Depending on where you live, data protection law gives you rights over your personal data, such as the right to access it, to have it corrected or deleted, to restrict or object to its use, to receive it in a portable format, and to complain to your data protection authority. You can change your profile on the profile page, change your password and delete your account on the Account page. For anything else, write to **blaspiteam@outlook.com**; we may ask you to confirm that the account is yours before acting.
 
-## 7. Browser storage
+## 7. Players in Turkey (KVKK)
+
+If you live in Turkey, the Law on the Protection of Personal Data No. 6698 (KVKK) also applies. In its terms:
+
+- **Data controller:** Osman Ege Karaaslan, reachable at **blaspiteam@outlook.com**.
+- **What we process and why:** the data in section 2, to provide the game and your account, to keep the game secure and working, to enforce the Terms of Service and to keep a record of what you accepted. We do not process special categories of personal data (such as health or biometric data).
+- **How we collect it:** electronically, through the sign-up, sign-in and account forms and through your play in the game.
+- **Legal reasons (KVKK article 5(2)):** the processing is necessary to set up and perform our agreement with you (c); it is necessary for our legitimate interests, without harming your fundamental rights and freedoms (f), for security, abuse protection, error records and moderation; it is necessary to establish, exercise or protect a right (e), for your acceptance records; and it is necessary to meet our legal obligations where they apply (ç).
+- **Who receives it and why:** the providers in section 4, which run parts of the game on our behalf: Supabase (sign-in and the game database), Cloudflare (the human check), Hetzner (the game server), our website host and the email delivery service. Your data is therefore transferred abroad: it is stored in Germany, and Supabase and Cloudflare may also process it in other countries, such as the United States.
+- **Your rights (KVKK article 11):** you can ask us whether we process your personal data and, if we do, for information about it; learn the purpose of the processing and whether the data is used for that purpose; know the third parties in Turkey or abroad to whom it is transferred; ask for incomplete or wrong data to be corrected; ask for it to be erased or destroyed under the conditions of KVKK article 7; ask for these corrections and erasures to be passed on to those third parties; object to a result against you that comes only from automated analysis of your data; and claim compensation if you suffer damage because your data was processed unlawfully.
+- **How to apply:** write to **blaspiteam@outlook.com** from the email address of your account (the one registered with us), or send us a written request. We answer free of charge as soon as possible and within 30 days at the latest. If we refuse your request or you find our answer insufficient, you can complain to the Personal Data Protection Board (Kişisel Verileri Koruma Kurulu).
+
+## 8. Browser storage
 
 The game stores only your sign-in session in your browser; it sets no cookies of its own. See the [Cookie and Storage Notice](/legal/cookies).
 
-## 8. Security
+## 9. Security
 
 Passwords are stored only as secure hashes by our authentication provider. Connections to the game are encrypted, every request to the game server must carry a valid sign-in, and access to each game is limited to its players. No system is perfectly secure; if a breach affects your data, we will inform you where the law requires it.
 
-## 9. Children
+## 10. Children
 
-Clash of Empires is not intended for children. You must be at least 16 years old to create an account.
+Blaspi is not intended for children. You must be at least 16 years old to create an account.
 
-## 10. Changes to this policy
+## 11. Changes to this policy
 
 When this policy changes in a way that matters, it gets a new version number and you are asked to read it the next time you open the game.

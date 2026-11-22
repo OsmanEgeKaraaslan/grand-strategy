@@ -1,6 +1,6 @@
 # Hourly: retries failed uploads, prunes local copies, alerts when the offsite copy is stale.
 [Unit]
-Description=Clash of Empires backup offsite check
+Description=Blaspi backup offsite check
 Wants=network-online.target docker.service
 After=network-online.target docker.service
 

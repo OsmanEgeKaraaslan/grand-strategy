@@ -12,7 +12,7 @@ export function LegalPage({ document }: { document: LegalDocumentKey }) {
       <nav className="legal__nav" aria-label="Legal documents">
         <Link to={session ? '/' : '/login'} className="brand">
           <span className="brand__mark" aria-hidden="true">⚜</span>
-          <span className="brand__name">Clash of Empires</span>
+          <span className="brand__name">Blaspi</span>
         </Link>
         <LegalLinks />
       </nav>

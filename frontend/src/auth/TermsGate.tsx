@@ -64,7 +64,7 @@ function AcceptTerms({ termsVersion, privacyVersion, reaccept }: { termsVersion:
   return (
     <AuthFrame
       title={reaccept ? 'Our terms have changed' : 'Before you play'}
-      subtitle="Please review and accept the Terms of Service and the Privacy Policy."
+      subtitle="Please accept the Terms of Service and read the Privacy Policy."
     >
       <div className="form">
         {accept.isError && <Alert>{describeError(accept.error)}</Alert>}

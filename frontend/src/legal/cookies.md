@@ -1,10 +1,10 @@
 # Cookie and Storage Notice
 
-Version 1.0 · Clash of Empires
+Version 1.0 · Blaspi
 
 ## What the game stores in your browser
 
-Clash of Empires sets **no cookies of its own** and uses **no analytics, advertising or tracking** tools.
+Blaspi sets **no cookies of its own** and uses **no analytics, advertising or tracking** tools.
 
 It keeps one thing in your browser's local storage, which our sign-in provider (Supabase) needs to keep you signed in:
 
@@ -27,4 +27,4 @@ The sign-up, sign-in and account forms show a check by Cloudflare Turnstile that
 
 If the game ever starts to store anything in your browser that is not strictly necessary, this notice will be updated first and you will be asked for your consent where the law requires it.
 
-Questions: **{{CONTACT_EMAIL}}**
+Questions: **blaspiteam@outlook.com**

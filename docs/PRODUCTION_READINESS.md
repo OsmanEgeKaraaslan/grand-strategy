@@ -33,7 +33,7 @@ the public JWKS. No Kubernetes, brokers or extra services.
 | Secrets management | ✅ env-only, `.env.production` git-ignored · 🛠 §11 | §11 |
 | CI/CD and rollback | ✅ CI verify (backend + frontend) · 🛠 image build/push/deploy pipeline not created (deployment not authorized) | §12 |
 | Spending alerts, capacity | 🛠 §13 | §13 |
-| Legal texts | ✅ version 1.0, written from the application (2026-11-02) · 🛠 set `VITE_CONTACT_EMAIL`, accept the providers' data processing terms; legal review recommended | DATA_PRIVACY_INVENTORY §5 |
+| Legal texts | ✅ version 1.0, written from the application (2026-11-02); operator name and contact address filled in (2026-11-21) · 🛠 accept the providers' data processing terms; add backups to the Privacy Policy when they go live; legal review recommended | DATA_PRIVACY_INVENTORY §5 |
 | Supabase user removal after deletion | 🛠 manual operator step (§5.4) | |
 
 ## 3. Health, readiness and the container
@@ -67,7 +67,6 @@ Profiles: `local` (default), `test`, `prod`. Prod reads everything from the envi
 | `LEGAL_TERMS_VERSION`, `LEGAL_PRIVACY_VERSION`, `LEGAL_REQUIRE_ACCEPTANCE` | no | `1.0`, `1.0`, `true` | Must match `SIGN_UP_VERSIONS` in `frontend/src/legal/documents.ts` |
 | `ADMIN_SUPABASE_USER_IDS` | no | empty (nobody) | Administrators for `/admin` (moderation, Q-MOD1): comma-separated Supabase user ids, from Supabase → Authentication → Users → UID. Sign up in the game first with your own account |
 | Frontend: `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | yes (build time) | — | Public values only; **never** a service-role key |
-| Frontend: `VITE_CONTACT_EMAIL` | yes for a public launch | — | Contact address shown in the Terms, Privacy Policy and Cookie Notice |
 | Frontend: `VITE_TURNSTILE_SITE_KEY` | yes for a public launch | — | Cloudflare Turnstile site key; shows the human check on the sign-in forms and adds Turnstile to the CSP. Set together with Supabase CAPTCHA protection (§5.1) — either one alone breaks sign-in or leaves sign-up open |
 
 `server.forward-headers-strategy=native` makes Tomcat honour `X-Forwarded-*` **only** from
@@ -192,9 +191,9 @@ the two origins writes none and warns. 🟡 Verify in staging that sign-in, the 
 
 1. **Key pair, on your own computer** (Gpg4win on Windows), never on the server:
    ```
-   gpg --quick-generate-key "Clash of Empires backups" default default never
-   gpg --armor --export "Clash of Empires backups" > backup-public.asc
-   gpg --armor --export-secret-keys "Clash of Empires backups" > backup-private.asc
+   gpg --quick-generate-key "Blaspi backups" default default never
+   gpg --armor --export "Blaspi backups" > backup-public.asc
+   gpg --armor --export-secret-keys "Blaspi backups" > backup-private.asc
    ```
    Store `backup-private.asc` and its passphrase in your password manager (and one more place you
    control), then delete the file. **Without it no backup can be restored.**
@@ -306,7 +305,7 @@ backup only for data corruption.
 
 ## 14. Unresolved before a public launch
 
-1. 🛠 Create the contact mailbox and set `VITE_CONTACT_EMAIL` (the legal texts show it); a lawyer's review of the texts is recommended.
+1. ✅ Contact mailbox blaspiteam@outlook.com, written into the legal texts; a lawyer's review of the texts is recommended.
 2. ⛔ Configure custom SMTP and Supabase production auth settings (§5) and test the emails in staging.
 3. 🟡 Staging environment; set up backups (§8.1) and do a full restore drill against Supabase and B2.
 4. 🛠 Deploy pipeline, error alerting, spend alerts.

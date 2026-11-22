@@ -1,6 +1,6 @@
 # Data Privacy Inventory
 
-Status: **2026-11-02 — engineering inventory behind the published legal texts (version 1.0).** It
+Status: **2026-11-21 — engineering inventory behind the published legal texts (version 1.0; operator named, Blaspi).** It
 records what personal data the software processes, where it lives and how it is removed. The Terms,
 Privacy Policy and Cookie Notice were written from this inventory to describe the application as it
 works; they make no promise the application does not keep. They have not been reviewed by a lawyer,
@@ -77,24 +77,25 @@ the notice and the consent decision must be revisited first. Whether the CDN set
 
 | Topic | Decision / duty | Status |
 |---|---|---|
-| Contact address | One address for privacy, terms and support questions, configured as `VITE_CONTACT_EMAIL` and shown in all three texts | **Operator**: create the mailbox and set the variable before a public launch |
-| Operator identity | The texts name "the developer" as the operator; some laws require a name and postal address in the privacy notice or an imprint | **Operator** to decide whether to add them |
-| Legal bases | Agreement (providing the game), legitimate interests (security, abuse protection, backups, acceptance records), legal obligations — no consent-based processing | Written (Privacy §3) |
+| Contact address | One address for privacy, terms and support questions: blaspiteam@outlook.com, written into all three texts | Set 2026-11-21 |
+| Operator identity | The texts name Osman Ege Karaaslan, an individual developer, as operator and data controller. No postal address is published; some laws ask for one in the privacy notice or an imprint | Name set 2026-11-21; postal address **Operator** to decide (legal review) |
+| Legal bases | Agreement (providing the game), legitimate interests (security, abuse protection, acceptance records), legal obligations — no consent-based processing | Written (Privacy §3) |
 | Moderation | Suspension date and reason on the player; `moderation_action` (administrator, target, action, reason, time) | Kept while the game is run, as for acceptance records (Privacy §2, §5) |
-| Retention | Account until deletion; finished matches stay (anonymized after deletion); social data deleted with the account; acceptance records kept while the game runs; logs rotated, not archived; encrypted backups kept 30 days (local and offsite at Backblaze B2, EU) | Written (Privacy §5) |
+| Retention | Account until deletion; finished matches stay (anonymized after deletion); social data deleted with the account; acceptance records kept while the game runs; logs rotated, not archived. Backups are not described until they run: when `deploy/backup` (30 days, local and offsite at Backblaze B2, EU) goes live, add them to Privacy §3, §4 and §5 first | Written (Privacy §5) |
 | Supabase user removal after deletion | "Without undue delay", done by the operator (no service-role key in the app; PRODUCTION_READINESS §5.4) | **Operator** duty |
 | Deletion during unfinished games | Refused; the player may write to the contact address | Written; Q-AC1 stays OPEN for an in-game rule |
-| Minimum age | 16 | Set 2026-11-02 (product owner may change it in Terms §2 and Privacy §9) |
-| Processors | Supabase (auth, database), Cloudflare (Turnstile human check), Backblaze B2 (encrypted backups, EU), email delivery service for account emails, hosting providers — named by category except these | **Operator**: accept Supabase's data processing agreement and the providers' equivalents |
-| International transfers | Stated that providers may process data outside the player's country | Written (Privacy §4) |
+| Minimum age | 16 | Set 2026-11-02 (product owner may change it in Terms §2 and Privacy §10) |
+| Processors | Supabase (auth, database in Frankfurt), Cloudflare (Turnstile human check), Hetzner (game server, Germany), email delivery service for account emails, website host — named by category except these | **Operator**: accept Supabase's data processing agreement and the providers' equivalents |
+| International transfers | Supabase and Cloudflare are US companies; EU transfers rely on their data processing terms with the Standard Contractual Clauses (stated in Privacy §4) | Written (Privacy §4); **Operator**: accept the providers' data processing terms |
 | Proxy access logs (IP) | Off in the Caddy template; turning them on needs a retention period and a Privacy §2 update | Operator |
+| KVKK (players in Turkey) | Privacy §7 gives the KVKK article 10 notice: controller, purposes, collection method, article 5(2) legal reasons (c, ç, e, f), recipients and the transfer abroad, the article 11 rights, applications by email from the account address or in writing, answered within 30 days | Written (Privacy §7) |
 | Data export (portability) | No self-service export; requests go to the contact address | Written (Privacy §6) |
 
 ## 6. Where the documents live
 
 The texts are Markdown in `frontend/src/legal/` (`terms.md`, `privacy.md`, `cookies.md`, version 1.0),
 rendered on the public routes `/legal/terms`, `/legal/privacy` and `/legal/cookies` (linked from
-sign-in, sign-up, the acceptance screen and the account page). `{{CONTACT_EMAIL}}` in them is filled
-from `VITE_CONTACT_EMAIL`. When a text changes in a way that matters, raise its version
+sign-in, sign-up, the acceptance screen and the account page). They contain the operator's name and
+contact address directly; there are no placeholders. When a text changes in a way that matters, raise its version
 (`LEGAL_TERMS_VERSION` / `LEGAL_PRIVACY_VERSION` and `SIGN_UP_VERSIONS` together): every player is
 asked to accept again. A lawyer's review is still recommended before a public launch.

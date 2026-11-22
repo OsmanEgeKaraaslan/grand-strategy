@@ -29,7 +29,7 @@ export function AppShell({ children, onOpenSocial }: { children: ReactNode; onOp
       <header className="shell__header">
         <Link to="/" className="brand">
           <BrandMark />
-          <span className="brand__name">Clash of Empires</span>
+          <span className="brand__name">Blaspi</span>
         </Link>
         <div className="shell__account">
           <NotificationBell onOpenSocial={onOpenSocial} />
@@ -65,7 +65,7 @@ export function AuthFrame({ title, subtitle, children }: { title: string; subtit
       <div className="auth-card">
         <Link to="/" className="brand brand--large">
           <BrandMark />
-          <span className="brand__name">Clash of Empires</span>
+          <span className="brand__name">Blaspi</span>
         </Link>
         <div className="auth-card__body">
           <h1>{title}</h1>

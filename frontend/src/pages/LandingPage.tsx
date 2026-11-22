@@ -49,9 +49,9 @@ export function LandingPage() {
   return (
     <div className="landing">
       <header className="landing__nav">
-        <Link to="/" className="brand" aria-label="Clash of Empires, home">
+        <Link to="/" className="brand" aria-label="Blaspi, home">
           <BrandMark />
-          <span className="brand__name">Clash of Empires</span>
+          <span className="brand__name">Blaspi</span>
         </Link>
         <nav className="landing__nav-links" aria-label="Account">
           <Link to="/login" className="shell__nav-link">
@@ -69,7 +69,7 @@ export function LandingPage() {
         <div className="hero-map__copy">
           <h1 id="hero-title">Thirty rounds to remake a continent.</h1>
           <p className="hero-map__lede">
-            Clash of Empires is a turn-based grand strategy game for two to four players. Govern your provinces, raise
+            Blaspi is a turn-based grand strategy game for two to four players. Govern your provinces, raise
             armies from your own cities and settle every war at the peace table. The computer plays every nation nobody
             chose, by the same rules as you.
           </p>
@@ -197,7 +197,7 @@ export function LandingPage() {
       <footer className="landing__footer">
         <span className="brand">
           <BrandMark />
-          <span className="brand__name">Clash of Empires</span>
+          <span className="brand__name">Blaspi</span>
         </span>
         <p className="muted">A fictional world. No real nations, borders or history.</p>
         <LegalLinks />

@@ -52,7 +52,7 @@ export function RegisterPage() {
     if (!email.includes('@')) return 'Enter a valid email address.'
     const passwordProblem = checkNewPassword(password, confirmPassword)
     if (passwordProblem) return passwordProblem
-    if (!consent) return 'Please accept the Terms of Service and the Privacy Policy.'
+    if (!consent) return 'Please accept the Terms of Service and confirm that you have read the Privacy Policy.'
     return null
   }
 

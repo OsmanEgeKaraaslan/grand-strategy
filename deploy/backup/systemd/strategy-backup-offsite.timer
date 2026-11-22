@@ -1,5 +1,5 @@
 [Unit]
-Description=Hourly Clash of Empires backup offsite check
+Description=Hourly Blaspi backup offsite check
 
 [Timer]
 OnCalendar=hourly

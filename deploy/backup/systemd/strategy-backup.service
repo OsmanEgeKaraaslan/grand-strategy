@@ -2,7 +2,7 @@
 # Install: copy both strategy-backup* unit pairs to /etc/systemd/system, then
 #   systemctl daemon-reload && systemctl enable --now strategy-backup.timer strategy-backup-offsite.timer
 [Unit]
-Description=Clash of Empires database backup
+Description=Blaspi database backup
 Wants=network-online.target docker.service
 After=network-online.target docker.service
 

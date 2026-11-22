@@ -1,12 +1,12 @@
 # Terms of Service
 
-Version 1.0 · Clash of Empires
+Version 1.0 · Blaspi
 
-These terms are the agreement between you and us, the developer who runs Clash of Empires ("we", "us"). By creating an account or playing, you accept them. Questions: **{{CONTACT_EMAIL}}**.
+These terms are the agreement between you and Osman Ege Karaaslan, the individual developer who runs Blaspi ("we", "us"). By creating an account or playing, you accept them. Questions: **blaspiteam@outlook.com**.
 
 ## 1. The game
 
-Clash of Empires is a free, turn-based multiplayer strategy game played in the browser. It is currently in **beta**: rules, balance, maps and features change, bugs happen, and the game may sometimes be unavailable. Games are played with the rules version they were started with.
+Blaspi is a free, turn-based multiplayer strategy game played in the browser. It is currently in **beta**: rules, balance, maps and features change, bugs happen, and the game may sometimes be unavailable. Games are played with the rules version they were started with.
 
 ## 2. Your account
 
@@ -52,4 +52,4 @@ When these terms change in a way that matters, they get a new version number and
 
 ## 10. Contact
 
-**{{CONTACT_EMAIL}}**
+**blaspiteam@outlook.com**

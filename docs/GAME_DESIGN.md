@@ -33,7 +33,7 @@ from four tensions:
 
 ### 2.1 Fictional setting — APPROVED
 
-The game is called **Clash of Empires** (product owner, 2026-11-02). World, geography, nations,
+The game is called **Blaspi** (product owner, 2026-11-21; it was called Clash of Empires from 2026-11-02). World, geography, nations,
 cultures and history are fictional. The first map, **"The Sundered Reach"**, is a small two-nation
 map for the vertical slice; the Grand Campaign (§15) is the main map. Faction names were set by the
 product owner on 2026-11-02 (migration V22).

@@ -1,6 +1,6 @@
-# Clash of Empires
+# Blaspi
 
-**Clash of Empires** is a browser-based, multiplayer, **classic sequential turn-based** grand strategy game set
+**Blaspi** is a browser-based, multiplayer, **classic sequential turn-based** grand strategy game set
 in an entirely fictional world. Players govern nations made of irregular provinces,
 grow numeric populations into a working economy, recruit infantry, cavalry and
 artillery, fight deterministic terrain-dependent battles, besiege and starve cities,
@@ -149,8 +149,8 @@ Needs a Supabase project with the redirect URLs above (and, to see the emails, C
 the built-in sender is enough locally).
 
 1. **Sign-up consent**: on *Register* the button refuses until the Terms checkbox is ticked; the
-   legal links open `/legal/terms`, `/legal/privacy`, `/legal/cookies` (version 1.0; the contact address comes from `VITE_CONTACT_EMAIL`
-   highlighted). After confirming the email and signing in, no acceptance screen appears.
+   legal links open `/legal/terms`, `/legal/privacy`, `/legal/cookies` (version 1.0, with the
+   operator's name and contact address). After confirming the email and signing in, no acceptance screen appears.
 2. **Existing account**: sign in with an account created before Phase 15 — the *Before you play*
    screen appears; accept it and the dashboard opens.
 3. **Resend confirmation**: register a second address, use *Resend confirmation email* (then wait a
