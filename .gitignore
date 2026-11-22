@@ -37,3 +37,6 @@ backups/
 *.backup
 *.bak
 *.sql.gz
+
+# Owner-only notes, never pushed
+/private/
